@@ -10,6 +10,7 @@ from pathlib import Path
 import json
 import shutil
 import subprocess
+from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
 
 from backend.nvp_production_scene import ProductionScene, compact
 
@@ -70,7 +71,7 @@ def blender_available(executable='blender') -> dict:
     if not path:
         return {'available':False,'reason':'No real Blender executable is installed or visible on PATH'}
     try:
-        result=subprocess.run([path, '-b', '--version'],capture_output=True,text=True,timeout=15)
+        result=run_trusted_blender([path, '-b', '--version'],capture_output=True,text=True,timeout=15)
     except (OSError, subprocess.TimeoutExpired) as error:
         return {'available':False,'reason':type(error).__name__ + ': '+str(error)}
     if result.returncode != 0 or not result.stdout.startswith('Blender '):
@@ -105,7 +106,7 @@ def run_acceptance(production: ProductionScene, project_id: str, scene_id: str,
     runs=[]
     for command in commands:
         try:
-            p=subprocess.run(command,capture_output=True,text=True,timeout=timeout,cwd=out)
+            p=run_trusted_blender(command,capture_output=True,text=True,timeout=timeout,cwd=out)
         except subprocess.TimeoutExpired as e:
             return {'status':'failed','reason':'Blender timed out','step':len(runs)+1,
                     'stderr':str(e)[-3000:],'version':state.get('version')}
@@ -204,7 +205,7 @@ def run_meshpack_acceptance(mesh_assets, project_id: str, scene_id: str,
     runs=[]
     for i,command in enumerate(commands,1):
         try:
-            p=subprocess.run(command,capture_output=True,text=True,timeout=timeout,cwd=out)
+            p=run_trusted_blender(command,capture_output=True,text=True,timeout=timeout,cwd=out)
         except subprocess.TimeoutExpired:
             return {'status':'failed','step':i,'reason':'Blender timed out'}
         runs.append({'step':i,'exit_code':p.returncode,'stderr_tail':p.stderr[-2500:],'stdout_tail':p.stdout[-1500:]})

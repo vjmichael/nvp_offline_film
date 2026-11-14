@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import xml.etree.ElementTree as ET
 
 from backend.nvp_approved_tasks import canonical_bytes
@@ -31,7 +32,7 @@ NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,79}\Z")
 
 
 def _run(args, *, cwd, timeout=1800):
-    done = subprocess.run([str(arg) for arg in args], cwd=str(cwd),
+    done = run_owned_subprocess([str(arg) for arg in args], cwd=str(cwd),
                           stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           timeout=timeout, check=False)
@@ -199,7 +200,7 @@ def validate_strict_smpte(dcp, doctor_bin, *, timeout=21600, report_dir=None):
         raise RuntimeError("Pinned independent DcpDoctor binary is missing")
     package = Path(dcp)
     before = inspect_dcp_directory(package)
-    result = subprocess.run(
+    result = run_owned_subprocess(
         [str(binary), "validate", "--strict", str(package)],
         cwd=str(package.parent), stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,

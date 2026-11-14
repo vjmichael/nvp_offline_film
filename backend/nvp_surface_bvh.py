@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 from pathlib import Path
 
 from backend.nvp_blender_acceptance import blender_available
@@ -239,7 +240,7 @@ def run_native_bvh_geometry(service:PlantarCorrectionPlan,pid,sid,blend,out,
     script.write_text(NATIVE_BVH_SURFACE_SCRIPT,"utf8")
     cmd=[exe["path"],"-b",str(blend),"-t","2","--python-exit-code","30",
          "--python",str(script),"--","--manifest",str(manifest),"--output",str(report)]
-    try:proc=subprocess.run(cmd,cwd=out,capture_output=True,text=True,timeout=timeout)
+    try:proc=run_owned_subprocess(cmd,cwd=out,capture_output=True,text=True,timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"status":"failed","reason":"Real Blender BVH measurement timed out"}
     if proc.returncode or not report.is_file():

@@ -89,6 +89,21 @@ class PackageGuardTests(unittest.TestCase):
         self.assertIn('Abort "Refusing to remove an unexpected installation directory"', script)
         self.assertIn('File /r "${PACKAGE_FILES}\\*"', script)
         self.assertNotIn('MUI_PAGE_DIRECTORY', script)
+        # W1-G may only switch dedicated program trees with retained old
+        # executable evidence, exact marker bytes and version monotonicity.
+        self.assertIn('!include "WordFunc.nsh"', script)
+        self.assertIn('Function .onInit', script)
+        # Installer may stage but NEVER infer that a live worker tree is empty.
+        self.assertIn('kernel-verified recovery', script)
+        self.assertNotIn('Rename "${PREVIOUS_DIR}" "$LOCALAPPDATA\\Programs\\NVP"', script)
+        self.assertIn('${VersionCompare}', script)
+        self.assertIn('FileRead $0 $2', script)
+        self.assertNotIn('Rename "$INSTDIR" "${PREVIOUS_DIR}"', script)
+        self.assertIn('StrCmp $1 "upgrade" needs_native_activation promote_new', script)
+        self.assertIn('WriteUninstaller "${STAGE_DIR}\\Uninstall NVP.exe"', script)
+        self.assertIn('Rename "${STAGE_DIR}" "$INSTDIR"', script)
+        self.assertNotIn('RMDir /r "${PREVIOUS_DIR}"', script)
+        self.assertNotIn('RMDir /r "${STAGE_DIR}"', script)
 
 
 

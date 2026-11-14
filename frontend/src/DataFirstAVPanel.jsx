@@ -2,6 +2,9 @@ import React,{useEffect,useRef,useState} from 'react';
 import DataFirstWorldViewport from './DataFirstWorldViewport.jsx';
 import NativeOriginalCapturePanel from './NativeOriginalCapturePanel.jsx';
 import NativeCameraRailPanel from './NativeCameraRailPanel.jsx';
+import EditedFilmDeliveryPanel from './EditedFilmDeliveryPanel.jsx';
+import ActorPerformancePanel from './ActorPerformancePanel.jsx';
+import FilmSourceStagesPanel from './FilmSourceStagesPanel.jsx';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -351,7 +354,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
         a flattened movie or inferred sound-event causes.</p>
       <ul>
         {(scene.scene?.objects||[]).slice(0,16).map(x=>
-          <li key={x.path}>{x.path}: {x.world_translation
+          <li key={x.path}>{x.actor_id?x.actor_id+' · ':''}{x.path}: {x.world_translation
             .map(v=>v.toFixed(2)).join(', ')} m</li>)}
       </ul>
       <p className="fineprint">{scene.spatial_audio?.bindings?.length||0}
@@ -361,6 +364,12 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       sourceRevision={captureRevision} onPreviewChange={setRailPreview}/>
     <NativeOriginalCapturePanel projectId={projectId} native={native}
       onCompleted={()=>setCaptureRevision(n=>n+1)}/>
+    <ActorPerformancePanel projectId={projectId} native={native}
+      sourceRevision={captureRevision}
+      onScenePublished={()=>setCaptureRevision(n=>n+1)}/>
+    <FilmSourceStagesPanel projectId={projectId} native={native}
+      sourceRevision={captureRevision}/>
+    <EditedFilmDeliveryPanel projectId={projectId} native={native}/>
     <section className="card" aria-label="Add creator-supplied original music">
       <h3>Bring in background music or sound effects</h3>
       <p className="fineprint">The OS file picker accepts the original MP3,

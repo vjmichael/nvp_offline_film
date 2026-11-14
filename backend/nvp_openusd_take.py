@@ -11,6 +11,8 @@ import hashlib
 import json
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
+from backend.nvp_p1a_take_provenance import (
+    audit_sha256,verify_published_native_attestations)
 from backend.nvp_temporal_ledger import TemporalLedger, _int
 from backend.nvp_openusd_channels import evaluate_parameter_channels
 from backend.nvp_openusd_scene import (
@@ -27,6 +29,33 @@ def canonical(data):
 
 def sha(data):
     return hashlib.sha256(canonical(data)).hexdigest()
+
+
+def _imported_actor_skin_checkpoint(stage, entries, tick):
+    """Hash actual original skinned + facial source geometry at one Film Time.
+
+    Keep vertices out of the immutable Take JSON: their bounded digest
+    and original GLB SHA pin the actual evaluated motion source.
+    Historical Takes/scenes without imported cast preserve their old digest.
+    """
+    if not entries:
+        return []
+    from backend.nvp_openusd_skinning import evaluate_skin
+    result=[]
+    for source in entries:
+        path=source["path"]
+        skin=evaluate_skin(
+            stage,stage.GetPrimAtPath(path+"/Rig/CharacterMesh"),path,tick)
+        if (skin["skinning_evaluated"] is not True or
+            skin["usd_skin_binding_verified"] is not True):
+            raise RuntimeError("Imported facial/rigged source did not evaluate")
+        result.append({
+            "actor_id":source["actor_id"],
+            "original_glb_sha256":source["original_glb_sha256"],
+            "source_vertex_count":len(skin["deformed_points"]),
+            "source_skin_state_sha256":sha(skin),
+        })
+    return sorted(result,key=lambda x:x["actor_id"])
 
 
 class OpenUSDTakeCapture:
@@ -107,7 +136,11 @@ class OpenUSDTakeCapture:
 
     def freeze(self, project_id, take_id, *,
                scene_id, scene_revision, timeline_id, timeline_revision,
-               sample_ticks, creator_event):
+               sample_ticks, creator_event,
+               native_capture_attestations=None,
+               original_camera_timeline_id=None,
+               original_camera_timeline_revision=None,
+               original_camera_timeline_sha256=None):
         """Publish a single-commit take by freezing exact existing source data.
 
         Authorization is checked against the fully evaluated source scope;
@@ -123,6 +156,32 @@ class OpenUSDTakeCapture:
             raise ValueError("Digital Take needs bounded selected event times")
         if sorted(set(sample_ticks))!=sample_ticks:
             raise ValueError("Take sample ticks must be sorted and unique")
+        audit_digest=None
+        if native_capture_attestations is not None:
+            if (type(native_capture_attestations) is not list or
+                not 1<=len(native_capture_attestations)<=32):
+                raise PermissionError("Trusted native Take requires bounded original worker receipts")
+            if (type(original_camera_timeline_id) is not str or
+                type(original_camera_timeline_revision) is not int or
+                original_camera_timeline_revision<=0 or
+                type(original_camera_timeline_sha256) is not str or
+                len(original_camera_timeline_sha256)!=64):
+                raise PermissionError("Original camera revision and SHA are required for native source audit")
+            from backend.nvp_exact_time_shots import ExactTimeShotSequence
+            camera=ExactTimeShotSequence(self.index).read(
+                project_id,original_camera_timeline_id,
+                original_camera_timeline_revision)
+            if (camera["document_sha256"]!=original_camera_timeline_sha256 or
+                camera["scene_id"]!=scene_id or
+                camera["scene_revision"]!=scene_revision):
+                raise PermissionError("Original camera plan changed during verified microphone Take freeze")
+            if len(canonical(native_capture_attestations))>256*1024:
+                raise PermissionError("Original native Take evidence exceeds immutable manifest budget")
+            audit_digest=audit_sha256(native_capture_attestations)
+        elif any(v is not None for v in (
+                original_camera_timeline_id,original_camera_timeline_revision,
+                original_camera_timeline_sha256)):
+            raise PermissionError("Original camera capture evidence supplied without native worker receipts")
         source,timeline,stage,duration=self._sources(
             project_id,scene_id,scene_revision,timeline_id,timeline_revision)
         _,Sdf,Usd,UsdGeom=_usd()
@@ -156,6 +215,10 @@ class OpenUSDTakeCapture:
                 from backend.nvp_openusd_skeleton import evaluate_skeletons
                 checkpoint["skeletal_pose"]=evaluate_skeletons(
                     stage,source["data"]["skeleton_rigs"],tick)
+            if source["data"].get("imported_characters"):
+                checkpoint["imported_actor_skin"]=(
+                    _imported_actor_skin_checkpoint(
+                        stage,source["data"]["imported_characters"],tick))
             checkpoints.append(checkpoint)
         snapshot_sha=sha(checkpoints)
         scoped={
@@ -168,6 +231,9 @@ class OpenUSDTakeCapture:
             "duration_tick":duration,"checkpoint_sha256":snapshot_sha,
             "checkpoint_ticks":sample_ticks,
         }
+        if audit_digest is not None:
+            scoped["native_original_capture_attestations_sha256"]=audit_digest
+            scoped["original_camera_timeline_document_sha256"]=original_camera_timeline_sha256
         if self._approve(creator_event,dict(scoped)) is not True:
             raise PermissionError("Creator did not authorize exact Digital Take freeze")
         # Metadata dependency versions are immutable and validated again in
@@ -195,16 +261,37 @@ class OpenUSDTakeCapture:
             "native_schema_version":source["data"].get("native_schema_version"),
             "skeleton_layer_sha256":source["data"].get("skeleton_layer_sha256"),
             "skeleton_rigs":source["data"].get("skeleton_rigs",[]),
+            "actor_bindings":source["data"].get("actor_bindings",[]),
+            "imported_characters":source["data"].get("imported_characters",[]),
             "host_creator_action_verified":True,
             "artist_presentation_approved":False,
             "frozen":True,"rendered_frames":False,
         }
+        if audit_digest is not None:
+            manifest.update({
+                "native_original_capture_attestations_sha256":audit_digest,
+                "native_original_capture_attestations":
+                    json.loads(canonical(native_capture_attestations)),
+                "original_camera_timeline_id":original_camera_timeline_id,
+                "original_camera_timeline_revision":original_camera_timeline_revision,
+                "original_camera_timeline_sha256":original_camera_timeline_sha256,
+            })
+        dependencies=[
+            {"object_id":scene_id,"revision":scene_revision,"role":"scene"},
+            {"object_id":timeline_id,"revision":timeline_revision,"role":"temporal"},
+        ]
+        if audit_digest is not None:
+            # A raw SHA in a manifest is not an authoritative film source
+            # edge. Keep the original camera plan's revision in FilmIndex's
+            # transactional dependency graph for retirement/reopen analysis.
+            dependencies.append({
+                "object_id":original_camera_timeline_id,
+                "revision":original_camera_timeline_revision,
+                "role":"camera",
+            })
         return self.index.register_revision(
             project_id,take_id,"take",manifest,expected_revision=0,
-            dependencies=[
-                {"object_id":scene_id,"revision":scene_revision,"role":"scene"},
-                {"object_id":timeline_id,"revision":timeline_revision,"role":"temporal"},
-            ])
+            dependencies=dependencies)
 
     def verify_take(self, project_id, take_id):
         # A journaled filming Take is not readable while its multi-object
@@ -231,6 +318,8 @@ class OpenUSDTakeCapture:
             src["data"]["layout_layer_sha256"]!=manifest["layout_layer_sha256"] or
             src["data"]["motion_layer_sha256"]!=manifest["motion_layer_sha256"] or
             src["data"].get("asset_bindings",[])!=manifest.get("asset_bindings",[]) or
+            src["data"].get("actor_bindings",[])!=manifest.get("actor_bindings",[]) or
+            src["data"].get("imported_characters",[])!=manifest.get("imported_characters",[]) or
             src["data"].get("parameter_layer_sha256")!=manifest.get("parameter_layer_sha256") or
             src["data"].get("performance_channels",[])!=manifest.get("performance_channels",[]) or
             src["data"].get("native_schema_version")!=manifest.get("native_schema_version") or
@@ -265,12 +354,20 @@ class OpenUSDTakeCapture:
                 from backend.nvp_openusd_skeleton import evaluate_skeletons
                 checkpoint["skeletal_pose"]=evaluate_skeletons(
                     stage,src["data"]["skeleton_rigs"],tick)
+            if src["data"].get("imported_characters"):
+                checkpoint["imported_actor_skin"]=(
+                    _imported_actor_skin_checkpoint(
+                        stage,src["data"]["imported_characters"],tick))
             poses.append(checkpoint)
         if sha(poses)!=manifest["sample_digest_sha256"]:
             raise RuntimeError("Frozen Digital Take sampled state digest changed")
+        native_attestations_verified=verify_published_native_attestations(
+            self.index,project_id,take_id,manifest,self.temporal)
         return {"status":"VERIFIED_FROZEN_DATA_TAKE",
                 "take_id":take_id,"take_document_sha256":take["document_sha256"],
                 "scene_document_sha256":src["document_sha256"],
                 "timeline_document_sha256":timeline["document_sha256"],
                 "checkpoint_count":len(poses),
+                "native_capture_attestations_verified":
+                    native_attestations_verified,
                 "rendered_frames":False,"presentation_approved":False}

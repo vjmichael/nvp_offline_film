@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 from pathlib import Path
 
 from backend.nvp_blender_acceptance import blender_available
@@ -429,7 +430,7 @@ def run_native_plantar_audit(service:PlantarContactPlan,pid,sid,blend,output,
     report=out/"plantar_observation.json";report.unlink(missing_ok=True)
     cmd=[binary["path"],"-b",str(blend),"-t","2","--python-exit-code","30",
          "--python",str(script),"--","--package",str(manifest),"--output",str(report)]
-    try:proc=subprocess.run(cmd,cwd=out,capture_output=True,text=True,timeout=timeout)
+    try:proc=run_owned_subprocess(cmd,cwd=out,capture_output=True,text=True,timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"status":"failed","reason":"Native plantar floor survey timed out"}
     if proc.returncode or not report.exists():

@@ -28,7 +28,8 @@ class TrustedNativeOriginalCapture:
     """One active recording per trusted desktop process, never one per model."""
 
     def __init__(self,index:FilmIndex,*,native_window,ask_native,
-                 single_device_factory=None,dual_device_factory=None):
+                 single_device_factory=None,dual_device_factory=None,
+                 native_pcm_auditor=None):
         if not isinstance(index,FilmIndex) or not callable(native_window) or not callable(ask_native):
             raise TypeError("Actual FilmIndex and trusted native-window confirmation required")
         self.index=index
@@ -38,6 +39,11 @@ class TrustedNativeOriginalCapture:
         # accepted from a JavaScript request or remembered authorization.
         self.single_device_factory=single_device_factory
         self.dual_device_factory=dual_device_factory
+        if native_pcm_auditor is not None:
+            from backend.nvp_p1a_original_capture_worker_bridge import OriginalMicrophoneNativeWorkerAudit
+            if type(native_pcm_auditor) is not OriginalMicrophoneNativeWorkerAudit:
+                raise TypeError("Actual first-party native capture worker bridge required")
+        self.native_pcm_auditor=native_pcm_auditor
         self._lock=threading.RLock()
         self._active=None
         self._closed=False
@@ -120,7 +126,8 @@ class TrustedNativeOriginalCapture:
                     if key not in ("scene_document_sha256","camera_timeline_document_sha256")}
             kwargs.update(index=self.index,
                 native_approve_start=consent_start,
-                native_approve_freeze=consent_freeze)
+                native_approve_freeze=consent_freeze,
+                native_pcm_auditor=self.native_pcm_auditor)
             if dual:
                 for key in DUAL_FIELDS:kwargs[key]=request[key]
                 if self.dual_device_factory is not None:
@@ -137,6 +144,8 @@ class TrustedNativeOriginalCapture:
                     "capture_mode":"dual_independent_adc" if dual else "native_mono",
                     "original_pcm_durable":False,"original_modified":False,
                     "human_freeze_approval_required":True,
+                    "native_worker_verification_required":
+                        self.native_pcm_auditor is not None,
                     "physical_hardware_acceptance":False}
 
     def status(self):

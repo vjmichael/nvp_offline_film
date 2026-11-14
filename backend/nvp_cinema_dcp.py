@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import xml.etree.ElementTree as ET
 
 from backend.nvp_film_index import FilmIndex, _id
@@ -48,7 +49,7 @@ MAX_DCP_BYTES = 2*1024*1024*1024  # small first-run package, not long-form yet
 
 def _process(args, timeout, purpose):
     try:
-        r=subprocess.run(args,capture_output=True,text=True,
+        r=run_owned_subprocess(args,capture_output=True,text=True,
                          timeout=timeout,check=False)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(purpose+" timed out; DCP not registered") from exc

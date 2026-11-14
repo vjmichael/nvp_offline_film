@@ -10,6 +10,7 @@ import json
 import math
 from pathlib import Path
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 
 from backend.nvp_studio import Studio
 from backend.nvp_production_scene import compact, digest
@@ -368,7 +369,7 @@ def run_skin_acceptance(service:SkinnedPerformance,project_id:str,scene_id:str,d
     if not render_preview:cmds[1].extend(['--skip-render','1'])
     runs=[]
     for i,cmd in enumerate(cmds,1):
-        try:p=subprocess.run(cmd,capture_output=True,text=True,cwd=root,timeout=timeout)
+        try:p=run_owned_subprocess(cmd,capture_output=True,text=True,cwd=root,timeout=timeout)
         except subprocess.TimeoutExpired:return {'status':'failed','step':i,'reason':'Blender timed out'}
         runs.append({'step':i,'exit_code':p.returncode,'stdout_tail':p.stdout[-1800:],
                      'stderr_tail':p.stderr[-2100:]})

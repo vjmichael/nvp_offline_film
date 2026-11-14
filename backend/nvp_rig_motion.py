@@ -12,6 +12,7 @@ import math
 import re
 from pathlib import Path
 import subprocess
+from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
 
 from backend.nvp_studio import Studio
 from backend.nvp_production_scene import compact, digest
@@ -436,7 +437,7 @@ def run_motion_acceptance(service,pid,sid,directory,*,executable='blender',rende
     if not render_preview:cmds[1].extend(['--skip-render','1'])
     logs=[]
     for cmd in cmds:
-        try:p=subprocess.run(cmd,capture_output=True,text=True,cwd=root,timeout=timeout)
+        try:p=run_trusted_blender(cmd,capture_output=True,text=True,cwd=root,timeout=timeout)
         except subprocess.TimeoutExpired:return {'status':'failed','reason':'Blender timed out','step':len(logs)+1}
         logs.append({'exit_code':p.returncode,'stdout_tail':p.stdout[-1500:],'stderr_tail':p.stderr[-2000:]})
         if p.returncode:return {'status':'failed','reason':'Native Blender build/audit failed','steps':logs}

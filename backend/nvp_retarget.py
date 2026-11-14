@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
 from pathlib import Path
 
 from backend.nvp_character_assets import CharacterAssets
@@ -396,7 +397,7 @@ def run_retarget_acceptance(service,pid,sid,directory,*,executable='blender',ren
     if not render_preview:cmds[1].extend(['--skip-render','1'])
     attempts=[]
     for i,command in enumerate(cmds,1):
-        try:p=subprocess.run(command,capture_output=True,text=True,cwd=out,timeout=timeout)
+        try:p=run_trusted_blender(command,capture_output=True,text=True,cwd=out,timeout=timeout)
         except subprocess.TimeoutExpired:return {'status':'failed','step':i,'reason':'Blender timed out'}
         attempts.append({'step':i,'exit_code':p.returncode,'stdout':p.stdout[-1800:],'stderr':p.stderr[-2200:]})
         if p.returncode:

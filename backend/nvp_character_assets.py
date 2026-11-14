@@ -14,6 +14,7 @@ import re
 import shutil
 import struct
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -457,7 +458,7 @@ def run_character_acceptance(service:CharacterAssets,pid,sid,directory,*,executa
     if not render_preview:cmds[1].extend(['--skip-render','1'])
     attempts=[]
     for i,cmd in enumerate(cmds,1):
-        try:p=subprocess.run(cmd,capture_output=True,text=True,cwd=root,timeout=timeout)
+        try:p=run_owned_subprocess(cmd,capture_output=True,text=True,cwd=root,timeout=timeout)
         except subprocess.TimeoutExpired:return {'status':'failed','reason':'Native Blender timed out','step':i}
         attempts.append({'step':i,'code':p.returncode,'stdout':p.stdout[-1800:],'stderr':p.stderr[-2400:]})
         if p.returncode:return {'status':'failed','reason':'Native Blender import or audit failed','attempts':attempts}
