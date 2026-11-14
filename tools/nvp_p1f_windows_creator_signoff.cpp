@@ -143,12 +143,12 @@ static int approve() {
     PCCERT_CONTEXT creator=user_creator_certificate(issuer);
     const auto body=nvp_p1f_creator_signature::message(scope);
     const BYTE* message=reinterpret_cast<const BYTE*>(body.data());
-    const DWORD message_len=static_cast<DWORD>(body.size());
+    DWORD message_len=static_cast<DWORD>(body.size());
     CRYPT_SIGN_MESSAGE_PARA sign{};
     sign.cbSize=sizeof(sign);
     sign.dwMsgEncodingType=X509_ASN_ENCODING|PKCS_7_ASN_ENCODING;
     sign.pSigningCert=creator;
-    sign.HashAlgorithm.pszObjId=const_cast<char*>(szOID_RSA_SHA256);
+    sign.HashAlgorithm.pszObjId=const_cast<char*>(szOID_NIST_sha256);
     sign.cMsgCert=1;
     sign.rgpMsgCert=&creator;
     DWORD needed=0;
