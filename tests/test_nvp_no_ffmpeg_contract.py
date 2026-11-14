@@ -19,7 +19,7 @@ class ZeroFFmpegContractTests(unittest.TestCase):
                                         for issue in audit.violations()))
 
     def test_relative_import_resolution(self):
-        tree = ast.parse("from . import local_codec\\nfrom ..shared import audio\\n")
+        tree = ast.parse("from . import local_codec\nfrom ..shared import audio\n")
         self.assertIn("backend.scenes.local_codec",
                       audit.imports(tree, "backend/scenes/shot.py"))
         self.assertIn("backend.shared.audio",
@@ -28,7 +28,7 @@ class ZeroFFmpegContractTests(unittest.TestCase):
                          audit.imports(tree, "backend/scenes/shot.py")[:1])
 
     def test_relative_import_does_not_escape_package(self):
-        tree = ast.parse("from ....outside import codec\\n")
+        tree = ast.parse("from ....outside import codec\n")
         self.assertEqual([], audit.imports(tree, "backend/scenes/shot.py"))
 
     def test_clean_native_import(self):
