@@ -105,6 +105,24 @@ jobs:
             if ($status -notmatch 'WIN32_EXIT_CODE\s*:\s*0') {
               $failure=Join-Path $env:ProgramData 'NVP\P1F\KernelOnly\scm_blender_last_error.txt'
               if (Test-Path $failure) { Get-Content $failure | Out-Host }
+              # Read original OS diagnostics rather than guessing whether a
+              # hosted lowbox loader was denied by DLL ACL, user profile, or
+              # graphics initialization. This is PUBLIC synthetic media only.
+              Write-Host 'NVP_PUBLIC_SCM_BLENDER_RUNTIME_ACL_DIAGNOSTICS'
+              & icacls.exe (Join-Path $env:ProgramFiles 'NVP\Blender') | Out-Host
+              $blenderInfo=Get-Item $env:NVP_P1F_SCM_TEST_BINARY
+              & icacls.exe $blenderInfo.FullName | Out-Host
+              $nativeBin=Get-Item 'C:\Program Files\Blender Foundation\Blender 5.3\blender.exe' -ErrorAction SilentlyContinue
+              if ($nativeBin) {
+                & icacls.exe $nativeBin.DirectoryName | Out-Host
+                & icacls.exe $nativeBin.FullName | Out-Host
+              }
+              try {
+                Get-WinEvent -FilterHashtable @{LogName='Application';StartTime=(Get-Date).AddMinutes(-8)} -MaxEvents 80 -ErrorAction Stop |
+                  Where-Object { $_.Message -match 'blender|SideBySide|DLL|0xc0000142' } |
+                  Select-Object -First 10 TimeCreated,ProviderName,Id,Message |
+                  Format-List | Out-String | Out-Host
+              } catch { Write-Host ('No accessible Windows Application fault event: '+$_.Exception.Message) }
               throw ('Real SCM AppContainer Blender failed: '+$status)
             }
             if (-not (Test-Path $receipt) -or -not (Test-Path $png) -or -not (Test-Path $audit)) {
