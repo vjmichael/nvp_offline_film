@@ -325,8 +325,19 @@ static int run_source_bound_blender() {
         throw std::runtime_error("Original source Blender exceeded finite 600s execution");
     }
     DWORD exitcode=0;
-    require(GetExitCodeProcess(h.process,&exitcode)&&exitcode==0,
-            "Native SCM-owned Blender worker failed under real AppContainer/WFP");
+    require(GetExitCodeProcess(h.process,&exitcode),
+            "Windows kernel refused to report actual Blender process exit");
+    if(exitcode!=0) {
+        // Retain the original NTSTATUS or Blender --python-exit-code. For
+        // example 0xC0000135 means loader DLL_NOT_FOUND; 70 indicates the
+        // authored Cycles script failed after Python initialization. Never
+        // mask an OS loader failure as a successful source-derived picture.
+        std::ostringstream stage;
+        stage<<"Native SCM-owned Blender failed: process_exit_decimal="
+             <<exitcode<<" process_exit_hex=0x"<<std::hex<<std::uppercase
+             <<exitcode;
+        throw std::runtime_error(stage.str());
+    }
     CloseHandle(h.job);h.job=nullptr; // Drain/kill descendants before audit.
     require(sha256(script)==r.script && sha256(usd)==r.usda &&
             sha256(pcm)==r.pcm && sha256(spec)==r.spec,
