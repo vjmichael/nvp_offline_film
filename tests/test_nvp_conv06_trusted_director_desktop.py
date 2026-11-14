@@ -110,6 +110,120 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
         self.assertTrue(result["native_director_identity_approved"])
         self.assertFalse(result["voice_or_animation_generated"])
 
+    def test_original_architecture_and_texture_catalog_require_native_origin(self):
+        locked = fake_bridge(locked=True)
+        foreign = fake_bridge(url="http://127.0.0.1:19992/")
+        for bridge in (locked, foreign):
+            with self.assertRaises(PermissionError):
+                bridge.film02md_architecture_catalog("movie001")
+            with self.assertRaises(PermissionError):
+                bridge.film01c_texture_catalog("movie001")
+            with self.assertRaises(PermissionError):
+                bridge.film02md_publish_cells({
+                    "project_id":"movie001","cell_world_id":"Cells001",
+                    "cells":[],"expected_revision":0})
+
+    def test_actual_source_catalog_is_metadata_only_and_reopened(self):
+        from contextlib import contextmanager
+        from backend.nvp_usd_film02m_modular_buildings import BUILD_FORMAT
+        from backend.nvp_usd_film02m_d_cells import FORMAT as CELL_FORMAT
+        bridge=fake_bridge()
+        docs={
+            ("Building001",1):{
+                "kind":"world","document_sha256":"a"*64,
+                "data":{"format":BUILD_FORMAT}},
+            ("Cells001",1):{
+                "kind":"presentation","document_sha256":"b"*64,
+                "data":{"format":CELL_FORMAT}},
+            ("Asset001",1):{
+                "kind":"asset","document_sha256":"c"*64,
+                "data":{"preview_material":{"texture":{"sha256":"d"*64}}}},
+            ("Scene001",1):{
+                "kind":"scene","document_sha256":"e"*64,"data":{}}}
+        index=bridge.index
+        def list_objects(pid,kind):
+            assert pid=="movie001"
+            keys={"world":["Building001"],
+                  "presentation":["Cells001"],
+                  "asset":["Asset001"],"scene":["Scene001"]}
+            return [{"object_id":name,"head_revision":1}
+                    for name in keys.get(kind,[])]
+        index.list_objects=list_objects
+        index.read_revision=lambda pid,id,rev: docs[id,rev]
+        @contextmanager
+        def original_building(pid,id,rev):
+            self.assertEqual((pid,id,rev),("movie001","Building001",1))
+            yield {"record":docs[id,rev],"mesh_count":11}
+        @contextmanager
+        def original_cells(pid,id,rev):
+            self.assertEqual((pid,id,rev),("movie001","Cells001",1))
+            yield SimpleNamespace(original={"CellWest":{},"CellEast":{}})
+        class Kit:
+            def __init__(self, index, *, verify_director_action):
+                self.assert_denied=verify_director_action("web",{})
+            open_building=staticmethod(original_building)
+        class Cells:
+            def __init__(self,index,*,verify_director_action):
+                self.deny=verify_director_action("web",{})
+            open=staticmethod(original_cells)
+        with patch(
+            "backend.nvp_usd_film02m_modular_buildings.OriginalBuildingKit",Kit),patch(
+            "backend.nvp_usd_film02m_d_cells.OriginalBuildingCells",Cells),patch(
+            "backend.nvp_usd_film01c_texture.source_texture_descriptors",
+            side_effect=lambda index,pid,*,kind,record:
+                {"d"*64:b"original_png"} if kind=="asset" else {}):
+            world=bridge.film02md_architecture_catalog("movie001")
+            textures=bridge.film01c_texture_catalog("movie001")
+        self.assertEqual(world["project_id"],"movie001")
+        self.assertEqual(len(world["buildings"]),1)
+        self.assertEqual(world["buildings"][0]["original_mesh_count"],11)
+        self.assertEqual(world["cell_worlds"][0]["cell_ids"],
+                         ["CellEast","CellWest"])
+        self.assertTrue(world["native_source_reopened"])
+        self.assertFalse(world["actual_cycles_accepted"])
+        self.assertFalse(world["original_take_or_pcm_modified"])
+        self.assertEqual(textures["sources"][0]["png_sha256"],["d"*64])
+        self.assertFalse(textures["original_png_bytes_exposed"])
+        self.assertFalse(textures["external_texture_paths_allowed"])
+        self.assertNotIn("original_png",str(textures))
+
+    def test_original_cell_publication_uses_one_exact_native_scope(self):
+        bridge=fake_bridge()
+        class Cells:
+            def __init__(self,index,*,verify_director_action):
+                self.approve=verify_director_action
+            def publish(self,pid,world,*,cells,expected_revision,director_event):
+                scope={
+                    "operation":"nvp.film02m.publish_original_building_cells.v1",
+                    "project_id":pid,
+                    "cell_world_id":world,
+                    "expected_revision":expected_revision,
+                    "source_cell_sha256":"a"*64,
+                    "source_cell_manifest_sha256":"b"*64}
+                assert not self.approve("web",scope)
+                assert not self.approve(director_event,{
+                    **scope,"cell_world_id":"OtherCellWorld"})
+                assert not self.approve(director_event,{
+                    **scope,"operation":"self_authorized_render"})
+                assert self.approve(director_event,scope)
+                return {"revision":1,"document_sha256":"d"*64}
+        request={
+            "project_id":"movie001","cell_world_id":"CellWorld01",
+            "cells":[{"cell_id":"CellWest","building_id":"Building001",
+                      "building_revision":1}],
+            "expected_revision":0}
+        with self.assertRaisesRegex(PermissionError,"Exact source"):
+            bridge.film02md_publish_cells({**request,"worker_executable":"blender"})
+        with patch("backend.nvp_usd_film02m_d_cells.OriginalBuildingCells",Cells):
+            accepted=bridge.film02md_publish_cells(request)
+        self.assertTrue(accepted["native_director_approved"])
+        self.assertFalse(accepted["original_take_or_pcm_modified"])
+        self.assertFalse(accepted["film_master_approved"])
+        bridge.window.create_confirmation_dialog=lambda *_:False
+        with patch("backend.nvp_usd_film02m_d_cells.OriginalBuildingCells",Cells):
+            with self.assertRaises(AssertionError):
+                bridge.film02md_publish_cells(request)
+
     def test_browser_cannot_supply_extra_security_or_worker_fields(self):
         bridge = fake_bridge()
         with self.assertRaises(PermissionError):
