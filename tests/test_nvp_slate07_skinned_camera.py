@@ -379,7 +379,7 @@ class RealCharacterAndLens(unittest.TestCase):
             quality="thumbnail",creator_event=self.auth,
             ram_mb=4096,timeout_seconds=240)
         receipt=host.run_next()
-        self.assertEqual(receipt["state"],"SUCCEEDED")
+        self.assertEqual(receipt["state"],"SUCCEEDED", repr(receipt))
         picture=host.read_camera_workbench_png(self.pid,approved["cache_key"])
         self.assertEqual((picture["width"],picture["height"]),(320,180))
         self.assertGreater(len(picture["png_bytes"]),100)
