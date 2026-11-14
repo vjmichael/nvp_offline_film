@@ -85,7 +85,7 @@ class WindowsJobProcess:
             self._process = None
 
 
-def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False):
+def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False, private_isolation_required=False):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -93,6 +93,15 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
         raise ValueError("Invalid OS memory limit")
     if type(linux_cgroup_tree_required) is not bool:
         raise ValueError("Linux whole-tree containment mode must be boolean")
+    if type(private_isolation_required) is not bool:
+        raise ValueError("Private source isolation mode must be boolean")
+    if private_isolation_required:
+        if not linux_cgroup_tree_required:
+            raise RuntimeError("Private Blender cannot run without kernel whole-tree custody")
+        from backend.nvp_worker_private_sandbox import sandbox_command
+        # This is a real OS namespace execution contract. A Windows Job Object
+        # without AppContainer/WFP is NOT a filesystem/no-egress sandbox.
+        command=sandbox_command(command,cwd)["command"]
     if os.name == "nt":
         return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr, memory_mb=memory_mb)
     if sys.platform == "linux":
