@@ -211,7 +211,8 @@ class P1FDurableShotReels:
             raise RuntimeError("Original reel plan changed since batch authorization")
         return doc,state
 
-    def run_next(self,batch_id,*,creator_event,width=320,height=180,samples=8):
+    def run_next(self,batch_id,*,creator_event,width=320,height=180,samples=8,
+                 reviewed_look_id=None):
         """Run ONE fresh, still-authorized frame; never resume interrupted work."""
         doc,state=self._manifest(batch_id)
         if state!="PLANNED":
@@ -253,7 +254,8 @@ class P1FDurableShotReels:
                 doc["project_id"],doc["plan_id"],
                 frame["reel_index"],frame["frame_offset"],job_id,
                 creator_event=creator_event,
-                width=width,height=height,samples=samples)
+                width=width,height=height,samples=samples,
+                reviewed_look_id=reviewed_look_id)
             if (render.get("format")!="nvp.p1f.independent_picture_audio_receipt.v1"
                     or render.get("passed") is not True or
                     render.get("job_id")!=job_id or
