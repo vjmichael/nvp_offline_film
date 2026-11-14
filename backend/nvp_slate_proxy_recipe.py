@@ -49,7 +49,13 @@ def value(flag):
     at=arguments.index(flag)+1
     if at>=len(arguments): raise ValueError("Missing preview argument value")
     result=arguments[at]
-    if not result or "/" in result or chr(92) in result or result in (".",".."):
+    expected={"--manifest":"slate_source_preview.json",
+              "--preview":"preview.png"}.get(flag)
+    cwd=os.path.realpath(os.getcwd())
+    if (not expected or not os.path.isabs(result) or
+            os.path.realpath(result)!=os.path.join(cwd,expected) or
+            os.path.basename(result)!=expected or
+            os.path.islink(result)):
         raise ValueError("Unsafe Blender preview filename")
     return result
 
