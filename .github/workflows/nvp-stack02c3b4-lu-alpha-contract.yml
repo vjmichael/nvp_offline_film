@@ -1,0 +1,52 @@
+name: NVP B4 Lu independent alpha compatibility (read-only)
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b4-lu-alpha-evidence-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c3b3-estimated-model-recovery-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-lu-alpha-contract:
+    name: Linux Lu source-seal and observational status boundaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify source-probe and adapter compile
+        run: python -m compileall -q backend/nvp_lu_alpha_contract.py tools/nvp_lu_alpha_source_probe.py tests/test_lu_alpha_contract.py
+      - name: Lu alpha boundaries and passive status contracts
+        run: python -m unittest discover -s tests -p test_lu_alpha_contract.py -v
+      - name: "Regression: resource governor and owned model estimates"
+        run: |
+          python -m unittest discover -s tests -p test_resource_init_contention.py -v
+          python -m unittest discover -s tests -p test_resource_governor.py -v
+          python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
+
+  windows-lu-alpha-contract:
+    name: Windows Lu source-seal and observational status boundaries
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify source-probe and adapter compile
+        run: python -m compileall -q backend/nvp_lu_alpha_contract.py tools/nvp_lu_alpha_source_probe.py tests/test_lu_alpha_contract.py
+      - name: Lu alpha boundaries and passive status contracts
+        run: python -m unittest discover -s tests -p test_lu_alpha_contract.py -v
+      - name: "Regression: resource governor and owned model estimates"
+        run: |
+          python -m unittest discover -s tests -p test_resource_init_contention.py -v
+          python -m unittest discover -s tests -p test_resource_governor.py -v
+          python -m unittest discover -s tests -p test_model_estimate_recovery.py -v

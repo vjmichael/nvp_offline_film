@@ -1,0 +1,91 @@
+name: NVP W1-G five compiled native first-party worker capability slices
+# CONV-03/04 mainline reconciliation: original native matrix retained as a
+# MANUAL batch gate on the EXISTING convergence branch. No per-fix CI triggers.
+# Dispatch on nvp/mainline-convergence-20261113 and verify exact source SHA.
+# An unprovisioned kernel or missing OS custody is NOT acceptance.
+# These native binary artifacts are UNSIGNED developer candidates, NOT a
+# creator-authorized, redistributable, EFS-accepted or complete NVP film release.
+on:
+  workflow_dispatch:
+# Preserve only the latest candidate acceptance run per branch/workflow.
+# Superseded source heads must not monopolize finite native runners.
+concurrency:
+  group: nvp-w1g-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compiled-linux:
+    name: Native Linux ELF64 five-role compilation and independent functional fixture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install real native compiler and OS crypto headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ libssl-dev
+      - name: Verify canonical exact-head ELF compiler input bytes
+        run: python -m tools.nvp_w1g_source_identity_audit
+      - name: Reject altered or mismatched first-party supply provenance
+        run: python -m unittest discover -s tests -p test_nvp_w1g_compiled_supply_chain_intake.py -v
+      - name: Prove physical ADC catalog remains an unaccepted non-recording probe
+        run: python -m unittest discover -s tests -p test_nvp_p1a_physical_device_preflight.py -v
+      - name: Compile all five ELF64 binaries and run actual operations
+        run: |
+          set -euo pipefail
+          mkdir -p acceptance_artifacts
+          python -m tools.nvp_w1g_compile_first_party_workers --out acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --compiler g++
+          python -m tools.nvp_w1g_native_worker_functional_acceptance --binary-dir acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --evidence acceptance_artifacts/w1g-linux-native-functional.json
+          python -m tools.nvp_w1g_native_link_audit --binary-dir acceptance_artifacts/w1g-compiled-linux --platform linux-amd64 --output acceptance_artifacts/w1g-linux-native-imports.json
+          python -m tools.nvp_w1g_compiled_supply_chain_intake --binary-dir acceptance_artifacts/w1g-compiled-linux --native-imports acceptance_artifacts/w1g-linux-native-imports.json --output acceptance_artifacts/w1g-linux-unsigned-review-intake.json
+      - name: Preserve exact source-head native candidates (NO LICENSE APPROVAL)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w1g-first-party-ELF64-unreviewed-candidates
+          path: acceptance_artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+  compiled-windows:
+    name: Native Windows PE64 MSVC five-role and real Job Object functional matrix
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original native Job Object Windows bindings
+        shell: pwsh
+        run: |
+          python -m pip install --only-binary=:all: pywin32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Reject altered or mismatched first-party supply provenance
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_nvp_w1g_compiled_supply_chain_intake.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native worker supply-review negative matrix failed' }
+          python -m unittest discover -s tests -p test_nvp_p1a_physical_device_preflight.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native physical microphone preflight refusal contract failed' }
+      - name: Verify canonical exact-head PE compiler input bytes
+        shell: pwsh
+        run: |
+          python -m tools.nvp_w1g_source_identity_audit
+          if ($LASTEXITCODE -ne 0) { throw 'Native source byte identity mismatch' }
+      - name: Compile all five PE64 and verify actual Windows Job-controlled outcomes
+        shell: cmd
+        run: |
+          call packaging\build-w1g-compiled-windows.cmd
+          if errorlevel 1 exit /b 1
+      - name: Preserve compiled original Windows candidate bytes and native Job receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w1g-first-party-PE64-unreviewed-candidates
+          path: acceptance_artifacts/
+          if-no-files-found: warn
+          retention-days: 7

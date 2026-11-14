@@ -1,0 +1,111 @@
+name: NVP B10 OCIO ACES2 production color and Full HD/4K render admission
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b10-ocio-aces-highres-20261104
+  pull_request:
+    branches:
+      - nvp/stack02c3b9-native-exr-sequence-20261104
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-b10-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux-b10-ocio-and-profiles:
+    name: Linux official ACES2 OCIO config, real Float32 pixels and higher-res resource policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP base and pinned real ACES2/OpenEXR dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Compile B10 native renderer, pinned OCIO and project color index
+        run: |
+          python -m compileall -q backend/nvp_b10_render_profiles.py backend/nvp_b10_ocio.py backend/nvp_b10_color_verify.py backend/nvp_b10_color_worker.py backend/nvp_b10_color_publish.py tests/test_b10_color.py tests/test_b10_native_color_worker.py tools/nvp_stack02c3b10_real_hires_aces.py
+      - name: Validate exact official OCIO transform, 32-bit EXR pixel readback, denied budgets and baseline lineage
+        run: |
+          python -m unittest discover -s tests -p test_b10_color.py -v
+          python -m unittest discover -s tests -p test_b10_native_color_worker.py -v
+          python -m unittest discover -s tests -p test_exr_fidelity.py -v
+          python -m unittest discover -s tests -p test_exr_sequence_contract.py -v
+
+  windows-b10-ocio-and-profiles:
+    name: Windows official ACES2 OCIO config, real Float32 pixels and higher-res resource policy
+    runs-on: windows-2025
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP base and pinned real ACES2/OpenEXR dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Compile B10 color code
+        run: python -m compileall -q backend/nvp_b10_render_profiles.py backend/nvp_b10_ocio.py backend/nvp_b10_color_verify.py backend/nvp_b10_color_worker.py backend/nvp_b10_color_publish.py tests/test_b10_color.py tests/test_b10_native_color_worker.py tools/nvp_stack02c3b10_real_hires_aces.py
+      - name: Check source authority, official OCIO processor, genuine Float32 EXR pixels and high-resolution headroom
+        run: |
+          python -m unittest discover -s tests -p test_b10_color.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B10 official OCIO and high-res tests failed' }
+          python -m unittest discover -s tests -p test_b10_native_color_worker.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B10 native color authorization tests failed' }
+          python -m unittest discover -s tests -p test_exr_fidelity.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'OpenEXR safety baseline failed' }
+          python -m unittest discover -s tests -p test_exr_sequence_contract.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B9 full-sequence safety regression' }
+
+  linux-real-blender-1080p-and-aces:
+    name: Actual 1920x1080 Blender Float32 render and official ACES2 managed frame verified after restart
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual Blender and virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+      - name: Install pinned official OCIO2/ACES and OpenEXR for real CPU pixels
+        run: python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Build the original frozen take and native full EXR source, render 1080p and convert actual pixels to ACEScg
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b10_real_hires_aces \
+             --out acceptance_artifacts/stack02c3b10_hires_aces
+      - name: Retain B10 actual Full HD Float32 source, native ACEScg image, OCIO receipt and verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c3b10-real-1080p-aces2
+          path: acceptance_artifacts/stack02c3b10_hires_aces/
+          retention-days: 7
+          if-no-files-found: warn
+
+  react-film-safety-regression:
+    name: React Film authoring B10 source safety regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build and test NVP Film UI without exposing native color approval to browser
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui

@@ -1,0 +1,32 @@
+/* Director-facing SDR/PCM finishing, no shader/codec engineering controls. */
+.director-finishing-room{background:#272d3a;border:1px solid #67586b;border-radius:14px;margin:18px 0;padding:18px;min-width:0}
+.director-finishing-head{display:flex;justify-content:space-between;gap:16px;align-items:start;flex-wrap:wrap}
+.director-finishing-head h3{font-size:20px;margin:0 0 8px;color:#f2d8bb}
+.director-finishing-head p{line-height:1.6;max-width:650px;margin:0 0 13px}
+.director-finishing-head span{border:1px solid #997b5e;border-radius:18px;color:#e7d3bf;padding:7px 12px;font-size:12px}
+.director-finishing-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:15px}
+.director-finishing-panel,.director-finishing-audition,.director-finishing-purpose{border:1px solid #5b5867;background:#1e2733;padding:14px;border-radius:11px;min-width:0}
+.director-finishing-room h4{font-size:17px;margin:0 0 12px;color:#edcbac}
+.director-finishing-room label{font-size:12px;color:#eadccf;display:flex;flex-direction:column;gap:7px;margin:12px 0}
+.director-finishing-room input[type=range]{width:100%;accent-color:#e2ad83}
+.director-finishing-room input[type=number],.director-finishing-room select,.director-finishing-room textarea{background:#151c2a;color:#f1e9df;border:1px solid #68616b;border-radius:8px;padding:9px;max-width:100%;font:inherit;box-sizing:border-box}
+.director-finishing-room small{font-size:12px;color:#dcc3aa;font-variant-numeric:tabular-nums}
+.director-finishing-room button{margin:6px 0}
+.director-finishing-room p{line-height:1.55}
+.director-finishing-audition,.director-finishing-purpose{margin-top:15px}
+.director-finishing-audition>audio{display:block;width:100%;margin:13px 0}
+.director-finishing-still{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;max-height:490px;background:#171f2b;border-radius:8px;margin:13px 0}
+.director-finishing-preview-controls{display:flex;gap:13px;align-items:end;flex-wrap:wrap}
+.director-finishing-preview-controls label{min-width:150px;max-width:200px}
+.director-finishing-approval{display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-top:1px solid #675a68;margin-top:18px;padding-top:17px}
+.director-finishing-approval p{max-width:630px}
+.director-finishing-approval strong{font-size:16px}
+.director-finishing-history,.director-finishing-cinema{border:1px solid #5d5564;padding:13px;border-radius:9px;margin-top:14px}
+.director-finishing-history summary,.director-finishing-cinema summary{font-size:14px;font-weight:700;color:#eac6a7;cursor:pointer}
+.director-finishing-history>div{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:8px;border-top:1px solid #554e5c;font-size:12px}
+.director-finishing-warning,.director-finishing-error,.director-finishing-notice{font-size:13px;border:1px solid #aa7777;background:#47393c;padding:12px;border-radius:9px;line-height:1.55;margin:12px 0}
+.director-finishing-notice{border-color:#769681;background:#2d4739}
+.director-finishing-room :is(input,select,textarea,button,summary):focus-visible{outline:3px solid #f4c698;outline-offset:2px}
+@media(max-width:890px){.director-finishing-layout{grid-template-columns:1fr}}
+@media(max-width:550px){.director-finishing-room{padding:10px}.director-finishing-preview-controls{align-items:stretch;flex-direction:column}}
+@media(prefers-reduced-motion:reduce){.director-finishing-room *{transition:none!important;animation:none!important}}

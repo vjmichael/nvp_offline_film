@@ -1,0 +1,68 @@
+/* G05 — filmmaker-first visual stage; no backend/runtime controls. */
+.director-world{border:1px solid #564c56;border-radius:14px;background:#242833;margin:17px 0;padding:18px;min-width:0;position:relative}
+.director-world-heading{display:flex;gap:14px;align-items:flex-start;justify-content:space-between}
+.director-world-heading h4{font-size:20px;margin:0}
+.director-world-heading p{margin:8px 0 12px}
+.director-stage-status{padding:6px 10px;border:1px solid #946b65;color:#ecd0bb;font-size:12px;border-radius:16px;white-space:nowrap}
+.director-stage-status.approved{border-color:#719679;background:#273a30;color:#d6f4db}
+.director-stage-status.draft{background:#433333}
+.director-stage-start{padding:28px;text-align:center;background:radial-gradient(at 50% 20%,#364659,#1b212b);border:1px solid #4d5560;border-radius:11px;margin-top:10px}
+.director-stage-start h4{margin:0 0 12px;font-size:22px}
+.director-stage-start-icon{font-size:66px;color:#e1b887}
+.director-stage-start p{max-width:420px;line-height:1.6;color:#d0d0d9;margin:10px auto 20px}
+.director-world-tools{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0 10px}
+.director-world-toolgroup{display:flex;gap:6px}
+.director-world-toolgroup button{font:inherit;border:1px solid #625966;color:#eee1dc;background:#33333e;border-radius:8px;padding:9px 13px}
+.director-world-toolgroup button.selected{border-color:#e9c395;background:#604c3e;color:white}
+.director-view-select{font-size:12px;display:flex;align-items:center;gap:9px;color:#e8ddcf}
+.director-world select,.director-world input,.director-world textarea{font:inherit;background:#181d27;color:#f6ece6;border:1px solid #615963;border-radius:8px;padding:9px;min-width:0;max-width:100%;box-sizing:border-box}
+.director-stage-live{min-height:360px;background:#141c28;border:1px solid #56606d;border-radius:10px;overflow:hidden}
+.director-stage-canvas{width:100%;min-height:360px;overflow:hidden;position:relative}
+.director-stage-canvas canvas{display:block;width:100%}
+.director-stage-fallback{padding:15px;color:#dfd5cd}
+.director-world-help{color:#a6aab4;font-size:11px;margin:9px 0 16px;line-height:1.5}
+.director-world-layout{display:grid;grid-template-columns:minmax(170px,.8fr) minmax(0,1.2fr);gap:14px}
+.director-world-list,.director-world-inspector{background:#2b2e3a;border:1px solid #4a4853;border-radius:11px;padding:14px;min-width:0}
+.director-world h5{margin:4px 0 12px;font-size:15px;color:#f1dbca}
+.director-world-object-list{display:flex;flex-direction:column;gap:5px;max-height:350px;overflow:auto}
+.director-world-object-list button{background:#242834;border:1px solid #444a57;color:#eee7e0;border-radius:8px;text-align:left;padding:9px;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.director-world-object-list button.selected{background:#51433e;border-color:#f0bf8c}
+.director-world-object-list small{color:#aeb5bd;font-size:11px}
+.director-world-asset-picker{border-top:1px solid #54515b;margin-top:19px;padding-top:15px}
+.director-world-asset-picker label{margin-top:12px;display:block}
+.director-world-row{display:flex;gap:7px;align-items:center}
+.director-world-row select{width:100%;flex:1}
+.director-world-asset-picker .film-hint{margin:9px 0 0}
+.director-world-inspector>label,.director-world-asset-picker>label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#dfd4cf;margin:12px 0}
+.director-world-inspector .film-actions{margin:6px 0 15px}
+.director-world-inspector .film-secondary{min-height:34px;padding:7px 10px}
+.director-world-axes{margin:10px 0;border:1px solid #595360;border-radius:9px;display:flex;gap:8px;flex-wrap:wrap;padding:10px}
+.director-world-axes legend{font-size:12px;color:#e3c7ac;padding:0 5px}
+.director-world-axes label{min-width:55px;display:flex;flex:1;flex-direction:column;gap:5px;font-size:11px;color:#bfc5ca}
+.director-world-axes input{width:100%;min-width:0;padding:8px}
+.director-world-footer{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin-top:16px}
+.director-world-history{background:#292d38;padding:16px;border-radius:10px;margin-top:13px}
+.director-world-history-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 0;border-top:1px solid #4a4c55;font-size:12px}
+.director-world-warning,.director-world-error,.director-world-notice{border-radius:9px;padding:13px;margin:12px 0;font-size:13px;line-height:1.6}
+.director-world-warning{border:1px solid #b38d61;background:#44392d}
+.director-world-error{border:1px solid #9d6471;background:#452d34}
+.director-world-notice{border:1px solid #558263;background:#283b30}
+.director-world-context{z-index:12;position:absolute;right:22px;top:140px;display:flex;flex-direction:column;gap:5px;padding:13px;background:#171a22;border:1px solid #b2906b;box-shadow:0 12px 30px #0009;border-radius:10px;min-width:165px}
+.director-world-context strong{font-size:13px;margin-bottom:4px}
+.director-world-context button{border:0;background:#343741;text-align:left;color:#f2e7d8;font-size:12px;padding:9px;border-radius:5px}
+.director-world-context button:hover{background:#55463c}
+.director-world select:focus-visible,.director-world input:focus-visible,.director-world canvas:focus-visible,
+.director-world button:focus-visible,.director-world textarea:focus-visible{outline:3px solid #ffcf8d;outline-offset:2px}
+@media(max-width:1080px){.director-world-layout{grid-template-columns:1fr}.director-world-object-list{max-height:180px}}
+@media(max-width:540px){.director-world{padding:10px}.director-world-axes{gap:4px;padding:7px}.director-world-inspector,.director-world-list{padding:10px}.director-stage-start{padding:15px}}
+@media(prefers-reduced-motion:reduce){.director-world *{transition:none!important;animation:none!important}}
+
+.director-world-ai{margin-top:17px;padding:17px;border-radius:11px;border:1px solid #5a505c;background:#292d37}
+.director-world-ai-heading{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.director-world-ai-heading h5{margin:0 5px 0 0}
+.director-world-ai-heading p{flex:1;min-width:180px;margin:0}
+.director-world-ai-heading .film-hint{flex-basis:100%;min-width:100%;margin:0}
+.director-world-ai-idea{border-top:1px solid #51505c;padding:13px 0 3px;margin-top:14px}
+.director-world-ai-idea strong{display:block;font-size:14px}
+.director-world-ai-idea>span{display:block;color:#dcb993;font-size:11px;margin-top:5px}
+.director-world-ai-idea p{font-size:13px;line-height:1.5}

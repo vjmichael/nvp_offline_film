@@ -1,0 +1,110 @@
+name: NVP SLATE-07 Skeletal Character Geometry and CAM-01 Virtual Lenses
+
+on:
+  push:
+    branches:
+      - nvp/slate07-skinning-live-camera-20261106
+    paths:
+      - "backend/nvp_openusd_skinning.py"
+      - "backend/nvp_openusd_skeleton.py"
+      - "backend/nvp_slate06_geometry.py"
+      - "backend/nvp_camera_workbench.py"
+      - "backend/nvp_openusd_shot_overrides.py"
+      - "backend/nvp_slate_preview_host.py"
+      - "tests/test_nvp_slate07_skinned_camera.py"
+      - "frontend/src/CameraLensWorkbench*"
+      - "frontend/src/SlateBranchTimelinePane*"
+      - "docs/NVP_SLATE07_CAMERA_SKINNING.md"
+      - ".github/workflows/nvp-slate07-camera-skinning.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_openusd_skinning.py"
+      - "backend/nvp_openusd_skeleton.py"
+      - "backend/nvp_slate06_geometry.py"
+      - "backend/nvp_camera_workbench.py"
+      - "backend/nvp_openusd_shot_overrides.py"
+      - "backend/nvp_slate_preview_host.py"
+      - "tests/test_nvp_slate07_skinned_camera.py"
+      - "frontend/src/CameraLensWorkbench*"
+      - "frontend/src/SlateBranchTimelinePane*"
+      - "docs/NVP_SLATE07_CAMERA_SKINNING.md"
+      - ".github/workflows/nvp-slate07-camera-skinning.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-slate07-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-acting-and-camera:
+    name: SLATE-07/CAM-01 ${{ matrix.os }} Python ${{ matrix.python }} native
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11","3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual native USD/Skinning runtime
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Compile source and fixed Blender Cycles script
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_openusd_skinning.py backend/nvp_openusd_skeleton.py backend/nvp_slate06_geometry.py backend/nvp_camera_workbench.py backend/nvp_openusd_shot_overrides.py backend/nvp_slate_preview_host.py tests/test_nvp_slate07_skinned_camera.py
+          python -c "from pxr import Usd,UsdSkel,UsdGeom; from backend.nvp_slate06_geometry import BLENDER_SCRIPT; compile(BLENDER_SCRIPT,'trusted-native-blender.py','exec'); print('NATIVE_USD',Usd.GetVersion())"
+      - name: Frozen USD mesh skin binding, animation and pre-Take director optics
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_slate07_skinned_camera.py" -v
+      - name: Earlier USD skel/camera/SHOT and SLATE-06 regression acceptance
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_openusd_native_schemas.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_slate06_geometry_native.py" -v
+
+  real-contained-blender-performance:
+    name: SLATE-07 actual native Blender skinned actor and pre-Take optical PNG
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install real OpenUSD and native Blender
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+          sudo apt-get update -qq
+          # Blender's real Workbench/EGL image engine requires the OS GL
+          # loader; hosted Ubuntu does not always include libEGL.so.1.
+          # Install it rather than skipping native picture verification.
+          sudo apt-get install -y blender libegl1
+          ldconfig -p | grep 'libEGL.so.1'
+          /usr/bin/blender -b --version
+      - name: Real CPU Cycles acting mesh, optical aperture and supervised PNG worker
+        shell: bash
+        env:
+          NVP_NATIVE_BLENDER_EXECUTABLE: /usr/bin/blender
+        run: python -m unittest discover -s tests -p "test_nvp_slate07_skinned_camera.py" -v
+
+  real-time-camera-ui:
+    name: CAM-01 React live optical framing and SLATE-07 pose-time scrubbing
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/SlateBranchTimelinePane.test.jsx

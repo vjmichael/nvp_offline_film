@@ -1,0 +1,53 @@
+name: NVP STACK-02C3B1 priority admission
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b1-priority-admission-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c3-resource-governor-progress-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-scheduler:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m compileall -q backend/nvp_resource_ledger.py tests/test_resource_scheduler.py
+      - run: python -m unittest discover -s tests -p test_resource_scheduler.py -v
+      - run: python -m unittest discover -s tests -p test_resource_governor.py -v
+
+  windows-scheduler:
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m compileall -q backend/nvp_resource_ledger.py tests/test_resource_scheduler.py
+      - run: python -m unittest discover -s tests -p test_resource_scheduler.py -v
+      - run: python -m unittest discover -s tests -p test_resource_governor.py -v
+
+  ui-queue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+      - run: npx vitest run src/ResourceActivityPanel.test.jsx
+      - run: npm run build

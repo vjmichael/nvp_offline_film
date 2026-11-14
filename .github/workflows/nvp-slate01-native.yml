@@ -1,0 +1,60 @@
+name: NVP SLATE-01 Parallel Digital Takes and Branch Choices
+
+on:
+  push:
+    branches:
+      - nvp/slate01-branching-takes-20261106
+    paths:
+      - "backend/nvp_digital_slate_branches.py"
+      - "backend/nvp_openusd_shot_overrides.py"
+      - "backend/nvp_openusd_take.py"
+      - "tests/test_nvp_digital_slate_branches_native.py"
+      - "docs/NVP_SLATE01_BRANCHING_TAKES_AND_PARALLEL_TIMELINES.md"
+      - ".github/workflows/nvp-slate01-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_digital_slate_branches.py"
+      - "backend/nvp_openusd_shot_overrides.py"
+      - "backend/nvp_openusd_take.py"
+      - "tests/test_nvp_digital_slate_branches_native.py"
+      - "docs/NVP_SLATE01_BRANCHING_TAKES_AND_PARALLEL_TIMELINES.md"
+      - ".github/workflows/nvp-slate01-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-slate01-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  digital-slate-native:
+    name: SLATE-01 ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Native OpenUSD runtime for actual frozen Take/shot tests
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Compile branch graph and confirm native USD installed
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_digital_slate_branches.py tests/test_nvp_digital_slate_branches_native.py
+          python -c "from pxr import Usd,UsdGeom; print('NATIVE_USD',Usd.GetVersion())"
+      - name: Real FilmIndex frozen Take and multi-angle/wild-slate acceptance
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_digital_slate_branches_native.py" -v
+      - name: Shot-specific OpenUSD revisions and frozen Take regression
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_take_native.py" -v

@@ -1,0 +1,92 @@
+name: NVP DATA-TIME-01 Sparse Timeline and Indexed Decoder A-B
+
+# DATA-AV-01 migration: legacy imported-video/benchmark workflow is
+# manual-only; it must not gate or relaunch native Digital Take A/V.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: data-time01-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  temporal-ledger:
+    name: Event-ledger ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Real SQLite event source and projection compilation
+        run: python -m compileall -q backend/nvp_film_index.py backend/nvp_temporal_ledger.py backend/nvp_temporal_projection.py tests/test_nvp_temporal_ledger.py tests/test_data_time_projection.py
+      - name: Sparse 3-hour film event indexing, restart, integrity and source impact
+        run: python -m unittest discover -s tests -p "test_nvp_temporal_ledger.py" -v
+      - name: Same frozen event data at independent presentation rates
+        run: python -m unittest discover -s tests -p "test_data_time_projection.py" -v
+
+  indexed-video-ab:
+    name: NVP-vs-FFMS2 real A-B ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install FFmpeg and FFMS2 on Linux (benchmark only)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg libffms2-5
+          lib="$(find /usr/lib -name 'libffms2.so.5' -print -quit)"
+          test -n "$lib"
+          echo "NVP_BENCH_FFMS2_LIBRARY=$lib" >> "$GITHUB_ENV"
+
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-ffms2
+
+      - name: Install Windows FFmpeg (FFMS2 remains reference-only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          $lib = 'C:\msys64\mingw64\bin\libffms2-5.dll'
+          if (-not (Test-Path $lib)) { throw 'Actual FFMS2 benchmark DLL missing' }
+          "NVP_BENCH_FFMS2_LIBRARY=$lib" >> $env:GITHUB_ENV
+
+      - name: Verify native versions
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffprobe -version
+          python -c "import os; from tools.benchmarks.ffms2_reference import FFMS2; x=FFMS2(os.environ['NVP_BENCH_FFMS2_LIBRARY']); print('BENCH_FFMS2',hex(x.version),x.library_sha256)"
+
+      - name: Run measured two-order native A-B comparisons
+        shell: bash
+        run: |
+          mkdir -p benchmark-results
+          python -m compileall -q tools/benchmarks backend/nvp_native_frame_index.py backend/nvp_indexed_preview.py
+          python tools/benchmarks/run_index_compare.py --ffms2-library "$NVP_BENCH_FFMS2_LIBRARY" --duration-seconds 45 --output benchmark-results/native-ab.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-temporal-index-ab-${{ matrix.os }}
+          path: benchmark-results/*.json
+          if-no-files-found: warn
+          retention-days: 14

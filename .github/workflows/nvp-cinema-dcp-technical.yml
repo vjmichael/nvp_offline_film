@@ -1,0 +1,62 @@
+name: NVP PRO-02 Cinema DCP Technical Acceptance
+
+# DCP vendor download returns HTTP 403 in GitHub Actions. Keep this as an
+# explicit acceptance gate until a version-and-SHA verified CLI distribution
+# becomes available to CI; do not report a fake green cinema test.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  genuine-dcp-technical-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Retrieve authentic frozen-take and ProRes native film acceptance asset
+        uses: actions/download-artifact@v4
+        with:
+          name: nvp-real-blender-acceptance
+          run-id: 41700029191
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: acceptance_artifacts
+      - name: Install FFmpeg and approved DCP-o-matic CLI test worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg file
+          curl --fail --location --retry 3 --retry-delay 5 --max-time 180 \
+            'https://dcpomatic.com/dl?id=ubuntu-24.04-x86-cli&version=2.18.51' \
+            --output /tmp/nvp-dcpomatic-cli-2.18.51.deb
+          file /tmp/nvp-dcpomatic-cli-2.18.51.deb
+          sha256sum /tmp/nvp-dcpomatic-cli-2.18.51.deb
+          dpkg-deb --info /tmp/nvp-dcpomatic-cli-2.18.51.deb | head -n 35
+          sudo apt-get install -y /tmp/nvp-dcpomatic-cli-2.18.51.deb
+          command -v dcpomatic2_create
+          command -v dcpomatic2_cli
+          command -v dcpomatic2_verify_cli
+          dcpomatic2_create --version
+          dcpomatic2_cli --version
+          dcpomatic2_verify_cli --help | head -n 30 || true
+      - name: Create actual SMPTE 2K technical test DCP from original NVP frozen ProRes take
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.nvp_pro02_dcp_fixture \
+            --db acceptance_artifacts/pipe01b/film.sqlite3 \
+            --out acceptance_artifacts/pro02_dcp
+      - name: Preserve independent DCP technical artifacts and notices
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-pro02-dcp-technical-cinema-test
+          path: acceptance_artifacts/pro02_dcp/
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,500 @@
+name: NVP Python, React, and native Blender acceptance
+
+on:
+  push:
+    branches:
+      - nvp/prod01-acceptance-through-prod04-20261102
+      - nvp/prod05-timed-shots-20261102
+      - nvp/prod06-rigged-motion-20261102
+      - nvp/prod06b-weighted-skin-20261102
+      - nvp/prod06c-external-rigged-glb-20261102
+      - nvp/prod06d-real-character-calibration-20261102
+      - nvp/prod06e1-footplant-preflight-20261102
+      - nvp/prod06e2-leg-identity-20261103
+      - nvp/prod06e2b-foot-lock-20261103
+      - nvp/prod06e2c-sole-region-audit-20261103
+      - nvp/prod06e2c2-plantar-markers-floor-20261103
+      - nvp/prod06e2c3-bounded-mesh-contact-20261103
+      - nvp/prod06e2c3b-anatomical-landmarks-bvh-20261103
+      - nvp/data01-film-lineage-index-20261103
+      - nvp/capture01-immutable-timed-takes-20261103
+      - nvp/pipe01-blender-presentations-20261103
+      - nvp/pipe01b-full-motion-pbr-video-20261103
+      - nvp/pipe01b-professional-mezzanine-prores-20261103
+      - nvp/pro02-cinema-dcp-and-dnxhr-20261103
+      - nvp/cinema01b-jpeg2000-mxf-evidence-20261103
+      - nvp/cinema01c-duration-lineage-replay-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-production-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-regressions:
+    name: NVP Python regression suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+      - name: Compile Python modules
+        run: python -m compileall -q backend tests tools
+      - name: Run complete Python suite (native Blender test skips here)
+        run: PYTHONPATH=. python -m unittest discover -s tests -v
+
+  react-production:
+    name: Vite / React production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install JS dependencies (no lockfile in this branch)
+        run: npm install --no-audit --no-fund
+      - name: Compile production frontend
+        run: npm run build
+
+  blender-native:
+    name: Real Blender 5.2.3 save / reopen / audit / render
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test and headless render dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0 ffmpeg
+          ffmpeg -hide_banner -version | head -n 1
+          ffprobe -hide_banner -version | head -n 1
+      - name: Download and authenticate official Blender release
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="blender-${BLENDER_VERSION}-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 --connect-timeout 30 --max-time 1200 "${BLENDER_BASE}/${name}" -o "${name}"
+          curl --fail --location --retry 4 --retry-delay 5 "${BLENDER_BASE}/blender-${BLENDER_VERSION}.sha256" -o blender.sha256
+          grep "  ${name}$" blender.sha256 | sha256sum --check --status
+          mkdir -p /tmp/nvp-blender
+          tar -xJf "${name}" -C /tmp/nvp-blender --strip-components=1
+          echo "/tmp/nvp-blender" >> "$GITHUB_PATH"
+          /tmp/nvp-blender/blender -b --version | head -n 2
+      - name: Run native Blender regression (must not skip)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p 'test_blender_acceptance.py' -v
+      - name: Produce durable proxy and GLB native acceptance artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p acceptance_artifacts
+          xvfb-run -a python - <<'PY'
+          from pathlib import Path
+          import json
+          import trimesh
+          from backend.nvp_studio import Studio
+          from backend.nvp_production_scene import ProductionScene
+          from backend.nvp_mesh_assets import MeshAssets
+          from backend.nvp_blender_acceptance import run_acceptance, run_meshpack_acceptance
+
+          root = Path('acceptance_artifacts')
+          studio = Studio(root / 'ci_scene.sqlite3')
+          project = studio.create_project('CI native Blender proof', 'repeatable deterministic setup')
+          project_id = project['id']
+          scene = studio.save_screenplay(project_id, 'INT. SET - DAY\n\nA chair rests by a table.\n', 0)
+          scene_id = scene['scenes'][0]['id']
+          production = ProductionScene(studio)
+          chair = production.create_asset(project_id, {
+              'name':'Chair', 'category':'furniture', 'dimensions':[.5,.5,.9],
+              'anchors':{'seat':[0,0,.5]}
+          })
+          plan = production.stage_scene(project_id, scene_id, [8,6,3])
+          plan = production.add_instance(project_id, scene_id, chair['asset_id'],
+                                          'chair_1', plan['plan_revision'])
+          plan = production.solve_scene(project_id, scene_id, plan['plan_revision'])
+          production.approve_scene(project_id, scene_id, plan['plan_revision'])
+          proxy = run_acceptance(production, project_id, scene_id, root / 'proxy')
+          (root / 'proxy_result.json').write_text(json.dumps(proxy,indent=2))
+          assert proxy['status']=='passed_blender', proxy
+          mesh = trimesh.Scene()
+          mesh.add_geometry(trimesh.creation.box(extents=(.5,.5,.9)))
+          MeshAssets(studio).register(project_id, chair['asset_id'],
+                                      mesh.export(file_type='glb'), 'creator_owned')
+          actual = run_meshpack_acceptance(MeshAssets(studio),project_id,scene_id,root/'meshpack')
+          (root / 'meshpack_result.json').write_text(json.dumps(actual,indent=2))
+          assert actual['status']=='passed_blender', actual
+          print('REAL BLENDER ACCEPTANCE PASS:',proxy['checks'],'proxy checks')
+          print('REAL BLENDER GLB ACCEPTANCE PASS:',actual)
+          PY
+      - name: Native PROD05 two-camera animated take acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p test_prod05_blender.py -v
+          xvfb-run -a python -m tools.nvp_prod05_fixture --out acceptance_artifacts/prod05
+      - name: CAPTURE-01 independent frozen take native Blender replay (original visible actor after source edit)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_capture01_fixture --out acceptance_artifacts/capture01
+      - name: PIPE-01A native Blender two-style rendered presentations from same frozen take
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_pipe01_fixture --out acceptance_artifacts/pipe01
+      - name: PIPE-01B full-motion H264 MP4 and physically lit Cycles PBR from frozen take
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_pipe01b_fixture --out acceptance_artifacts/pipe01b
+      - name: Native PROD06 skeletal rig and pose animation acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p test_rig_motion.py -v
+      - name: Native PROD06B weighted skin and neutral-pose calibration
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p test_skinning.py -v
+          xvfb-run -a python -m tools.nvp_prod06b_fixture --out acceptance_artifacts/prod06b
+      - name: Native PROD06C rigged GLB export, import, and bone deformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m unittest discover -s tests -p test_character_native.py -v
+          xvfb-run -a python -m tools.nvp_prod06c_fixture --out acceptance_artifacts/prod06c
+      - name: Native PROD06D licensed Cesium Man external rest-frame retarget audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 4 --retry-delay 4 --max-time 120 -o cesiumman_external.glb "$(python -c 'from tools.nvp_prod06d_fixture import UPSTREAM_URL; print(UPSTREAM_URL)')"
+          python - <<'PY'
+          from pathlib import Path
+          from tools.nvp_prod06d_fixture import verify_upstream
+          print(verify_upstream(Path('cesiumman_external.glb').read_bytes()))
+          PY
+          export NVP_PROD06D_CESIUMMAN="$PWD/cesiumman_external.glb"
+          xvfb-run -a python -m unittest discover -s tests -p test_external_retarget.py -v
+          xvfb-run -a python -m tools.nvp_prod06d_fixture --out acceptance_artifacts/prod06d --external-glb "$NVP_PROD06D_CESIUMMAN"
+      - name: Native PROD06E2A bilateral anatomical identities and rest-hierarchy verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2_fixture --out acceptance_artifacts/prod06e2 --external-glb "$PWD/cesiumman_external.glb"
+      - name: Native PROD06E2B real character ankle-lock animation and independently reopened audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2b_fixture --out acceptance_artifacts/prod06e2b --external-glb "$PWD/cesiumman_external.glb"
+      - name: Native PROD06E2C licensed human skinned sole-candidate region observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2c_fixture --out acceptance_artifacts/prod06e2c --external-glb "$PWD/cesiumman_external.glb"
+      - name: Native PROD06E2C2 explicit plantar surface markers and physical floor audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2c2_fixture --out acceptance_artifacts/prod06e2c2 --external-glb "$PWD/cesiumman_external.glb"
+      - name: Native PROD06E2C3 bounded mesh-to-floor correction and full-take independent audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2c3_fixture --out acceptance_artifacts/prod06e2c3 --external-glb "$PWD/cesiumman_external.glb"
+      - name: Native PROD06E2C3B imported-foot geometry, triangle BVH and sloped surface support
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_prod06e2c3b_fixture --out acceptance_artifacts/prod06e2c3b --external-glb "$PWD/cesiumman_external.glb"
+      - name: Preserve audit, blend files and preview even when job fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-real-blender-acceptance
+          path: acceptance_artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+
+  windows-python-react:
+    name: Windows Python and React acceptance
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Python test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+      - name: Run full Windows Python regressions (Blender acceptance separately)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m compileall -q backend tests tools
+          python -m unittest discover -s tests -v
+      - name: Build NVP React UI on Windows
+        shell: pwsh
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+  windows-blender-native:
+    name: Windows Blender 5.2.3 save / reopen / geometry audit (GPU render separate)
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+      NVP_BLENDER_AUDIT_ONLY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install fixture and acceptance dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+      - name: Download and verify official Windows Blender 5.2.3
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = "blender-$env:BLENDER_VERSION-windows-x64.zip"
+          curl.exe --fail --location --retry 4 --retry-delay 5 "$env:BLENDER_BASE/$archive" -o $archive
+          if ($LASTEXITCODE -ne 0) { throw 'Blender download failed' }
+          curl.exe --fail --location --retry 4 --retry-delay 5 "$env:BLENDER_BASE/blender-$env:BLENDER_VERSION.sha256" -o blender.sha256
+          if ($LASTEXITCODE -ne 0) { throw 'Blender checksum download failed' }
+          $entry = Get-Content blender.sha256 | Where-Object { $_.Trim().EndsWith($archive) } | Select-Object -First 1
+          if (-not $entry) { throw 'Official SHA256 list lacks requested Windows archive' }
+          $expected = ($entry.Trim() -split '\s+')[0].ToLowerInvariant()
+          $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Blender SHA256 mismatch" }
+          Expand-Archive -Path $archive -DestinationPath blender-runtime
+          $binary = Get-ChildItem blender-runtime -Recurse -Filter blender.exe -File | Select-Object -First 1
+          if (-not $binary) { throw 'Blender executable not found after extraction' }
+          Add-Content -Path $env:GITHUB_PATH -Value $binary.Directory.FullName
+          & $binary.FullName -b --version
+          if ($LASTEXITCODE -ne 0) { throw 'Blender version probe failed' }
+      - name: Windows native Blender save/reopen and geometry audit (no WGL render)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m unittest discover -s tests -p test_blender_acceptance.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native Blender acceptance failed' }
+      - name: Native Windows PROD05 camera-cut and actor-track audit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m unittest discover -s tests -p test_prod05_blender.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD05 Windows animation audit failed' }
+          python -m tools.nvp_prod05_fixture --out prod05_windows_acceptance --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD05 Windows fixture audit failed' }
+      - name: CAPTURE-01 independent frozen take native Windows Blender audit (no WGL render)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_capture01_fixture --out capture01_windows_acceptance --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-CAPTURE01 Windows frozen take audit failed' }
+      - name: Native PROD06 Windows armature and bone-keyframe audit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          python -m unittest discover -s tests -p test_rig_motion.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06 Windows rig audit failed' }
+      - name: Native PROD06B Windows weighted skin and rest-pose audit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          $env:NVP_BLENDER_AUDIT_ONLY = '1'
+          python -m unittest discover -s tests -p test_skinning.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06B Windows weighted skin audit failed' }
+          python -m tools.nvp_prod06b_fixture --out prod06b_windows_acceptance --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06B Windows fixture audit failed' }
+      - name: Native PROD06C Windows GLB reimport and deformation audit
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = '.'
+          $env:NVP_BLENDER_AUDIT_ONLY = '1'
+          python -m unittest discover -s tests -p test_character_native.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06C Windows GLB audit failed' }
+          python -m tools.nvp_prod06c_fixture --out prod06c_windows_acceptance --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'NVP-PROD06C Windows fixture audit failed' }
+      - name: Native PROD06D Windows external human rest-frame retarget geometry
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = python -c "from tools.nvp_prod06d_fixture import UPSTREAM_URL;print(UPSTREAM_URL)"
+          curl.exe --fail --location --retry 4 --retry-delay 4 --max-time 120 "$url" -o cesiumman_external.glb
+          if ($LASTEXITCODE -ne 0) { throw 'Khronos Cesium Man download failed' }
+          python -c "from pathlib import Path;from tools.nvp_prod06d_fixture import verify_upstream;print(verify_upstream(Path('cesiumman_external.glb').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { throw 'Cesium Man Git blob hash mismatch' }
+          $env:PYTHONPATH = '.'
+          $env:NVP_BLENDER_AUDIT_ONLY = '1'
+          $env:NVP_PROD06D_CESIUMMAN = (Resolve-Path cesiumman_external.glb).Path
+          python -m unittest discover -s tests -p test_external_retarget.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'External human rig test failed' }
+          python -m tools.nvp_prod06d_fixture --out prod06d_windows_acceptance --external-glb $env:NVP_PROD06D_CESIUMMAN --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Blender retarget audit failed' }
+      - name: Native PROD06E2A Windows bilateral anatomical identity audit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2_fixture --out prod06e2_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Blender anatomical mapping audit failed' }
+      - name: Native PROD06E2B Windows actual ankle-lock and independent geometry verification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2b_fixture --out prod06e2b_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows real-character ankle-lock audit failed' }
+      - name: Native PROD06E2C Windows real deformed foot-region survey
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2c_fixture --out prod06e2c_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native sole region observation failed' }
+      - name: Native PROD06E2C2 Windows real floor and skinned plantar marker audit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2c2_fixture --out prod06e2c2_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows plantar floor marker audit failed' }
+      - name: Native PROD06E2C3 Windows real toe-vertex floor correction and full-take audit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2c3_fixture --out prod06e2c3_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native bounded contact IK/audit failed' }
+      - name: Native PROD06E2C3B Windows real-character triangle BVH and slope geometry
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = '.'
+          python -m tools.nvp_prod06e2c3b_fixture --out prod06e2c3b_windows_acceptance --external-glb (Resolve-Path cesiumman_external.glb).Path --audit-only
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native foot BVH surface evidence failed' }
+      - name: Preserve Windows PROD06E2C3B surface and anatomy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2c3b-windows-foot-bvh
+          path: prod06e2c3b_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD06E2C3 correction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2c3-windows-contact
+          path: prod06e2c3_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD06E2C2 marker and floor evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2c2-windows-plantar
+          path: prod06e2c2_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD06E2C sole candidate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2c-windows-sole-candidates
+          path: prod06e2c_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD06E2B native ankle-lock evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2b-windows-footlock
+          path: prod06e2b_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD06E2A leg identity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06e2-windows-anatomy
+          path: prod06e2_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD06D external humanoid evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06d-windows-calibration
+          path: prod06d_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD06C native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06c-windows-import-audit
+          path: prod06c_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD06B native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod06b-windows-skin-audit
+          path: prod06b_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve CAPTURE-01 Windows frozen take evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-capture01-windows-native-geometry
+          path: capture01_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve Windows PROD05 native audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-prod05-windows-native-geometry
+          path: prod05_windows_acceptance/
+          if-no-files-found: warn
+          retention-days: 7

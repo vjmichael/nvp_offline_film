@@ -1,0 +1,106 @@
+name: NVP AUDIO-01K3 real Windows cinema encode
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_audio01k3_*'
+      - 'tools/nvp_audio01k3_*'
+      - 'tests/test_audio01k3_*'
+      - '.github/workflows/nvp-audio01k3-windows-real.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-cinema-windows:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native runtime preconditions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install "pywin32>=306"
+          choco install ffmpeg -y --no-progress
+          choco install libxml2 -y --no-progress
+          $bin = Join-Path $env:ChocolateyInstall 'bin'
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Download exact upstream cinema packages and reject noninstallers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $toolRoot = Join-Path $env:RUNNER_TEMP 'nvp-cinema'
+          New-Item -ItemType Directory -Force $toolRoot | Out-Null
+          $installer = Join-Path $toolRoot 'dcpomatic-2.18.51-setup.exe'
+          $uri = 'https://dcpomatic.com/dl?id=windows-64&paid=0&version=2.18.51'
+          Invoke-WebRequest -Uri $uri -MaximumRedirection 12 -OutFile $installer
+          $stream = [System.IO.File]::OpenRead($installer)
+          try {
+            if ($stream.Length -lt 1000000 -or $stream.ReadByte() -ne 77 -or $stream.ReadByte() -ne 90) {
+              throw 'Official DCP-o-matic download was not a Windows PE installer'
+            }
+          } finally { $stream.Dispose() }
+          Get-FileHash $installer -Algorithm SHA256 | Format-List
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid') {
+            throw "Official cinema executable has no valid Windows Authenticode signature: $($signature.Status)"
+          }
+          Write-Host "Verified official installer signer: $($signature.SignerCertificate.Subject)"
+          $process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "DCP-o-matic NSIS installer exited $($process.ExitCode)" }
+          $create = Get-ChildItem -Path @('C:\Program Files','C:\Program Files (x86)') -Filter 'dcpomatic2_create.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $create) { throw 'Official Windows DCP-o-matic CLI not installed' }
+          $create.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append
+          $zip = Join-Path $toolRoot 'dcpdoctor-v1.3.2.zip'
+          Invoke-WebRequest -Uri 'https://github.com/PostPerfection/dcpdoctor/releases/download/v1.3.2/dcpdoctor-windows-x86_64.zip' -OutFile $zip
+          $extracted = Join-Path $toolRoot 'doctor'
+          Expand-Archive -Path $zip -DestinationPath $extracted -Force
+          $doctors = @(Get-ChildItem -Path $extracted -Filter 'dcpdoctor.exe' -File -Recurse)
+          if ($doctors.Count -ne 1) { throw "Expected exactly one real Windows DcpDoctor executable, found $($doctors.Count)" }
+          $doctor = $doctors[0]
+          if (-not $doctor) { throw 'Real DcpDoctor Windows executable absent from pinned release' }
+          $doctor.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append
+          Get-FileHash $doctor.FullName -Algorithm SHA256 | Format-List
+      - name: Require actual Windows cinema tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($tool in @('ffmpeg.exe','ffprobe.exe','dcpomatic2_create.exe','dcpomatic2_cli.exe','dcpdoctor.exe','xmllint.exe')) {
+            $result = Get-Command $tool -ErrorAction SilentlyContinue
+            if (-not $result) { throw "Missing real Windows cinema prerequisite: $tool" }
+            Write-Host "$tool => $($result.Source)"
+          }
+          $createVersion = (dcpomatic2_create --version | Out-String)
+          $cliVersion = (dcpomatic2_cli --version | Out-String)
+          $doctorVersion = (dcpdoctor --version | Out-String)
+          if ($createVersion -notmatch '2\.18\.51' -or $cliVersion -notmatch '2\.18\.51') {
+            throw 'Installed Windows DCP-o-matic version differs from verified release'
+          }
+          if ($doctorVersion -notmatch '1\.3\.2') {
+            throw 'Installed Windows DcpDoctor differs from verified release'
+          }
+          Write-Host $createVersion
+          Write-Host $cliVersion
+          Write-Host $doctorVersion
+      - name: Execute real SMPTE 2K DCP and strict independent QC
+        shell: pwsh
+        env:
+          NVP_AUDIO01K3_ARTIFACT_DIR: ${{ runner.temp }}\nvp_dcp_candidate
+        run: |
+          python -m compileall -q backend/nvp_audio01k3_dcp.py backend/nvp_audio01k3_native_host.py tools/nvp_audio01k3_dcp_worker.py tests/test_audio01k3_dcp_contract.py tests/test_audio01k3_native_dcp.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_audio01k3_dcp_contract.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_audio01k3_native_dcp.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve real DCP assets and independent cinema QC
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-audio01k3-real-windows-${{ github.run_id }}
+          path: ${{ runner.temp }}\nvp_dcp_candidate/
+          retention-days: 3
+          if-no-files-found: warn

@@ -1,0 +1,122 @@
+name: NVP E2E-01E Installed Windows Desktop Alpha
+# DATA-AV-01 migration: legacy imported-video/benchmark workflow is
+# manual-only; it must not gate or relaunch native Digital Take A/V.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-installer:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify NVP packaging guard rejects fake Windows payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v
+      - name: Build offline React application
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          if (-not (Test-Path frontend/dist/index.html)) { throw 'No bundled UI' }
+          if (-not (Test-Path frontend/dist/assets -PathType Container)) { throw 'Missing offline assets' }
+      - name: Install native desktop and packaging dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # SLATE-08B's bundled native scene readers must have real OpenUSD.
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile actual desktop entry and build one-directory native EXE
+        shell: pwsh
+        run: |
+          python -m compileall -q tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-submodules backend tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
+          & 'dist/NVP/NVP.exe' --smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
+      - name: Create NSIS single-click installer
+        shell: pwsh
+        run: |
+          $nsis = Join-Path $env:ProgramFiles 'NSIS/makensis.exe'
+          if (-not (Test-Path $nsis)) {
+            $nsis = (Get-Command makensis -ErrorAction Stop).Source
+          }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS failed' }
+          if (-not (Test-Path 'dist/NVP-Alpha-Setup.exe')) { throw 'Missing NSIS installer' }
+      - name: Silent install and execute installed native alpha
+        shell: pwsh
+        run: |
+          $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          $process=Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw 'NSIS silent install failed' }
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
+          $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
+          $installedHash=(Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
+          if ($installedHash -ne $builtHash) { throw 'Installed NVP.exe does not match verified build payload' }
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
+          $first=Start-Process -FilePath $installed -ArgumentList '--smoke-create' -PassThru -Wait
+          if ($first.ExitCode -ne 0) { throw 'Installed first launch/project creation failed' }
+          $second=Start-Process -FilePath $installed -ArgumentList '--smoke-reopen' -PassThru -Wait
+          if ($second.ExitCode -ne 0) { throw 'Second fresh native app launch lost SQLite film project' }
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
+            throw 'No persistent original film project database'
+          }
+      - name: Require actual visible Windows WebView2 desktop page load
+        shell: pwsh
+        run: |
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru -Wait
+          if ($window.ExitCode -ne 0) {
+            throw 'Real desktop WebView2 window did not load; headless smoke alone cannot accept NVP alpha'
+          }
+      - name: Uninstall without deleting creator project data
+        shell: pwsh
+        run: |
+          $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
+          if (-not (Test-Path $uninstaller)) { throw 'Uninstaller missing' }
+          $owned=$env:NVP_HOME
+          if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) {
+            throw 'Missing creator SQLite film database before uninstall'
+          }
+          $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+          if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
+          Start-Sleep -Seconds 2
+          if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
+          if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-alpha-windows-bundle-audit
+          path: ${{ runner.temp }}/nvp-alpha-bundle-audit.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-alpha-windows-nsis-candidate
+          path: dist/NVP-Alpha-Setup.exe
+          if-no-files-found: warn
+          retention-days: 7

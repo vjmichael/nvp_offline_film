@@ -1,0 +1,53 @@
+name: NVP AUDIO-01H bounded automation unit gate
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  automation-contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python-version: ['3.11', '3.13']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install FFmpeg on Windows when missing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          "$env:ChocolateyInstall\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Install FFmpeg on Linux when missing
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - name: Install Windows Job Object bindings
+        if: runner.os == 'Windows'
+        run: python -m pip install "pywin32>=306"
+      - name: Verify native FFmpeg is available
+        run: ffmpeg -version
+      - name: Verify automation and finishing contracts
+        run: |
+          python -m compileall -q backend/nvp_audio01h_automation.py backend/nvp_audio01h_loudness.py backend/nvp_audio01h_stem_revision.py backend/nvp_audio01h_mix_decision.py backend/nvp_audio01h_native_host.py tools/nvp_audio01h_native_worker.py tools/nvp_audio01h_measure_worker.py tests/test_audio01h_native_e2e.py tests/test_audio01h_native_crash_matrix.py tests/test_audio01h_creator_crash_matrix.py tests/test_audio01h_worker_crash_matrix.py tests/test_audio01h_fault_coverage.py backend/nvp_audio01h_fault_matrix.py tests/test_audio01h_automation.py tests/test_audio01h_loudness.py tests/test_audio01h_finishing_contract.py
+          python -m unittest discover -s tests -p test_audio01h_automation.py -v
+          python -m unittest discover -s tests -p test_audio01h_loudness.py -v
+          python -m unittest discover -s tests -p test_audio01h_finishing_contract.py -v
+          python -m unittest discover -s tests -p test_audio01h_native_e2e.py -v
+          python -m unittest discover -s tests -p test_audio01h_native_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01h_creator_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01h_worker_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01h_fault_coverage.py -v

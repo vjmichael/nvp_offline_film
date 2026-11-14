@@ -1,0 +1,103 @@
+name: NVP P1-F Full-Body Rest/Foot and Actor Dialogue Native Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_p1f_full_body_retarget.py'
+      - 'backend/nvp_worker_containment.py'
+      - 'backend/nvp_g03_windows_appcontainer.py'
+      - 'tests/test_nvp_conv03_g03_appcontainer_release_native.py'
+      - 'backend/nvp_p1f_bone_axis_motion.py'
+      - 'backend/nvp_p1f_production_scene_performance.py'
+      - 'tests/test_nvp_p1f_production_scene_performance_native.py'
+      - 'tests/test_nvp_p1f_bone_axis_motion_native.py'
+      - 'backend/nvp_p1f_production_character_assets.py'
+      - 'backend/nvp_p1f_actor_dialogue_evidence.py'
+      - 'tests/test_nvp_p1f_full_body_retarget_native.py'
+      - 'tests/test_nvp_p1f_actor_dialogue_evidence_native.py'
+      - '.github/workflows/nvp-p1f-fullbody-dialogue-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-p1f-body-dialogue-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  original-source-native:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual OpenUSD and reviewed project dependency set
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Preserve original no-FFmpeg contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/nvp_no_ffmpeg_contract.py
+      - name: Original rest-axis, terrain contact and voice-to-face source clocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_p1f_full_body_retarget.py backend/nvp_p1f_bone_axis_motion.py backend/nvp_p1f_actor_dialogue_evidence.py backend/nvp_p1f_production_scene_performance.py tests/test_nvp_p1f_full_body_retarget_native.py tests/test_nvp_p1f_bone_axis_motion_native.py tests/test_nvp_p1f_actor_dialogue_evidence_native.py tests/test_nvp_p1f_production_scene_performance_native.py
+          python -m unittest discover -s tests -p 'test_nvp_p1f_full_body_retarget_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_bone_axis_motion_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_actor_dialogue_evidence_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_production_scene_performance_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_production_character_assets_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_imported_actor_native.py' -v
+          python -m compileall -q backend/nvp_worker_containment.py backend/nvp_g03_windows_appcontainer.py tests/test_nvp_conv03_g03_appcontainer_release_native.py
+          python -m unittest discover -s tests -p 'test_nvp_conv03_g03_appcontainer_release_native.py' -v
+
+  actual-original-two-shot-blender-public:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install original OpenUSD and native Windows Job dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { throw 'Source OpenUSD install failed' }
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Original foundation install failed' }
+          python -m pip install pywin32
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Win Job API unavailable' }
+      - name: Provision actual Blender for public synthetic only
+        shell: pwsh
+        run: |
+          choco install blender --no-progress -y --limit-output
+          if ($LASTEXITCODE -ne 0) { throw 'Blender provisioning failed' }
+          $bins = Get-ChildItem 'C:\Program Files\Blender Foundation' -Filter blender.exe -File -Recurse -ErrorAction SilentlyContinue
+          if (-not $bins) { throw 'No actual Blender installed' }
+          $bin = $bins | Sort-Object FullName -Descending | Select-Object -First 1
+          "NVP_TEST_BLENDER=$($bin.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_PUBLIC_SYNTHETIC_CI=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Preserve genuine Blender-exported GLB ActorID source and original two-shot Cycles/PCM
+        shell: pwsh
+        run: |
+          python tools/nvp_no_ffmpeg_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Original no-FFmpeg source audit failed' }
+          python -m unittest discover -s tests -p 'test_nvp_p1f_production_character_real_glb_native.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Actual native Blender GLB source bridge failed' }
+          python -m unittest discover -s tests -p 'test_nvp_p1f_shot_material_real_cycles_win.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Actual original-source two-shot material/actor Cycles PNG and PCM failed' }

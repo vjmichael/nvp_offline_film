@@ -1,0 +1,105 @@
+name: NVP SLATE-05 OpenUSD On-Demand Proxy Preview and Disk Cache
+
+on:
+  push:
+    branches:
+      - nvp/slate05-demand-preview-cache-20261106
+    paths:
+      - "backend/nvp_slate_proxy_recipe.py"
+      - "backend/nvp_slate_preview_cache.py"
+      - "backend/nvp_slate_preview_host.py"
+      - "tests/test_nvp_slate05_preview_native.py"
+      - "frontend/src/SlateBranchTimelinePane*"
+      - "docs/NVP_SLATE05_ON_DEMAND_VISUAL_PREVIEW.md"
+      - ".github/workflows/nvp-slate05-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_slate_proxy_recipe.py"
+      - "backend/nvp_slate_preview_cache.py"
+      - "backend/nvp_slate_preview_host.py"
+      - "tests/test_nvp_slate05_preview_native.py"
+      - "frontend/src/SlateBranchTimelinePane*"
+      - "docs/NVP_SLATE05_ON_DEMAND_VISUAL_PREVIEW.md"
+      - ".github/workflows/nvp-slate05-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-slate05-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview-source-data:
+    name: SLATE-05 source/worker/cache ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install real native OpenUSD runtime
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Validate native proxy and source authority modules compile
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_slate_proxy_recipe.py backend/nvp_slate_preview_host.py backend/nvp_slate_preview_cache.py tests/test_nvp_slate05_preview_native.py
+          python -c "from pxr import Usd; print('REAL_USD_VERSION',Usd.GetVersion())"
+      - name: Native source-bound proxy recipe and crash-safe disk cache
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_slate05_preview_native.py" -v
+      - name: Previous immutable Take, shot and thin timeline regressions
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_digital_slate_branches_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
+
+  actual-contained-blender:
+    name: SLATE-05 Linux real Blender PNG with native supervisor receipt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pinned OpenUSD wheel and real OS Blender
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+          sudo apt-get update -qq
+          # Blender's real Workbench/EGL image engine requires the OS GL
+          # loader; hosted Ubuntu does not always include libEGL.so.1.
+          # Install it rather than skipping native picture verification.
+          sudo apt-get install -y blender libegl1
+          ldconfig -p | grep 'libEGL.so.1'
+          /usr/bin/blender -b --version
+      - name: Execute real contained Blender blocking preview through approved native dispatch
+        shell: bash
+        env:
+          NVP_NATIVE_BLENDER_EXECUTABLE: /usr/bin/blender
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_slate05_preview_native.py" -v
+
+  preview-pane-ui:
+    name: SLATE-05 React verified-preview status/segment scope
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install UI dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build NVP source editor
+        run: npm run build
+      - name: Test preview-queue versus verified-image and selected-edit scope
+        run: npm run test:ui -- src/SlateBranchTimelinePane.test.jsx

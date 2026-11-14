@@ -1,0 +1,32 @@
+.ra-panel{border:1px solid #494351;background:#242431;border-radius:12px;margin-top:18px;min-width:0;color:#ede6e3}
+.ra-toggle{width:100%;display:flex;align-items:center;gap:9px;justify-content:space-between;background:none;border:0;color:inherit;padding:12px;letter-spacing:0;text-align:left;min-width:0}
+.ra-summary{display:flex;flex:1;flex-direction:column;gap:4px;font-size:12px;min-width:0}
+.ra-summary small{font-size:11px;color:#b1b2bf;line-height:1.4}
+.ra-led{color:#89d6aa;font-size:13px}
+.ra-details{max-height:520px;overflow-y:auto;padding:0 12px 15px;min-width:0}
+.ra-desc,.ra-disclaimer,.ra-metric p,.ra-task p,.ra-task small{font-size:11px;line-height:1.5;color:#b8b2bf}
+.ra-between{display:flex;gap:8px;align-items:baseline;justify-content:space-between;font-size:12px;line-height:1.4;flex-wrap:wrap}
+.ra-between span{font-variant-numeric:tabular-nums;color:#cabbb5;font-size:11px}
+.ra-metric{margin:14px 0 18px;font-size:12px}
+.ra-metric progress,.ra-task progress{display:block;appearance:none;-webkit-appearance:none;width:100%;height:10px;border:0;border-radius:8px;background:#33343f;overflow:hidden;margin:7px 0 6px}
+.ra-panel progress::-webkit-progress-bar{background:#33343f;border-radius:8px}
+.ra-panel progress::-webkit-progress-value{background:#84b9aa;border-radius:8px}
+.ra-panel progress::-moz-progress-bar{background:#84b9aa;border-radius:8px}
+.ra-unknown{height:10px;margin-top:8px;background:repeating-linear-gradient(90deg,#42414a 0px,#42414a 8px,#31323b 8px,#31323b 16px)}
+.ra-section{display:flex;align-items:baseline;justify-content:space-between;gap:8px;border-top:1px solid #4a4550;padding-top:14px;font-size:12px}
+.ra-section span{font-size:11px;color:#b8b2bf}
+.ra-task{border:1px solid #484553;background:#2a2934;border-radius:10px;padding:11px;margin:10px 0;overflow-wrap:anywhere;min-width:0}
+.ra-task .ra-phase{color:#e8c59e;margin:6px 0}
+.ra-task small{display:block;margin-top:4px}
+.ra-task.ra-queued{border-color:#897153}.ra-task.ra-failed,.ra-task.ra-interrupted{border-color:#a36b70}
+.ra-task .ra-wait{color:#edc78b}
+.ra-history{font-size:11px;color:#c6bbc2;margin:12px 0}.ra-history summary{cursor:pointer}
+.ra-disclaimer{margin:18px 0 0}
+@media(max-width:950px){.ra-details{max-height:400px}}
+
+.ra-reservations{background:#2e323c;border:1px solid #48535a;border-radius:8px;padding:10px;font-size:11px;color:#b6d3cb;margin:10px 0 15px}
+.ra-task progress:indeterminate{background:linear-gradient(90deg,#343743 0%,#568777 45%,#343743 100%);background-size:200% 100%;animation:ra-activity 1.8s linear infinite}
+@keyframes ra-activity{0%{background-position:0 0}100%{background-position:200% 0}}
+@media(prefers-reduced-motion:reduce){.ra-task progress:indeterminate{animation:none;background:#568777}}
+
+.ra-task.ra-stale_unverified{border-color:#ba8860;background:#3a3032}

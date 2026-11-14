@@ -1,0 +1,437 @@
+"""P1-F trusted host: original 3D/USD -> supervised Cycles PNG + actor PCM.
+
+This is ONE exact picture instant and its original-source 1/24s stereo audio,
+not a long-film export. No Blender executable, script, output or source path
+comes from an untrusted model. Production approval and kernel custody remain
+the responsibility of the trusted host/OS; failure never publishes a film.
+"""
+from __future__ import annotations
+
+import base64
+from hashlib import sha256
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import struct
+import tempfile
+import wave
+
+from backend.nvp_blender_worker import (
+    BlenderOperation, BlenderWorkerSupervisor, sha_file)
+from backend.nvp_film_index import FilmIndex, _id, _require_pid
+from backend.nvp_openusd_scene import OpenUSDSceneBridge
+from backend.nvp_p1f_cycles_source_admission import admit_original_frame
+from backend.nvp_p1f_p2_reel_plan import (
+    P1FReelPlan, SAMPLES_PER_FRAME)
+from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+
+FORMAT="nvp.p1f.supervised_original_actor_frame.v1"
+RECEIPT="nvp.p1f.independent_picture_audio_receipt.v1"
+SHAPES=("jawOpen","lipClose","eyeBlink","browRaise")
+MAX_USDA=8*1024*1024
+WORKER=Path(__file__).resolve().parents[1]/"tools/nvp_p1f_cycles_actor_worker.py"
+
+
+def _canonical(v):
+    return json.dumps(v,sort_keys=True,separators=(",",":"),
+                      ensure_ascii=True,allow_nan=False).encode("ascii")
+
+
+def _add_file(path,data):
+    if type(data) is not bytes or path.exists() or path.is_symlink():
+        raise RuntimeError("Refuse preexisting/altered supervised source file")
+    with path.open("xb") as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _wav_pcm(pcm):
+    if type(pcm) is not bytes or len(pcm)!=SAMPLES_PER_FRAME*4:
+        raise RuntimeError("Original source audio does not match one 24fps interval")
+    out=io.BytesIO()
+    with wave.open(out,"wb") as f:
+        f.setnchannels(2)
+        f.setsampwidth(2)
+        f.setframerate(48000)
+        f.writeframes(pcm)
+    return out.getvalue()
+
+
+class P1FOriginalPictureSound:
+    def __init__(self,index:FilmIndex,supervisor:BlenderWorkerSupervisor,
+                 *,approve_render, verify_isolated_worker):
+        if (not isinstance(index,FilmIndex) or
+                not isinstance(supervisor,BlenderWorkerSupervisor) or
+                not callable(approve_render) or
+                not callable(verify_isolated_worker)):
+            raise TypeError("Native FilmIndex, OS-supervised Blender and creator approval required")
+        if not WORKER.is_file() or WORKER.is_symlink():
+            raise RuntimeError("Reviewed bundled Cycles script is unavailable")
+        self.index=index
+        self.supervisor=supervisor
+        self.approve=approve_render
+        self.verify_isolated_worker=verify_isolated_worker
+        self.plan=P1FReelPlan(index)
+
+    def _original(self,pid,plan_id,reel,frame):
+        admission=admit_original_frame(self.index,pid,plan_id,reel,frame)
+        if len(admission["actor_geometry"])!=1:
+            raise RuntimeError("Single P1-F sample frame requires one verified imported actor")
+        path=next(iter(admission["actor_geometry"]))
+        record=self.index.read_revision(pid,admission["take_id"],1)
+        src=record["data"]
+        scene,stage=OpenUSDSceneBridge(self.index).open(
+            pid,src["scene_id"],src["scene_revision"])
+        from pxr import Usd,UsdSkel
+        prim=stage.GetPrimAtPath(path+"/Animation")
+        if not prim or not prim.IsA(UsdSkel.Animation):
+            raise RuntimeError("Cannot evaluate original actor facial source animation")
+        animation=UsdSkel.Animation(prim)
+        names=tuple(str(x) for x in animation.GetBlendShapesAttr().Get() or [])
+        if names!=SHAPES:
+            raise RuntimeError("Source facial controls changed after approved Take")
+        vals=animation.GetBlendShapeWeightsAttr().Get(
+            Usd.TimeCode(float(admission["source_tick"])))
+        if vals is None or len(vals)!=len(SHAPES):
+            raise RuntimeError("Original facial performance cannot be sampled")
+        facial=[float(v) for v in vals]
+        actor=stage.GetPrimAtPath(path)
+        actor_id=actor.GetAttribute("nvp:actorID").Get()
+        if type(actor_id) is not str or not actor_id.startswith("ACT_"):
+            raise RuntimeError("Composed original actor lost its authoritative ActorID")
+        flattened=stage.Flatten().ExportToString().encode("utf8")
+        if (not 100<=len(flattened)<=MAX_USDA or
+                b"@" in flattened or
+                not flattened.lstrip().startswith(b"#usda 1.0")):
+            raise RuntimeError("Original composed shot cannot be flattened without external assets")
+        return admission,path,actor_id,facial,flattened
+
+    def render_frame(self,pid,plan_id,reel_index,frame_offset,job_id, *,
+                     creator_event,width=320,height=180,samples=12,
+                     reviewed_look_id=None):
+        _require_pid(pid)
+        _id(plan_id,"original film source reel")
+        _id(job_id,"non-replayable Blender job ID")
+        if (type(width) is not int or type(height) is not int or
+                not 128<=width<=1920 or not 72<=height<=1080 or
+                type(samples) is not int or not 4<=samples<=128):
+            raise ValueError("Invalid bounded genuine Cycles output contract")
+        original,path,actor_id,facial,usda=self._original(
+            pid,plan_id,reel_index,frame_offset)
+        reel=self.plan.read(pid,plan_id)
+        source=self.plan.picture_instant(pid,plan_id,reel_index,frame_offset)
+        first=source["output_tick"]//(TICKS_PER_SECOND//48000)
+        edit_doc=reel["data"]
+        selected=self.plan.editor.plan(
+            pid,edit_doc["edit_id"],edit_doc["edit_revision"],
+            first_sample=first,count=1)
+        for sound in selected["slices"][0]["audio"]:
+            if sound["enabled"] and sound["actor_id"]!=actor_id:
+                raise RuntimeError("Actor-owned PCM and original 3D actor identity disagree")
+        mix=self.plan.audio_window(
+            pid,plan_id,reel_index,
+            first_sample=first,count=SAMPLES_PER_FRAME)
+        pcm=base64.b64decode(mix["pcm_base64"],validate=True)
+        if sha256(pcm).hexdigest()!=mix["pcm_sha256"]:
+            raise RuntimeError("Source-based audio bytes mismatch verified PCM digest")
+        wav=_wav_pcm(pcm)
+        # Optional ORIGINAL authored scene look, never a free-form shader/path.
+        # The existing actor-only worker contract remains intact when absent.
+        look_proof=None
+        if reviewed_look_id is not None:
+            _id(reviewed_look_id,"reviewed original material look")
+            from backend.nvp_p1f_shot_material_binding import P1FOriginalShotMaterialBinding
+            look_proof=P1FOriginalShotMaterialBinding(self.index).for_frame(
+                pid,reviewed_look_id,plan_id,reel_index,frame_offset)
+            if (look_proof["scene_document_sha256"]!=
+                    original["scene_document_sha256"] or
+                    look_proof["take_document_sha256"]!=
+                    original["take_document_sha256"]):
+                raise RuntimeError("Reviewed PBR look differs from original frozen shot")
+        spec={
+            "format":FORMAT,
+            "scene_sha256":original["scene_document_sha256"],
+            "usd_sha256":sha256(usda).hexdigest(),
+            "camera":original["camera_path"],
+            "actor_id":actor_id,
+            "actor_path":path,
+            "source_tick":original["source_tick"],
+            "expected_face_weights":facial,
+            "width":width,"height":height,"samples":samples,
+        }
+        if look_proof is not None:
+            spec["reviewed_material"]={
+                "look_id":reviewed_look_id,
+                "look_document_sha256":look_proof["look_document_sha256"],
+                "material_set_id":look_proof["material_set_id"],
+                "material_set_document_sha256":
+                    look_proof["material_set_document_sha256"],
+                "composed_material_path":look_proof["composed_material_path"],
+                "bound_mesh_paths":look_proof["bound_mesh_paths"],
+                "texture_sources":look_proof["texture_sources"],
+            }
+        approved_scope={
+            "operation":"nvp.p1f.render_original_cycles_frame.v1",
+            "project_id":pid,"plan_id":plan_id,
+            "plan_document_sha256":reel["document_sha256"],
+            "source_admission_sha256":original["receipt_sha256"],
+            "usda_sha256":spec["usd_sha256"],
+            "pcm_sha256":mix["pcm_sha256"],
+            "job_id":job_id,
+        }
+        if look_proof is not None:
+            approved_scope["reviewed_look_id"]=reviewed_look_id
+            approved_scope["reviewed_look_document_sha256"] = (
+                look_proof["look_document_sha256"])
+            approved_scope["reviewed_material_set_document_sha256"] = (
+                look_proof["material_set_document_sha256"])
+        if self.approve(creator_event,dict(approved_scope)) is not True:
+            raise PermissionError("Creator did not authorize exact source-bound Cycles frame")
+        # Windows Job/delegated Linux cgroup controls resource/process custody,
+        # but neither proves a restricted filesystem namespace or no egress.
+        # The independently trusted production host MUST affirm an actual,
+        # finite OS boundary for this exact source/job. No CI bypass for real
+        # creator film content and no unsafe 'isolated=True' caller flag.
+        sandbox_scope={
+            **approved_scope,"require_no_network":True,
+            "require_private_filesystem_isolation":True,
+            "worker_executable_sha256":self.supervisor.binary_sha256,
+            "fixed_script_sha256":sha256(WORKER.read_bytes()).hexdigest(),
+        }
+        if self.verify_isolated_worker(dict(sandbox_scope)) is not True:
+            raise PermissionError("Genuine private film Cycles worker isolation not established")
+        # There is NO test/public mode in production: every film source
+        # needs a genuine native OS boundary before any USD/PCM staging.
+        # The Windows production SCM/AppContainer/WFP broker is not yet
+        # installed and Windows requests necessarily fail closed.
+        from backend.nvp_worker_private_sandbox import prove_private_kernel_boundary
+        prove_private_kernel_boundary(self.supervisor.root)
+        jobdir=self.supervisor.root/job_id
+        # User-owned private USD and original actor PCM must never be staged
+        # in the default 0755 Linux workspace. Restrict before first write.
+        jobdir.mkdir(mode=0o700,parents=False,exist_ok=False)
+        if os.name=="posix":
+            import stat
+            if (jobdir.is_symlink() or
+                    stat.S_IMODE(jobdir.stat().st_mode)!=0o700):
+                raise RuntimeError("Private source directory permissions are not 0700")
+        source_script=WORKER.read_bytes()
+        _add_file(jobdir/"fixed_cycles.py",source_script)
+        _add_file(jobdir/"original.usda",usda)
+        _add_file(jobdir/"original_pcm.wav",wav)
+        _add_file(jobdir/"frame_spec.json",_canonical(spec))
+        reviewed_inputs={}
+        if look_proof is not None:
+            from backend.nvp_p1f_reviewed_pbr_materials import P1FReviewedPBRMaterials
+            library=P1FReviewedPBRMaterials(self.index)
+            for slot,meta in sorted(look_proof["texture_sources"].items()):
+                name="reviewed_"+slot+".png"
+                raw=library.original_texture_bytes(
+                    pid,look_proof["material_set_id"],slot)
+                if sha256(raw).hexdigest()!=meta["sha256"]:
+                    raise RuntimeError("Original reviewed PBR map changed before source staging")
+                _add_file(jobdir/name,raw)
+                reviewed_inputs[name]=meta["sha256"]
+        op=BlenderOperation(
+            job_id=job_id,script="fixed_cycles.py",
+            script_sha256=sha256(source_script).hexdigest(),
+            inputs={
+                "original.usda":sha256(usda).hexdigest(),
+                "original_pcm.wav":sha256(wav).hexdigest(),
+                "frame_spec.json":sha_file(jobdir/"frame_spec.json"),
+                **reviewed_inputs,
+            },
+            outputs={"original_frame.png":"png","cycles_audit.json":"json_audit"},
+            arguments={
+                "--plan":"frame_spec.json",
+                "--take":"original.usda",
+                "--output":"original_frame.png",
+                "--audit":"cycles_audit.json",
+            },
+            timeout_seconds=600,memory_limit_mb=8192,
+            # Kernel-level whole-tree containment is REQUIRED; do not use
+            # the legacy Linux PDEATHSIG/process-group-only fallback.
+            require_linux_cgroup_v2=True,
+            require_private_isolation=True)
+        outcome=self.supervisor.run(op)
+        if outcome.get("state")!="SUCCEEDED":
+            return {"status":"NOT_DELIVERED","job_id":job_id,
+                    "worker_state":outcome.get("state"),
+                    "worker_error":outcome.get("error")}
+        receipt=self._verify_bytes(
+            pid,plan_id,job_id,original,source,mix,width,height,samples)
+        payload={"format":RECEIPT,"passed":True,
+                 "project_id":pid,"plan_id":plan_id,
+                 "job_id":job_id,
+                 "plan_document_sha256":reel["document_sha256"],
+                 "original_source":original,
+                 "original_picture":receipt["picture"],
+                 "original_derived_audio":receipt["audio"],
+                 "worker_receipt":outcome["spec_sha256"],
+                 "picture_rendered":True,
+                 "entire_film_rendered":False,
+                 "master_approved":False}
+        _add_file(jobdir/"host_delivery_receipt.json",_canonical(payload))
+        return payload
+
+    def _verify_bytes(self,pid,plan_id,job_id,original,frame,mix,width,height,samples):
+        jobdir=self.supervisor.root/job_id
+        worker=self.supervisor.verify_completed(job_id)
+        audit=json.loads((jobdir/"cycles_audit.json").read_text("utf8"))
+        spec=json.loads((jobdir/"frame_spec.json").read_text("utf8"))
+        if (audit.get("passed") is not True or
+                audit.get("format")!=FORMAT or
+                audit.get("render_engine")!="CYCLES" or
+                audit.get("source_tick")!=original["source_tick"] or
+                audit.get("scene_sha256")!=original["scene_document_sha256"] or
+                audit.get("input_usd_sha256")!=spec["usd_sha256"] or
+                audit.get("original_camera")!=original["camera_path"].rsplit("/",1)[-1] or
+                audit.get("imported_armature_count",0)<1 or
+                audit.get("width")!=width or audit.get("height")!=height or
+                audit.get("samples")!=samples):
+            raise RuntimeError("Independently reopened Cycles result/source identity mismatch")
+        faces=audit.get("actual_shape_keys")
+        if (type(faces) is not dict or set(faces)!=set(SHAPES) or
+                any(abs(faces[name]-spec["expected_face_weights"][i])>.035
+                    for i,name in enumerate(SHAPES))):
+            raise RuntimeError("Rendered facial performance changed from original USD")
+        # Reopen the independent original scene/Take/PBR source across
+        # process restarts. Never trust the worker's material claims alone.
+        reviewed=spec.get("reviewed_material")
+        verified_material=None
+        if reviewed is not None:
+            from backend.nvp_p1f_shot_material_binding import P1FOriginalShotMaterialBinding
+            from backend.nvp_p1f_reviewed_pbr_materials import P1FReviewedPBRMaterials
+            from backend.nvp_p1f_p2_reel_plan import P1FReelPlan
+            binding=P1FOriginalShotMaterialBinding(self.index)
+            look=binding.open(pid,reviewed["look_id"])
+            data=look["data"]
+            if (reviewed.get("look_document_sha256")!=look["document_sha256"] or
+                    reviewed.get("material_set_id")!=data["material_set_id"] or
+                    reviewed.get("material_set_document_sha256")!=
+                        data["material_set_document_sha256"] or
+                    reviewed.get("composed_material_path")!=
+                        data["composed_material_path"] or
+                    reviewed.get("bound_mesh_paths")!=data["bound_mesh_paths"] or
+                    reviewed.get("texture_sources")!=data["texture_sources"] or
+                    data["scene_document_sha256"]!=original["scene_document_sha256"] or
+                    self.index.read_revision(pid,original["take_id"],1)["data"][
+                        "scene_id"]!=data["scene_id"]):
+                raise RuntimeError("Independently reopened source Take/PBR binding changed")
+            material_library=P1FReviewedPBRMaterials(self.index)
+            material_library.open(pid,data["material_set_id"],
+                                  data["material_set_revision"])
+            observed=audit.get("reviewed_material")
+            if (type(observed) is not dict or
+                    observed.get("look_id")!=reviewed["look_id"] or
+                    observed.get("look_document_sha256")!=look["document_sha256"] or
+                    observed.get("material_set_document_sha256")!=
+                        data["material_set_document_sha256"] or
+                    observed.get("composed_material_path")!=data["composed_material_path"] or
+                    observed.get("bound_mesh_paths")!=data["bound_mesh_paths"] or
+                    sorted(observed.get("imported_uv_meshes",[]))!=sorted(
+                        p.rsplit("/",1)[-1] for p in data["bound_mesh_paths"])):
+                raise RuntimeError("Actual rendered UV material differs from original shot")
+            images=observed.get("textures")
+            if type(images) is not dict or set(images)!=set(data["texture_sources"]):
+                raise RuntimeError("Blender audit omitted original reviewed PBR channel")
+            for slot,source_meta in data["texture_sources"].items():
+                img=images[slot]
+                src=jobdir/("reviewed_"+slot+".png")
+                if (src.is_symlink() or not src.is_file() or
+                        sha_file(src)!=source_meta["sha256"] or
+                        img.get("sha256")!=source_meta["sha256"] or
+                        img.get("width")!=source_meta["width"] or
+                        img.get("height")!=source_meta["height"]):
+                    raise RuntimeError("Actual native reviewed PBR image audit changed")
+            verified_material={
+                "look_id":look["object_id"],
+                "look_document_sha256":look["document_sha256"],
+                "material_set_document_sha256":data["material_set_document_sha256"],
+                "rendered_uv_meshes":observed["imported_uv_meshes"],
+                "texture_sha256":{slot:meta["sha256"] for slot,meta in
+                                  data["texture_sources"].items()},
+            }
+        elif "reviewed_material" in audit:
+            raise RuntimeError("Worker added a look without original-source approval")
+        png=jobdir/"original_frame.png"
+        if sha_file(png)!=audit["png_sha256"]:
+            raise RuntimeError("Blender PNG no longer matches worker picture receipt")
+        from PIL import Image
+        with Image.open(png) as image:
+            image.load()
+            if image.format!="PNG" or image.size!=(width,height):
+                raise RuntimeError("Independent picture decode or dimensions failed")
+            extrema=image.convert("RGB").getextrema()
+            if not any(hi>lo for lo,hi in extrema):
+                raise RuntimeError("Cycles frame is a blank/constant image")
+        wav=jobdir/"original_pcm.wav"
+        with wave.open(str(wav),"rb") as f:
+            if (f.getnchannels()!=2 or f.getframerate()!=48000 or
+                    f.getsampwidth()!=2 or
+                    f.getnframes()!=SAMPLES_PER_FRAME):
+                raise RuntimeError("Delivered actor-owned sound clock changed")
+            delivered=f.readframes(SAMPLES_PER_FRAME)
+        if sha256(delivered).hexdigest()!=mix["pcm_sha256"]:
+            raise RuntimeError("Independent sound WAV readback differs from original 3D scene")
+        sound_again=self.plan.audio_window(
+            pid,plan_id,frame["reel_index"],
+            first_sample=frame["output_tick"]//(TICKS_PER_SECOND//48000),
+            count=SAMPLES_PER_FRAME)
+        if sound_again["pcm_sha256"]!=mix["pcm_sha256"]:
+            raise RuntimeError("Original actor PCM changed between render and independent verification")
+        picture={"png_sha256":sha_file(png),"width":width,"height":height,
+                 "engine":"Cycles","source_tick":original["source_tick"]}
+        if verified_material is not None:
+            picture["reviewed_material"]=verified_material
+        return {"picture":picture,
+                "audio":{"wav_sha256":sha_file(wav),
+                         "pcm_sha256":mix["pcm_sha256"],
+                         "sample_count":SAMPLES_PER_FRAME,
+                         "source_owned":True}}
+
+    def verify_delivered(self,pid,plan_id,job_id):
+        """Restart-safe recheck; a completed Blender journal alone is NOT a film."""
+        _require_pid(pid);_id(plan_id,"source plan");_id(job_id,"worker job")
+        jobdir=self.supervisor.root/job_id
+        receipt_path=jobdir/"host_delivery_receipt.json"
+        if not receipt_path.is_file() or receipt_path.is_symlink():
+            raise RuntimeError("No independently verified P1-F delivery receipt")
+        receipt=json.loads(receipt_path.read_text("utf8"))
+        plan=self.plan.read(pid,plan_id)
+        if (receipt.get("format")!=RECEIPT or receipt.get("passed") is not True or
+                receipt.get("project_id")!=pid or receipt.get("plan_id")!=plan_id or
+                receipt.get("job_id")!=job_id or
+                receipt.get("plan_document_sha256")!=plan["document_sha256"] or
+                receipt.get("entire_film_rendered") is not False or
+                receipt.get("master_approved") is not False):
+            raise RuntimeError("P1-F delivery receipt lost source/approval identity")
+        original=receipt["original_source"]
+        expected=self.plan.picture_instant(
+            pid,plan_id,
+            next(i for i,x in enumerate(plan["data"]["reels"])
+                 if x["first_frame"]<=original["output_tick"]//(TICKS_PER_SECOND//24)
+                 <x["first_frame"]+x["frame_count"]),
+            (original["output_tick"]//(TICKS_PER_SECOND//24))%240)
+        if (expected["source_take_sha256"]!=original["take_document_sha256"] or
+                expected["source_tick"]!=original["source_tick"]):
+            raise RuntimeError("Original source conform differs after restart")
+        spec=json.loads((jobdir/"frame_spec.json").read_text("utf8"))
+        mix=self.plan.audio_window(
+            pid,plan_id,
+            original["output_tick"]//(TICKS_PER_SECOND*10),
+            first_sample=original["output_tick"]//(TICKS_PER_SECOND//48000),
+            count=SAMPLES_PER_FRAME)
+        checked=self._verify_bytes(
+            pid,plan_id,job_id,original,
+            {"reel_index":original["output_tick"]//(TICKS_PER_SECOND*10),
+             "output_tick":original["output_tick"]},
+            mix,spec["width"],spec["height"],spec["samples"])
+        if (checked["picture"]!=receipt["original_picture"] or
+                checked["audio"]!=receipt["original_derived_audio"] or
+                self.supervisor.inspect(job_id)["spec_sha256"]!=receipt["worker_receipt"]):
+            raise RuntimeError("Restart/replay picture/sound receipt changed")
+        return receipt

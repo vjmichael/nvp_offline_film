@@ -1,0 +1,76 @@
+name: NVP COLOR-01A real scene-linear OpenEXR acceptance
+
+on:
+  push:
+    branches:
+      - nvp/color01a-native-scene-linear-exr-20261103
+  pull_request:
+    branches:
+      - nvp/cinema01c-duration-lineage-replay-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  color-contracts:
+    name: COLOR-01A Python color and legacy PNG regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install acceptance prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+      - name: Compile exact new sources
+        run: python -m compileall -q backend tools tests
+      - name: Run the source contracts and legacy regressions
+        run: |
+          python -m unittest discover -s tests -p test_color_exr.py -v
+          python -m unittest discover -s tests -p test_presentation_pipeline.py -v
+          python -m unittest discover -s tests -p test_full_motion.py -v
+
+  native-cycles-exr:
+    name: COLOR-01A Blender 5.2.3 / Cycles HALF EXR / FFmpeg independent full decode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install native prerequisites
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0 ffmpeg
+      - name: Download checksum-pinned official Blender 5.2.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl -fL --retry 4 --retry-delay 5 "$BLENDER_BASE/$name" -o "$name"
+          curl -fL --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $name$" blender.sha256 | sha256sum --check --status
+          mkdir -p /tmp/nvp-blender
+          tar -xJf "$name" -C /tmp/nvp-blender --strip-components=1
+          echo "/tmp/nvp-blender" >> "$GITHUB_PATH"
+          /tmp/nvp-blender/blender -b --version | head -n 2
+      - name: Render frozen NVP Digital Take to genuine HALF OpenEXR; independently decode and reopen
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_color01a_fixture --out acceptance_artifacts/color01a
+      - name: Preserve acceptance, images, hashes, diagnostics (including on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-color01a-native-exr-evidence
+          path: acceptance_artifacts/color01a/
+          retention-days: 7
+          if-no-files-found: warn

@@ -1,0 +1,56 @@
+name: NVP USD-02C Typed Performance Channels
+
+on:
+  push:
+    branches:
+      - nvp/usd02c-typed-performance-channels-20261105
+    paths:
+      - "backend/nvp_openusd_*.py"
+      - "tests/test_nvp_openusd_channels_native.py"
+      - "docs/NVP_USD02C_PERFORMANCE_CHANNELS.md"
+      - ".github/workflows/nvp-usd02c-native.yml"
+  pull_request:
+    paths:
+      - "backend/nvp_openusd_*.py"
+      - "tests/test_nvp_openusd_channels_native.py"
+      - "docs/NVP_USD02C_PERFORMANCE_CHANNELS.md"
+      - ".github/workflows/nvp-usd02c-native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-usd02c-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-usd-channels:
+    name: USD2C native ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install native OpenUSD core
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --only-binary=:all: "usd-core==26.11"
+      - name: Compile OpenUSD performance channel modules
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_openusd_scene.py backend/nvp_openusd_channels.py backend/nvp_openusd_take.py backend/nvp_openusd_presentation.py backend/nvp_openusd_time_state.py tests/test_nvp_openusd_channels_native.py
+      - name: Real OpenUSD typed channels and frozen take regression
+        shell: bash
+        run: |
+          python -c "from pxr import Sdf,Usd,UsdGeom; s=Usd.Stage.CreateInMemory(); print('REAL_USD_NATIVE', bool(s))"
+          python -m unittest discover -s tests -p "test_nvp_openusd_channels_native.py" -v
+      - name: Native scene and reusable assets regressions
+        shell: bash
+        run: |
+          python -m unittest discover -s tests -p "test_nvp_openusd_take_native.py" -v
+          python -m unittest discover -s tests -p "test_nvp_openusd_reusable_assets.py" -v
