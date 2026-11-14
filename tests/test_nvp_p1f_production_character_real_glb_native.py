@@ -30,6 +30,13 @@ class RealBlenderSourceCharacterBridge(unittest.TestCase):
             native=build_fixture(root/"rigged_source",
                                  render_preview=False,blender=blender)
             self.assertEqual(native["status"],"passed_blender_audit_only",native)
+            self.assertTrue(native["source_worker_receipts_verified"])
+            self.assertEqual(len(native["source_worker_ids"]),5)
+            self.assertEqual(len(set(native["source_worker_ids"])),5)
+            self.assertTrue(native["native"]["independent_blender_journal_reopen"])
+            self.assertTrue(native["public_fixture_only"])
+            self.assertFalse(native["private_worker_authorized"])
+            self.assertFalse(native["original_filmmaster_approved"])
             self.assertGreater(native["import"]["skinned_vertices"],100)
             self.assertGreater(native["native"]["checks"],10)
             original=(root/"rigged_source"/"importable_humanoid.glb").read_bytes()
