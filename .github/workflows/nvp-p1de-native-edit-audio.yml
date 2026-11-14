@@ -14,6 +14,7 @@ on:
       - 'backend/nvp_p1f_reviewed_pbr_materials.py'
       - 'backend/nvp_p1f_shot_material_binding.py'
       - 'backend/nvp_p1f_production_character_assets.py'
+      - 'backend/nvp_p1f_glb_mesh_audit.py'
       - 'backend/nvp_character_assets.py'
       - 'tests/test_nvp_p1f_production_character_assets_native.py'
       - 'tests/test_nvp_p1f_shot_material_binding_native.py'
@@ -81,7 +82,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_p1de_edit_audio.py backend/nvp_p1f_p2_reel_plan.py backend/nvp_p1f_cycles_source_admission.py backend/nvp_p1f_imported_actor.py backend/nvp_p1f_imported_environment.py backend/nvp_p1f_reviewed_pbr_materials.py backend/nvp_p1f_shot_material_binding.py backend/nvp_p1f_production_character_assets.py backend/nvp_p1f_cycles_picture_sound.py tools/nvp_p1f_cycles_actor_worker.py backend/nvp_p1f_multishot_reel.py backend/nvp_p1f_sustained_reel_queue.py backend/nvp_p1f_picture_audio_prefix.py backend/nvp_p1f_picture_audio_delivery.py backend/nvp_p1f_p2_verified_coverage.py backend/nvp_worker_private_sandbox.py tools/nvp_p1f_cycles_actor_worker.py tests/test_nvp_p1de_edit_audio_native.py tests/test_nvp_p1f_imported_actor_native.py
+          python -m compileall -q backend/nvp_p1de_edit_audio.py backend/nvp_p1f_p2_reel_plan.py backend/nvp_p1f_cycles_source_admission.py backend/nvp_p1f_imported_actor.py backend/nvp_p1f_imported_environment.py backend/nvp_p1f_reviewed_pbr_materials.py backend/nvp_p1f_shot_material_binding.py backend/nvp_p1f_production_character_assets.py backend/nvp_p1f_glb_mesh_audit.py backend/nvp_p1f_cycles_picture_sound.py tools/nvp_p1f_cycles_actor_worker.py backend/nvp_p1f_multishot_reel.py backend/nvp_p1f_sustained_reel_queue.py backend/nvp_p1f_picture_audio_prefix.py backend/nvp_p1f_picture_audio_delivery.py backend/nvp_p1f_p2_verified_coverage.py backend/nvp_worker_private_sandbox.py tools/nvp_p1f_cycles_actor_worker.py tests/test_nvp_p1de_edit_audio_native.py tests/test_nvp_p1f_imported_actor_native.py
           python -m unittest discover -s tests -p 'test_nvp_p1de_edit_audio_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_imported_actor_native.py' -v
