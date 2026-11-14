@@ -1000,6 +1000,78 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
             request["project_id"],request["plan_id"],request["revision"],
             first_index=request["first_index"],limit=request["limit"])
 
+    def data_av_film_stage_longform_protected_audit_begin(self,request):
+        """Native read-only reopen of ALL original protected reel worker journals.
+
+        Never derives new frames, silently reruns a failed Blender worker, or
+        treats a source-only fixture as a human-approved film.
+        """
+        self._native_window()
+        allowed={"project_id","plan_id","revision"}
+        if type(request) is not dict or set(request)!=allowed:
+            raise ValueError("Protected film audit accepts only the original plan identity")
+        pid=_require_pid(request["project_id"])
+        plan_id=_id(request["plan_id"],"original feature film source plan")
+        revision=request["revision"]
+        if type(revision) is not int or revision<1:
+            raise ValueError("Original feature film revision must be exact")
+        schedule=self._film_schedule()
+        source=schedule.open(pid,plan_id,revision)
+        output=self._native_film_export_root()
+        with self._lock:
+            if self._closing:
+                raise PermissionError("Native film source window closing")
+            if ((self._p1f_export is not None and
+                    not self._p1f_export["future"].done()) or
+                (self._edited_export is not None and
+                    not self._edited_export["future"].done())):
+                raise RuntimeError("Finish active original film worker before audit")
+            cancel=threading.Event()
+            ticket=secrets.token_urlsafe(32)
+            progress={"stage":"QUEUED_INDEPENDENT_PROTECTED_REEL_AUDIT",
+                      "completed":0,"planned":source["data"]["total_chunks"],
+                      "frames":0,"pcm_samples":0}
+            def perform():
+                if cancel.is_set():
+                    raise InterruptedError("Original protected film audit cancelled")
+                if self._ask(
+                    "Independently reopen EVERY original protected Cycles job, "
+                    "source picture and 48 kHz soundtrack for this existing film? "
+                    "No Blender render is launched, no source changes, no "
+                    "automatic recovery and no film-master authorization.\n"
+                    "Plan SHA: "+source["document_sha256"]+"\n"
+                    "Original chunks: "+str(source["data"]["total_chunks"])) is not True:
+                    raise PermissionError("Creator declined original protected reel audit")
+                from backend.nvp_int02_cycles_renderer import build_native_cycles_renderer
+                verifier=build_native_cycles_renderer(
+                    self.index,pid,plaintext_consent=True)
+                with self._lock:
+                    if (self._p1f_export is not None and
+                        self._p1f_export["ticket"]==ticket):
+                        self._p1f_export["cycles_renderer"]=verifier
+                def update(**stage):
+                    with self._lock:
+                        progress.update(stage)
+                return schedule.reconcile_all(
+                    pid,plan_id,revision,output_parent=output,
+                    require_protected_worker=True,
+                    native_worker_verifier=verifier.verify_native_worker_receipt,
+                    cancelled=cancel.is_set,progress=update)
+            future=self._executor.submit(perform)
+            self._p1f_export={
+                "ticket":ticket,"future":future,"cancel":cancel,
+                "progress":progress,"project_id":pid,"protected_audit":True,
+            }
+            return {
+                "format":"nvp.p1f.native_source_chunk_ticket.v1",
+                "status":"QUEUED_PROTECTED_REEL_RECONCILIATION",
+                "ticket":ticket,
+                "source_plan_sha256":source["document_sha256"],
+                "source_chunk_count":source["data"]["total_chunks"],
+                "frames_declared":source["data"]["total_frames"],
+                "film_master_approved":False,
+            }
+
     def data_av_film_stage_longform_audit_page(self,request):
         self._native_window()
         required={"project_id","plan_id","revision","first_index","limit"}
@@ -1445,6 +1517,30 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
             return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
                     "status":"FAILED_UNVERIFIED","reason":str(exc)[:250],
                     "original_modified":False,"film_master_approved":False}
+        if job.get("protected_audit") is True:
+            if (result.get("format")!=
+                    "nvp.p2.original_film_longform_source_schedule.v1" or
+                result.get("master_approved") is not False):
+                return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                        "status":"FAILED_UNVERIFIED",
+                        "film_master_approved":False}
+            status=result.get("status")
+            if status not in (
+                    "ALL_TECHNICAL_PICTURE_PCM_DERIVATIVES_VERIFIED_NOT_MASTER",
+                    "INCOMPLETE_ORIGINAL_SOURCE_DERIVATIVES"):
+                return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                        "status":"FAILED_UNVERIFIED",
+                        "film_master_approved":False}
+            if (status=="ALL_TECHNICAL_PICTURE_PCM_DERIVATIVES_VERIFIED_NOT_MASTER"
+                    and result.get("protected_workers_independently_reopened") is not True):
+                return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                        "status":"FAILED_UNVERIFIED",
+                        "film_master_approved":False}
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":("PROTECTED_REELS_REOPENED_NOT_MASTER"
+                              if status.startswith("ALL_TECHNICAL")
+                              else "ORIGINAL_REELS_INCOMPLETE"),
+                    "receipt":result,"film_master_approved":False}
         if job.get("nine_camera") is True:
             if (result.get("format")!=
                     "nvp.usd_film01i.protected_original_camera_picture_pcm.v1" or

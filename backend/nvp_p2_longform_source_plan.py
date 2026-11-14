@@ -200,7 +200,7 @@ class NativeLongformFilmPlan:
 
     def reconcile_page(self,project_id,plan_id,revision,*,output_parent,
                        first_index,limit=32,require_protected_worker=False,
-                       native_worker_verifier=None):
+                       native_worker_verifier=None,cancelled=lambda:False):
         """Never count a frame unless its original picture+PCM hashes reopen."""
         page=self.page(project_id,plan_id,revision,
                        first_index=first_index,limit=limit)
@@ -214,9 +214,13 @@ class NativeLongformFilmPlan:
             render_png=lambda **_:None,
             require_protected_worker=require_protected_worker,
             native_worker_verifier=native_worker_verifier)
+        if not callable(cancelled):
+            raise TypeError("Reconciliation cancellation must come from trusted host")
         verified=[]
         missing=[]
         for entry in page["chunks"]:
+            if cancelled():
+                raise InterruptedError("Creator cancelled independent source reel audit")
             candidate=parent/("P1F_"+entry["chunk_id"])
             if not candidate.exists():
                 missing.append(entry["chunk_id"])
@@ -270,18 +274,24 @@ class NativeLongformFilmPlan:
                 "auto_resumed_worker":False}
 
     def reconcile_all(self,project_id,plan_id,revision,*,output_parent,
-                      require_protected_worker=False,native_worker_verifier=None):
+                      require_protected_worker=False,native_worker_verifier=None,
+                      cancelled=lambda:False,progress=lambda **_:None):
+        if not callable(cancelled) or not callable(progress):
+            raise TypeError("Native full-film audit requires host cancellation and progress")
         doc=self.open(project_id,plan_id,revision)["data"]
         count=0
         frames=0
         samples=0
         digest=hashlib.sha256()
         for start in range(0,doc["total_chunks"],MAX_PAGE):
+            if cancelled():
+                raise InterruptedError("Creator cancelled full original source audit")
             result=self.reconcile_page(
                 project_id,plan_id,revision,output_parent=output_parent,
                 first_index=start,limit=MAX_PAGE,
                 require_protected_worker=require_protected_worker,
-                native_worker_verifier=native_worker_verifier)
+                native_worker_verifier=native_worker_verifier,
+                cancelled=cancelled)
             if result["missing_chunks"]:
                 return {"format":FORMAT,"status":"INCOMPLETE_ORIGINAL_SOURCE_DERIVATIVES",
                         "verified_chunks":count,"verified_frames":frames,
@@ -296,6 +306,9 @@ class NativeLongformFilmPlan:
                 count+=1
                 frames+=row["frames"]
                 samples+=row["audio_samples"]
+            progress(stage="REOPENED_ORIGINAL_SOURCE_REELS",
+                     completed=count,planned=doc["total_chunks"],
+                     frames=frames,pcm_samples=samples)
         if (count!=doc["total_chunks"] or frames!=doc["total_frames"] or
             samples!=doc["total_frames"]*2000):
             raise RuntimeError("A longform film cannot pass without every original source frame")
