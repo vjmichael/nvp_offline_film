@@ -69,6 +69,11 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
         end_tick = _int(event["end_tick"], "sound event end")
         if end_tick < start_tick:
             raise RuntimeError("Invalid indexed sound event interval")
+        # Bind the transient descriptor to its immutable indexed provenance.
+        # These fields are identifiers, never resolver paths or executable input.
+        prim.GetPrim().SetCustomDataByKey("nvp:eventId", event["event_id"])
+        prim.GetPrim().SetCustomDataByKey("nvp:sourceDocumentSha256", source["document_sha256"])
+        prim.GetPrim().SetCustomDataByKey("nvp:sourceRevision", str(event["source_revision"]))
         prim.GetPrim().SetCustomDataByKey("nvp:filmTimeStartTick", str(start_tick))
         prim.GetPrim().SetCustomDataByKey("nvp:filmTimeEndTick", str(end_tick))
         prim.GetPrim().SetCustomDataByKey("nvp:filmTimeTicksPerSecond", str(TICKS_PER_SECOND))
