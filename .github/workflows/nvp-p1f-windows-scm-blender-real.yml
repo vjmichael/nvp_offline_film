@@ -57,8 +57,17 @@ jobs:
           python -m tools.nvp_p1f_scm_public_fixture $env:NVP_P1F_SCM_TEST_BINARY
           if ($LASTEXITCODE -ne 0) { throw 'Original public USD/PCM source-only staging failed' }
           $job=Join-Path $env:ProgramData 'NVP\P1F\ApprovedJobs\public_scm_actor0'
-          & icacls.exe $job /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' /T
-          if ($LASTEXITCODE -ne 0) { throw 'No protected one-job Windows source ACL' }
+          # Exact SIDs avoid account-name ambiguity. Directory inheritance
+          # alone does NOT prove an already-created source file is readable
+          # by the actual LocalSystem service account.
+          & icacls.exe $job /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
+          if ($LASTEXITCODE -ne 0) { throw 'No protected one-job Windows source directory ACL' }
+          foreach ($source in (Get-ChildItem $job -File)) {
+            & icacls.exe $source.FullName /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'
+            if ($LASTEXITCODE -ne 0) { throw ('SCM SYSTEM cannot own original source file '+$source.Name) }
+            & icacls.exe $source.FullName | Out-Host
+          }
+          & icacls.exe $job | Out-Host
           Get-FileHash .\nvp_p1f_windows_scm_blender_broker.exe -Algorithm SHA256
       - name: Actual SCM AppContainer WFP Job executes original-source Cycles and refuses replay
         shell: pwsh
