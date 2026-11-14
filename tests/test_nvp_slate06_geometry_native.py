@@ -460,7 +460,7 @@ class Slate06NativeTests(unittest.TestCase):
             creator_event=self.trusted_event,presentation="geometry",
             camera_path="/World/Camera",ram_mb=4096,timeout_seconds=240)
         result=native_host.run_next()
-        self.assertEqual(result["state"],"SUCCEEDED")
+        self.assertEqual(result["state"],"SUCCEEDED", repr(result))
         image=native_host.read_preview_png(self.pid,req["cache_key"])
         self.assertTrue(image["authored_geometry_preview_only"])
         self.assertEqual((image["width"],image["height"]),(320,180))
