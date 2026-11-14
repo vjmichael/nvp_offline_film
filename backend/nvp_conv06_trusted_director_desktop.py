@@ -221,16 +221,18 @@ class ConvergedDirectorDesktopActions(CameraRailDirectorMixin):
             raise PermissionError("Exact source building-cell request required")
         pid = self._wo5_project(request["project_id"])
         from backend.nvp_usd_film02m_d_cells import OriginalBuildingCells
+        used = False
 
         def approve(event, scope):
-            if (event != "native_director" or
+            nonlocal used
+            if (used or event != "native_director" or
                 scope.get("operation") !=
                     "nvp.film02m.publish_original_building_cells.v1" or
                 scope.get("project_id") != pid or
                 scope.get("cell_world_id") != request["cell_world_id"] or
                 scope.get("expected_revision") != request["expected_revision"]):
                 return False
-            return self._ask(
+            accepted = self._ask(
                 "Publish ONE exact original architectural camera-cell inventory?\n"
                 "Project: " + pid +
                 "\nWorld: " + scope["cell_world_id"] +
@@ -240,6 +242,10 @@ class ConvergedDirectorDesktopActions(CameraRailDirectorMixin):
                 "\nNative building sources remain original. This does NOT "
                 "authorize render, camera/Take edits, project decryption, "
                 "original PCM editing or film-master release.")
+            # One human click permits at most one exact original publication.
+            # The callback cannot be replayed by the original source layer.
+            used = accepted is True
+            return used
         result = OriginalBuildingCells(
             self.index, verify_director_action=approve).publish(
                 pid, request["cell_world_id"],
