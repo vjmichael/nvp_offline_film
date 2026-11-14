@@ -27,6 +27,7 @@ import time
 from urllib.parse import urlsplit
 
 from backend.nvp_plan02c_desktop import NativePlan02CCameraActions
+from backend.nvp_conv06_trusted_director_desktop import ConvergedDirectorDesktopActions
 from backend.nvp_camera_workbench import verified_optics, workbench_preview_key
 from backend.nvp_film_index import FilmIndex, _id, _require_pid, _sha
 from backend.nvp_slate_proxy_recipe import canonical
@@ -114,7 +115,7 @@ def build_desktop_camera_host(index, callback):
     return host
 
 
-class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
+class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CCameraActions):
     """Per-WebView native authority. No browser can self-sign an approval."""
 
     def __init__(self, index: FilmIndex, *, origin, host_factory=None,
@@ -1520,4 +1521,6 @@ class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
                     # Interrupted/unproven jobs remain in the journal and
                     # must fail closed at next host recovery.
                     pass
+        if hasattr(self, "_camfx04_active"):
+            self._camfx04_shutdown()
         self._executor.shutdown(wait=True,cancel_futures=True)
