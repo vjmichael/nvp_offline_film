@@ -219,13 +219,15 @@ class AppContainerJobProcess:
 
 
 def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
-                        code_roots,code_files):
+                        code_roots,code_files,release_slot,original_journal):
     """Create real AppContainer token + restricted pipes + suspended Job.
 
     Code roots MUST contain reviewed standalone binaries only, never a film
     workspace or personal data. No capabilities (network, camera, etc) granted.
     """
     exe,work,roots,files=_paths(command,cwd,code_roots,code_files)
+    if release_slot is None or original_journal is None:
+        raise AppContainerFailure("Native AppContainer requires independent release slot and original durable journal")
     if (type(memory_mb) is not int or not 128<=memory_mb<=65536
             or any(f is None or not hasattr(f,"fileno") for f in (stdin,stdout,stderr))):
         raise AppContainerFailure("Bounded native pipes and Job limit required")
@@ -317,7 +319,13 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
                 raise AppContainerFailure("Suspended child not in kernel Job")
             if win32process.ResumeThread(thread)==0xffffffff:
                 raise AppContainerFailure("AppContainer child resume failed")
-            wrapped=WindowsJobProcess(job,ph,pi.dwProcessId)
+            # The suspended child is in the actual AppContainer Job and has
+            # been resumed; the independent W1-G source journal must reach
+            # RUNNING before publication or the Job is destroyed fail-closed.
+            original_journal.started(pi.dwProcessId)
+            wrapped=WindowsJobProcess(
+                job,ph,pi.dwProcessId,release_slot=release_slot,
+                original_journal=original_journal)
             ph=None;job=None
             return AppContainerJobProcess(wrapped,profile,sid,grants,userenv,
                                           profile_folder,baseline)
