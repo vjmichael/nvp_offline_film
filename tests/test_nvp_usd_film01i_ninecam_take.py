@@ -279,6 +279,34 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                     "focal_length_mm":0,
                     "focus_distance_m":9}])
 
+    def test_linux_protected_original_source_refuses_unencrypted_worker(self):
+        """Even an authentic 01I Take cannot bypass native EFS policy."""
+        import os
+        import sys
+        from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
+        from backend.nvp_usd_film01f_blender_host import ReviewedNineCameraCyclesHost
+        if os.name=="nt":
+            self.skipTest("Linux EFS refusal does not apply on Windows")
+        executable=Path(sys.executable).resolve(strict=True)
+        supervisor=BlenderWorkerSupervisor(
+            self.root/"denied_linux_private_world",
+            blender_executable=executable,
+            blender_sha256=sha_file(executable),
+            blender_version="NOT_BLENDER_SOURCE_ONLY_NEGATIVE_TEST")
+        producer=ReviewedNineCameraCyclesHost(
+            self.index,supervisor,verify_director_action=lambda *_:True)
+        take_sha=self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"]
+        job="LinuxOriginalEFSRefusal"
+        with self.assertRaises(PermissionError):
+            producer.stage(
+                self.pid,"OneThirtySecondWorldTake",tick=0,job_id=job,
+                nine_camera_cut_id="OriginalUnapprovedCut",
+                nine_camera_frame=0)
+        self.assertFalse((supervisor.root/job).exists())
+        self.assertEqual(self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"],take_sha)
+
     def test_real_efs_protected_original_multicamera_cycles_pcm_reopen(self):
         """Physical Windows runner: true native Cycles/Job/.blend/EFS proof.
 
