@@ -151,6 +151,101 @@ class ConvergedDirectorDesktopActions(CameraRailDirectorMixin):
             director_event="native_director"
         )
 
+    def film02mh_preview_shot(self, request):
+        """Original 02M-H approved-district/01E actor-camera read-only preview.
+
+        This uses the current installed bridge and original FilmIndex reader,
+        NOT the retired WO5 desktop service or a second approval authority.
+        """
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+            "project_id", "district_id", "district_revision",
+            "world_take_id", "film_tick"
+        }:
+            raise PermissionError("Exact original 02M-H source shot required")
+        pid = self._wo5_project(request["project_id"])
+        from backend.nvp_usd_film02m_h_actor_camera_binding import (
+            OriginalDistrictShotBinding)
+        return OriginalDistrictShotBinding(
+            self.index, confirm=lambda *_: False).preview(
+                pid, request["district_id"], request["district_revision"],
+                request["world_take_id"], request["film_tick"])
+
+    def film02mh_commit_shot_binding(self, request):
+        """Bind only an unchanged original 02M-H source after ONE OS dialog.
+
+        A webview supplied consent bit, old WO5 grant, copied preview SHA, or
+        prior approval can never become a render or film-master authorization.
+        """
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+            "project_id", "binding_id", "district_id",
+            "district_revision", "world_take_id", "film_tick",
+            "source_preview_sha256"
+        }:
+            raise PermissionError("Exact native-approved original shot binding required")
+        pid = self._wo5_project(request["project_id"])
+        digest = request["source_preview_sha256"]
+        if (type(digest) is not str or len(digest) != 64 or
+            any(ch not in "0123456789abcdef" for ch in digest)):
+            raise PermissionError("Source-locked original shot preview SHA required")
+        consumed = False
+        from backend.nvp_usd_film02m_h_actor_camera_binding import (
+            OriginalDistrictShotBinding)
+
+        def approve(event, scope):
+            nonlocal consumed
+            if (consumed or event != "native_director" or
+                type(scope) is not dict or
+                scope.get("operation") !=
+                    "nvp.film02m_h.approve_original_district_shot_binding.v1" or
+                scope.get("project_id") != pid or
+                scope.get("binding_id") != request["binding_id"] or
+                scope.get("district_id") != request["district_id"] or
+                scope.get("district_revision") != request["district_revision"] or
+                scope.get("world_take_id") != request["world_take_id"] or
+                scope.get("film_tick") != request["film_tick"] or
+                scope.get("source_preview_sha256") != digest):
+                return False
+            consumed = True
+            return self._ask(
+                "Approve ONE original actor/district camera shot binding?\\n"
+                "Project: " + pid +
+                "\\nDistrict: " + scope["district_id"] +
+                "\\nDistrict document SHA: " + scope["district_document_sha256"] +
+                "\\nOriginal district USD SHA: " + scope["district_usd_root_sha256"] +
+                "\\nFrozen actor World Take SHA: " + scope["world_take_sha256"] +
+                "\\nOriginal camera shot SHA: " + scope[
+                    "original_camera_shot_sha256"] +
+                "\\nExact source preview SHA: " + digest +
+                "\\nOriginal Film Time: " + str(scope["film_tick"]) +
+                "\\nOriginal actor count: " + str(scope["actor_count"]) +
+                "\\nNo render or worker permission, original Take/PCM edit, "
+                "project decryption or film-master approval.")
+        return OriginalDistrictShotBinding(
+            self.index, confirm=approve).publish(
+                pid, request["binding_id"],
+                district_id=request["district_id"],
+                district_revision=request["district_revision"],
+                world_take_id=request["world_take_id"],
+                film_tick=request["film_tick"],
+                creator_event="native_director",
+                expected_preview_sha256=digest)
+
+    def film02mh_reopen_shot_binding(self, request):
+        """Independently reopen persisted original ActorID/district binding."""
+        self._native_window()
+        if type(request) is not dict or set(request) != {
+            "project_id", "binding_id"
+        }:
+            raise PermissionError("Only an exact original shot binding may be reopened")
+        pid = self._wo5_project(request["project_id"])
+        from backend.nvp_usd_film02m_h_actor_camera_binding import (
+            OriginalDistrictShotBinding)
+        return OriginalDistrictShotBinding(
+            self.index, confirm=lambda *_: False).reopen(
+                pid, request["binding_id"])
+
     def film02md_architecture_catalog(self, project_id):
         """List only independently reopened original architecture sources.
 
