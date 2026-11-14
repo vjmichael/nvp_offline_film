@@ -1034,6 +1034,7 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
     # At most eight exact source chunks per OS-confirmed grant; each child
     # P1-F approval is consumed once, never refreshed by JS or stale journal.
     def _native_film_reel_batch(self, *,approval=None,renderer=None,
+                                worker_verifier=None,
                                 cancelled=lambda:False,progress=lambda **_:None):
         from backend.nvp_p2_bounded_film_reel import NativeFilmReelBatch
         return NativeFilmReelBatch(
@@ -1041,7 +1042,8 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
             native_creator_approval=approval or (lambda *_:False),
             render_png=renderer or (lambda **_:None),
             cancelled=cancelled,progress=progress,
-            require_protected_worker=renderer is not None)
+            require_protected_worker=renderer is not None,
+            native_worker_verifier=worker_verifier)
 
     def _native_film_export_root(self):
         from pathlib import Path
@@ -1222,9 +1224,9 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                 def progress_update(**value):
                     with self._lock:
                         progress.update(value)
-                def render_frame(**kw):
+                def get_cycles():
                     if cancel.is_set():
-                        raise InterruptedError("Creator cancelled source reel worker")
+                        raise InterruptedError("Creator cancelled native reel verification")
                     if cycles[0] is None:
                         if self._ask(
                             "This finite original film reel requires genuine "
@@ -1242,7 +1244,11 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                             if (self._p1f_export is not None and
                                 self._p1f_export["ticket"]==ticket):
                                 self._p1f_export["cycles_renderer"]=cycles[0]
-                    return cycles[0].render_proven_png(**kw)
+                    return cycles[0]
+                def render_frame(**kw):
+                    return get_cycles().render_proven_png(**kw)
+                def verify_frame(receipt):
+                    return get_cycles().verify_native_worker_receipt(receipt)
 
                 writer=self._native_film_reel_batch(
                     approval=lambda scope:self._ask(
@@ -1255,8 +1261,8 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                         "Output root: "+scope["output_parent"]+"\n"+
                         "Every child is used at most once. No auto-resume, "
                         "film master or installation authority."),
-                    renderer=render_frame,cancelled=cancel.is_set,
-                    progress=progress_update)
+                    renderer=render_frame,worker_verifier=verify_frame,
+                    cancelled=cancel.is_set,progress=progress_update)
                 return writer.render(
                     requested["project_id"],requested["plan_id"],
                     requested["revision"],
@@ -1390,7 +1396,10 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                         "Requires a new confirmation for every later chunk. "+
                         "No source changes, film master or production install authority."),
                     render_png=cycles_frame,cancelled=cancel.is_set,
-                    require_protected_worker=True)
+                    require_protected_worker=True,
+                    native_worker_verifier=lambda receipt: (
+                        cycles_renderer[0] is not None and
+                        cycles_renderer[0].verify_native_worker_receipt(receipt)))
                 with self._lock:
                     progress["stage"]="AWAITING_CREATOR_OR_RENDER"
                 return exporter.export_chunk(

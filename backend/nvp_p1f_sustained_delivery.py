@@ -50,9 +50,15 @@ class NativeSustainedPictureSound:
     def __init__(self,assembly:SlateSequenceAssembly,
                  continuity:NativeEditorialContinuity, *,
                  native_creator_approval,render_png,
-                 cancelled=lambda:False,require_protected_worker=False):
+                 cancelled=lambda:False,require_protected_worker=False,
+                 native_worker_verifier=None):
         if type(require_protected_worker) is not bool:
             raise TypeError("Native protected worker requirement must be explicit")
+        if (native_worker_verifier is not None and
+                not callable(native_worker_verifier)):
+            raise TypeError("Native receipt reopen requires an independent host callback")
+        if require_protected_worker and native_worker_verifier is None:
+            raise PermissionError("Protected original reel needs actual Blender journal reopen")
         if (not isinstance(assembly,SlateSequenceAssembly) or
             not isinstance(continuity,NativeEditorialContinuity) or
             continuity.index is not assembly.index or
@@ -66,6 +72,7 @@ class NativeSustainedPictureSound:
         self.render_png=render_png
         self.cancelled=cancelled
         self.require_protected_worker=require_protected_worker
+        self.native_worker_verifier=native_worker_verifier
 
     def preflight(self,project_id,continuity_id,revision, *,
                   first_frame,frame_count,listener_path,
@@ -422,6 +429,9 @@ class NativeSustainedPictureSound:
                         type(receipt.get("job_id")) is not str or
                         not receipt["job_id"].startswith("int02_")):
                     raise RuntimeError("Stored native worker receipt no longer matches source frame")
+                if (self.native_worker_verifier is not None and
+                        self.native_worker_verifier(dict(receipt)) is not True):
+                    raise RuntimeError("Original Blender journal cannot independently reopen frame")
             if (len(payload)>MAX_PNG_BYTES or
                 hashlib.sha256(payload).hexdigest()!=pic["sha256"] or
                 list(_png_header(payload))!=manifest["picture_dimensions"]):
@@ -456,6 +466,9 @@ class NativeSustainedPictureSound:
                 "audio_samples":manifest["audio_samples"],
                 "native_worker_receipts_embedded":receipts_present,
                 "worker_receipts_linked_to_source_frame":receipts_present,
+                "protected_worker_independently_reopened":
+                    bool(receipts_present and
+                         self.native_worker_verifier is not None),
                 "independent_os_reopen_or_custody_not_proven_by_manifest":True,
                 "file_path":str(root.resolve()),
                 "original_source_modified":False,

@@ -199,7 +199,8 @@ class NativeLongformFilmPlan:
                 "install_authorized":False}
 
     def reconcile_page(self,project_id,plan_id,revision,*,output_parent,
-                       first_index,limit=32):
+                       first_index,limit=32,require_protected_worker=False,
+                       native_worker_verifier=None):
         """Never count a frame unless its original picture+PCM hashes reopen."""
         page=self.page(project_id,plan_id,revision,
                        first_index=first_index,limit=limit)
@@ -210,7 +211,9 @@ class NativeLongformFilmPlan:
         verifier=NativeSustainedPictureSound(
             self.assembly,self.continuity,
             native_creator_approval=lambda *_:False,
-            render_png=lambda **_:None)
+            render_png=lambda **_:None,
+            require_protected_worker=require_protected_worker,
+            native_worker_verifier=native_worker_verifier)
         verified=[]
         missing=[]
         for entry in page["chunks"]:
@@ -243,20 +246,31 @@ class NativeLongformFilmPlan:
                 plan["source_shot_sha256"]!=entry["source_shot_sha256"] or
                 plan["source_start_tick"]!=entry["source_start_tick"]):
                 raise RuntimeError("Completed chunk belongs to another source film or optical setup")
+            if (require_protected_worker and
+                    proof.get("protected_worker_independently_reopened") is not True):
+                raise RuntimeError("Unreopened native Blender frame cannot count toward a film")
             verified.append({"chunk_id":entry["chunk_id"],
                              "first_frame":entry["first_frame"],
                              "manifest_sha256":proof["manifest_sha256"],
                              "audio_sha256":proof["audio_sha256"],
                              "frames":entry["frame_count"],
-                             "audio_samples":proof["audio_samples"]})
+                             "audio_samples":proof["audio_samples"],
+                             "protected_worker_independently_reopened":
+                                 proof["protected_worker_independently_reopened"]})
         return {"format":FORMAT,"plan_sha256":page["plan_sha256"],
                 "page_start_index":first_index,
                 "verified_chunks":verified,"missing_chunks":missing,
                 "verified_frames":sum(v["frames"] for v in verified),
+                "all_protected_workers_independently_reopened":
+                    bool(require_protected_worker and
+                         not missing and
+                         all(x["protected_worker_independently_reopened"]
+                             for x in verified)),
                 "full_film_master_approved":False,
                 "auto_resumed_worker":False}
 
-    def reconcile_all(self,project_id,plan_id,revision,*,output_parent):
+    def reconcile_all(self,project_id,plan_id,revision,*,output_parent,
+                      require_protected_worker=False,native_worker_verifier=None):
         doc=self.open(project_id,plan_id,revision)["data"]
         count=0
         frames=0
@@ -265,7 +279,9 @@ class NativeLongformFilmPlan:
         for start in range(0,doc["total_chunks"],MAX_PAGE):
             result=self.reconcile_page(
                 project_id,plan_id,revision,output_parent=output_parent,
-                first_index=start,limit=MAX_PAGE)
+                first_index=start,limit=MAX_PAGE,
+                require_protected_worker=require_protected_worker,
+                native_worker_verifier=native_worker_verifier)
             if result["missing_chunks"]:
                 return {"format":FORMAT,"status":"INCOMPLETE_ORIGINAL_SOURCE_DERIVATIVES",
                         "verified_chunks":count,"verified_frames":frames,
@@ -288,7 +304,10 @@ class NativeLongformFilmPlan:
                 "verified_chunks":count,"verified_frames":frames,
                 "verified_audio_samples_48khz":samples,
                 "verified_30_minute_original_film":(
+                    require_protected_worker and
                     frames >= LONGFORM_FRAMES and doc["is_thirty_minute_longform"]),
+                "protected_workers_independently_reopened":
+                    bool(require_protected_worker),
                 "completed_manifest_chain_sha256":digest.hexdigest(),
                 "original_source_mutated":False,"master_approved":False,
                 "feature_artistry_accepted":False,

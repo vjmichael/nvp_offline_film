@@ -27,9 +27,14 @@ def _sha(value):
 class NativeFilmReelBatch:
     def __init__(self,planner:NativeLongformFilmPlan,*,native_creator_approval,
                  render_png,cancelled=lambda:False,progress=lambda **_:None,
-                 require_protected_worker=False):
+                 require_protected_worker=False,native_worker_verifier=None):
         if type(require_protected_worker) is not bool:
             raise TypeError("Actual protected P2 native worker requirement must be explicit")
+        if (native_worker_verifier is not None and
+                not callable(native_worker_verifier)):
+            raise TypeError("Native original worker receipt verifier must be a callable")
+        if require_protected_worker and native_worker_verifier is None:
+            raise PermissionError("Protected reel cannot trust receipts without native journal")
         if (not isinstance(planner,NativeLongformFilmPlan) or
             not callable(native_creator_approval) or not callable(render_png)
             or not callable(cancelled) or not callable(progress)):
@@ -40,6 +45,7 @@ class NativeFilmReelBatch:
         self.cancelled=cancelled
         self.progress=progress
         self.require_protected_worker=require_protected_worker
+        self.native_worker_verifier=native_worker_verifier
 
     def _prepare(self,project_id,plan_id,revision,*,first_index,limit,
                  output_parent,actor_mix_id,actor_mix_revision):
@@ -132,7 +138,8 @@ class NativeFilmReelBatch:
             self.planner.assembly,self.planner.continuity,
             native_creator_approval=one_use_child,
             render_png=self.renderer,cancelled=self.cancelled,
-            require_protected_worker=self.require_protected_worker)
+            require_protected_worker=self.require_protected_worker,
+            native_worker_verifier=self.native_worker_verifier)
         verified=[]
         reused=[]
         for i,row in enumerate(items):
@@ -161,8 +168,9 @@ class NativeFilmReelBatch:
                     actor_mix_revision=actor_mix_revision)
                 if receipt["plan_sha256"]!=row["intent"]["plan_sha256"]:
                     raise RuntimeError("P1-F output differs from its native parent one-use grant")
-            if self.require_protected_worker and not receipt.get(
-                    "native_worker_receipts_embedded",False):
+            if self.require_protected_worker and not (
+                    receipt.get("native_worker_receipts_embedded",False) and
+                    receipt.get("protected_worker_independently_reopened",False)):
                 raise RuntimeError("Original reel cannot reuse a source-only unprotected chunk")
             verified.append({"chunk_id":ident,
                              "manifest_sha256":receipt["manifest_sha256"],

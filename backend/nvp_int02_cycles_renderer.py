@@ -181,6 +181,94 @@ class NativeCyclesOriginalRenderer:
             job=self._active
         return self.supervisor.cancel(job) if job is not None else False
 
+    def verify_native_worker_receipt(self, receipt):
+        """Reopen actual pinned Blender journal, encrypted inputs, PNG and audit.
+
+        A signed-off film is NEVER inferred from a standalone JSON receipt.
+        Only a native host holding the original supervisor + FilmIndex can
+        revalidate each exact source frame after cancellation or restart.
+        """
+        from backend.nvp_film_index import _sha
+        import re
+        if (type(receipt) is not dict or
+                receipt.get("format")!="nvp.int02.real_native_cycles_frame_receipt.v1" or
+                receipt.get("project_id")!=self.project_id or
+                receipt.get("native_cycles_render_verified") is not True or
+                receipt.get("private_worker_required") is not True or
+                receipt.get("independent_blend_reopen_verified") is not False or
+                receipt.get("film_master_approved") is not False or
+                type(receipt.get("job_id")) is not str or
+                not re.fullmatch(r"int02_[a-f0-9]{40}",receipt["job_id"])):
+            raise PermissionError("Not an exact first-party protected Cycles frame receipt")
+        for key in ("approved_plan_sha256","source_take_sha256",
+                    "job_spec_sha256","png_sha256","audit_sha256"):
+            _sha(receipt.get(key))
+        shot=receipt.get("source_shot_sha256")
+        if shot is not None:_sha(shot)
+        job=receipt["job_id"]
+        jobdir=self.supervisor.root/job
+        if jobdir.is_symlink() or not jobdir.is_dir():
+            raise RuntimeError("Original protected Blender journal folder missing")
+        status=self.supervisor.verify_completed(job)
+        if (status.get("state")!="SUCCEEDED" or
+                status.get("spec_sha256")!=receipt["job_spec_sha256"]):
+            raise RuntimeError("Source worker claim differs from original host journal")
+        names=("source.usda","plan.json","render.py",
+               "frame_authority.json","frame.png","audit.json")
+        if any((jobdir/name).is_symlink() or
+               not (jobdir/name).is_file() for name in names):
+            raise RuntimeError("Original worker source/receipt files missing")
+        if self.require_encrypted_scratch:
+            verify_efs_inputs(jobdir,names=names)
+        authority=json.loads((jobdir/"frame_authority.json").read_bytes())
+        plan=json.loads((jobdir/"plan.json").read_bytes())
+        audit=json.loads((jobdir/"audit.json").read_bytes())
+        if (type(authority) is not dict or
+                set(authority)!={"format","project_id","chunk_id",
+                    "source_take_id","source_take_sha256","source_shot_id",
+                    "source_shot_revision","source_shot_sha256","source_tick",
+                    "camera_path","approved_plan_sha256","usd_sha256"} or
+                authority["format"]!="nvp.int02.original_worker_source_authority.v1" or
+                authority["project_id"]!=self.project_id or
+                any(authority.get(k)!=receipt.get(k) for k in (
+                    "chunk_id","source_take_sha256","source_shot_sha256",
+                    "camera_path","approved_plan_sha256")) or
+                str(authority["source_tick"])!=receipt.get("source_tick") or
+                plan.get("format")!=FORMAT or
+                plan.get("source_tick")!=authority["source_tick"] or
+                plan.get("camera_path")!=authority["camera_path"] or
+                plan.get("usd_sha256")!=authority["usd_sha256"] or
+                plan.get("renderer")!="CYCLES" or
+                sha_file(jobdir/"source.usda")!=authority["usd_sha256"] or
+                sha_file(jobdir/"render.py")!=self.script_sha or
+                sha_file(jobdir/"frame.png")!=receipt["png_sha256"] or
+                sha_file(jobdir/"audit.json")!=receipt["audit_sha256"] or
+                audit.get("format")!="nvp.int02.cycles.native_frame.v1" or
+                audit.get("passed") is not True or
+                audit.get("render_engine")!="CYCLES" or
+                audit.get("source_tick")!=authority["source_tick"] or
+                audit.get("source_usd_sha256")!=authority["usd_sha256"] or
+                audit.get("camera_path")!=authority["camera_path"] or
+                audit.get("native_frame_sha256")!=receipt["png_sha256"] or
+                audit.get("source_camera_unit_conversion_verified") is not True or
+                audit.get("original_actor_geometry_verified") is not True or
+                audit.get("authored_lights_verified") is not True):
+            raise RuntimeError("Original Cycles picture/source/audit no longer agree")
+        source=self.index.read_revision(
+            self.project_id,authority["source_take_id"],1)
+        if source["document_sha256"]!=authority["source_take_sha256"]:
+            raise RuntimeError("Frozen original Take source changed since render")
+        if authority["source_shot_id"] is not None:
+            shotdoc=self.index.read_revision(
+                self.project_id,authority["source_shot_id"],
+                authority["source_shot_revision"])
+            if shotdoc["document_sha256"]!=authority["source_shot_sha256"]:
+                raise RuntimeError("Director shot changed since protected Cycles render")
+        elif (authority["source_shot_sha256"] is not None or
+              authority["source_shot_revision"] is not None):
+            raise RuntimeError("Unbound source shot metadata in native render")
+        return True
+
     def render_proven_png(self, *, scope, tick, camera_path, source_snapshot):
         """Return genuine source-bound native worker receipt, not only PNG bytes."""
         return self.render_png(scope=scope,tick=tick,camera_path=camera_path,
@@ -275,18 +363,41 @@ class NativeCyclesOriginalRenderer:
             "light_paths":[o["path"] for o in source_snapshot.get("objects",[])
                            if o.get("semantic_role")=="light"],
         }
+        authority=None
+        if with_worker_evidence:
+            authority={
+                "format":"nvp.int02.original_worker_source_authority.v1",
+                "project_id":self.project_id,
+                "chunk_id":scope["chunk_id"],
+                "source_take_id":take_id,
+                "source_take_sha256":take_sha,
+                "source_shot_id":shot_id,
+                "source_shot_revision":shot_rev,
+                "source_shot_sha256":shot_sha,
+                "source_tick":tick,"camera_path":camera_path,
+                "approved_plan_sha256":scope["approved_plan_sha256"],
+                "usd_sha256":dig,
+            }
         planbytes=json.dumps(plan,sort_keys=True,separators=(",",":")).encode("ascii")
         for name,contents in (
             ("source.usda",usd),("plan.json",planbytes),
-            ("render.py",self.trusted_script.read_bytes())):
+            ("render.py",self.trusted_script.read_bytes()),
+            *((("frame_authority.json",json.dumps(authority,sort_keys=True,
+                  separators=(",",":")).encode("ascii")),)
+              if authority is not None else ())):
             with (jobdir/name).open("xb") as fd:
                 fd.write(contents)
                 fd.flush();os.fsync(fd.fileno())
         if self.require_encrypted_scratch:
-            verify_efs_inputs(jobdir)
+            verify_efs_inputs(jobdir,names=(
+                "source.usda","plan.json","render.py",
+                *(("frame_authority.json",) if authority is not None else ())))
+        inputs={"source.usda":dig,"plan.json":sha256(planbytes).hexdigest()}
+        if authority is not None:
+            inputs["frame_authority.json"]=sha_file(jobdir/"frame_authority.json")
         op=BlenderOperation(
             job_id=job,script="render.py",script_sha256=self.script_sha,
-            inputs={"source.usda":dig,"plan.json":sha256(planbytes).hexdigest()},
+            inputs=inputs,
             outputs={"frame.png":"png","audit.json":"json_audit"},
             arguments={"--plan":"plan.json","--output":"frame.png","--audit":"audit.json"},
             timeout_seconds=600,memory_limit_mb=8192,
@@ -348,6 +459,8 @@ class NativeCyclesOriginalRenderer:
                 "independent_blend_reopen_verified":False,
                 "film_master_approved":False,
             }
+            if self.verify_native_worker_receipt(receipt) is not True:
+                raise RuntimeError("Native protected worker could not reopen its own receipt")
             return {"png_bytes":encoded,"native_worker_receipt":receipt}
         finally:
             with self._lock:
