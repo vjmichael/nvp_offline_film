@@ -161,7 +161,7 @@ class SlatePreviewCache:
             raise ValueError("Invalid bounded cache reservation")
         existing=self.lookup(project_id,key)
         if existing:
-            return {"status":"CACHE_HIT",**existing}
+            return {**existing,"status":"CACHE_HIT"}
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             row=db.execute("""SELECT state,job_id FROM slate_preview_cache
