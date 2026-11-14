@@ -21,11 +21,11 @@ from test_nvp_p1f_reviewed_pbr_materials_native import ReviewedNativePBRMaterial
 
 @unittest.skipUnless(sys.platform=="win32" and
                      os.environ.get("NVP_PUBLIC_SYNTHETIC_CI")=="1" and
-                     os.environ.get("NVP_NATIVE_BLENDER_EXECUTABLE"),
+                     os.environ.get("NVP_TEST_BLENDER"),
                      "Only the explicitly public reviewed material Windows native worker fixture")
 class NativeReviewMaterialCycles(unittest.TestCase):
     def test_actual_original_uv_png_material_cycles_and_restart(self):
-        exe=Path(os.environ["NVP_NATIVE_BLENDER_EXECUTABLE"]).resolve()
+        exe=Path(os.environ["NVP_TEST_BLENDER"]).resolve()
         self.assertTrue(exe.is_file())
         version=subprocess.run(
             [str(exe),"-b","--version"],capture_output=True,
@@ -85,7 +85,7 @@ class NativeReviewMaterialCycles(unittest.TestCase):
                 },
                 arguments={
                     "--plan":"material_plan.json",
-                    "--source":"original_location.usda",
+                    "--take":"original_location.usda",
                     "--output":"material_preview.png",
                     "--audit":"material_audit.json",
                 },
