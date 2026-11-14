@@ -65,27 +65,15 @@ jobs:
           python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
           python -m unittest discover -s tests -p "test_nvp_openusd_native_schemas.py" -v
 
-  real-cycles-presentation:
-    name: SLATE-06 actual contained Blender Cycles on frozen OpenUSD geometry
+  blender-runtime-quarantined:
+    name: FFmpeg-bearing apt Blender excluded; genuine render NOT ACCEPTED
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install real USD and Linux Blender
+      - name: Confirm rendering is deliberately unavailable pending audited non-FFmpeg runtime
         shell: bash
         run: |
-          python -m pip install --only-binary=:all: "usd-core==26.11"
-          sudo apt-get update -qq
-          sudo apt-get install -y blender
-          /usr/bin/blender -b --version
-      - name: CPU Cycles native PNG, input/output hashes and verified cache publication
-        shell: bash
-        env:
-          NVP_NATIVE_BLENDER_EXECUTABLE: /usr/bin/blender
-        run: |
-          python -m unittest discover -s tests -p "test_nvp_slate06_geometry_native.py" -v
+          echo "DA-00: apt Blender and its FFmpeg/libav dependencies are prohibited."
+          echo "No genuine Blender render acceptance is claimed by this job."
 
   native-editor-preview-ui:
     name: SLATE-06 React committed-geometry preview and native camera choice
