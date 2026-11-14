@@ -108,3 +108,124 @@ def sandbox_command(command,jobdir):
             "bubblewrap_sha256":digest,
             "private_job_root":str(job),
             "no_network":True}
+
+
+def prove_private_kernel_boundary(supervisor_root):
+    """Actually run a zero-media kernel probe *before* staging creator sources.
+
+    This proves a finite local namespace+cgroup launch on this machine at
+    this moment; it does not attest Windows, Blender pixels or the later
+    worker's release signing. A mere Bubblewrap argv/preflight is not proof.
+    """
+    import json
+    import secrets
+    import socket
+    import tempfile
+    from backend.nvp_worker_containment import launch_contained
+    from backend.nvp_worker_linux_cgroup import current_cgroup_relative
+
+    preflight=private_os_preflight()
+    root=Path(supervisor_root).resolve(strict=True)
+    if not root.is_dir() or root.is_symlink():
+        raise RuntimeError("Untrusted NVP kernel-probe workspace")
+    binary=Path("/usr/bin/python3")
+    if not binary.is_file():
+        raise RuntimeError("Reviewed Linux kernel-probe interpreter unavailable")
+    parent_net=os.readlink("/proc/self/ns/net")
+    parent_mount=os.readlink("/proc/self/ns/mnt")
+    parent_cgroup=current_cgroup_relative()
+    nonce=secrets.token_hex(16)
+    # Entirely public probe bytes. No private project data exists in this
+    # temporary directory and no other worker's directory is mounted.
+    with tempfile.TemporaryDirectory(prefix="p1f_kernel_probe_",dir=root) as temp:
+        tmp=Path(temp).resolve()
+        job=tmp/"approved"
+        job.mkdir(mode=0o700)
+        allowed=job/"input.txt"
+        allowed.write_text(nonce,encoding="ascii")
+        hidden=tmp/"host_private_sentinel"
+        hidden.write_text(nonce,encoding="ascii")
+        out_file=job/"probe_stdout.txt"
+        err_file=job/"probe_stderr.txt"
+        listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        listener.bind(("127.0.0.1",0))
+        listener.listen(1)
+        listener.settimeout(3)
+        port=listener.getsockname()[1]
+        # The only worker command is a fixed, local Python -S probe (no shell).
+        # A network namespace that accidentally shares the host will be able
+        # to connect to the known host-only listener and MUST be rejected.
+        script=(
+            "import os,json,socket;"
+            "from pathlib import Path;"
+            f"allowed=Path({str(allowed)!r});"
+            f"hidden=Path({str(hidden)!r});"
+            "s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);"
+            "s.settimeout(1.0);"
+            f"net_result=s.connect_ex(('127.0.0.1',{port}));"
+            "s.close();"
+            "print(json.dumps({"
+            "'net':os.readlink('/proc/self/ns/net'),"
+            "'mount':os.readlink('/proc/self/ns/mnt'),"
+            "'cgroup':Path('/proc/self/cgroup').read_text().split('0::',1)[-1].strip(),"
+            "'allowed':allowed.read_text()=="+repr(nonce)+","
+            "'hidden':hidden.exists(),"
+            "'host_loopback_connected':net_result==0"
+            "}),flush=True)"
+        )
+        proc=None
+        try:
+            with out_file.open("wb") as out,err_file.open("wb") as err:
+                proc=launch_contained(
+                    [str(binary),"-S","-c",script],
+                    cwd=str(job),stdout=out,stderr=err,memory_mb=1024,
+                    linux_cgroup_tree_required=True,
+                    private_isolation_required=True)
+                worker_leaf=proc.cgroup.resolve(strict=True)
+                worker_procs=(worker_leaf/"cgroup.procs").read_text().split()
+                if str(proc.pid) not in worker_procs:
+                    raise RuntimeError("Kernel failed to place root worker in delegated cgroup")
+                guardian=Path(f"/proc/{proc._guardian.pid}/cgroup").read_text()
+                if worker_leaf.name in guardian:
+                    raise RuntimeError("Private worker guardian incorrectly resides inside worker leaf")
+                rc=proc.wait(timeout=15)
+            stderr=err_file.read_text("utf8",errors="replace")[-3000:]
+            if rc!=0:
+                raise RuntimeError("Private kernel namespace probe exited nonzero: "+stderr)
+            report=json.loads(out_file.read_text("utf8"))
+            expected_cgroup="/"+worker_leaf.relative_to(
+                Path("/sys/fs/cgroup")).as_posix()
+            if (type(report) is not dict or
+                    report.get("net")==parent_net or
+                    report.get("mount")==parent_mount or
+                    report.get("cgroup")!=expected_cgroup or
+                    report.get("allowed") is not True or
+                    report.get("hidden") is not False or
+                    report.get("host_loopback_connected") is not False):
+                raise RuntimeError("Actual private kernel namespaces/cgroup/egress denial not proved")
+            proc.close()
+            proc=None
+            return {
+                "contract":"nvp.p1f.real_kernel_boundary_probe.v1",
+                "checked":True,
+                "namespace_executable_sha256":preflight["namespace_executable_sha256"],
+                "host_cgroup":parent_cgroup,
+                "worker_cgroup":expected_cgroup,
+                "host_network_namespace":parent_net,
+                "worker_network_namespace":report["net"],
+                "host_mount_namespace":parent_mount,
+                "worker_mount_namespace":report["mount"],
+                "approved_source_read":True,
+                "outside_job_file_hidden":True,
+                "host_loopback_denied":True,
+                "guardian_outside_worker_leaf":True,
+                "private_project_staged":False,
+            }
+        finally:
+            listener.close()
+            if proc is not None:
+                try:
+                    if proc.poll() is None:
+                        proc.terminate_tree()
+                finally:
+                    proc.close()
