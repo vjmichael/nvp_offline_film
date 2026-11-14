@@ -1,3 +1,13 @@
+# Governing directive — NVP ONE MAINLINE CONVERGENCE (2026-11-13/14)
+
+**This directive supersedes any isolated-bug or open-ended stacked-branch workflow below.** The NVP target is ONE authoritative `main`, not a collection of parallel feature PRs. Branch-by-branch original feature, tests, security and rights verification must now converge into `nvp/mainline-convergence-20261113`, followed by a single source-bound, independently accepted integration PR to `main`. Do not report partial unit repairs as production progress while the core code remains scattered.
+
+**Canonical repository-wide census:** [NVP_MAINLINE_CONVERGENCE_LEDGER.md](NVP_MAINLINE_CONVERGENCE_LEDGER.md), which inventories **209 branches including `main` and the candidate, and 139 currently open PRs** with exact snapshot refs. The candidate starts from PR #160 (including PR #159 ancestry). It has **not** reconciled divergent W1-G/P1-A/SEC-06 or G02/G03 work. Actual code merges, conflict resolutions, original native regressions, Windows/Linux kernel receipts and permitted release authorizations remain required before mainline merge. Existing P1-F source development is a part of that consolidation—not an independent alternative.
+
+**Active execution priority:** (1) reconcile current candidate and divergent branch identity, (2) resolve unique W1-G/SEC-06 and creator-facing original work into candidate without weakening boundaries, (3) account for every remaining branch by audited absorption or documented supersession/refusal, (4) prove one final exact-head Windows/Linux/native source+security matrix, (5) single protected PR into `main` and subsequently remove retired branches. Continue independent implementation while CI runs, but do not call untested code accepted.
+
+---
+
 ## Authoritative execution order — NVP backlog, 2026-11-13
 
 This order **supersedes older execution-order recommendations elsewhere in this historical ledger**, without erasing previous task evidence. Implementation may advance on independent workstreams while GitHub Actions runs; the corresponding acceptance/release gates remain strict. Refer to [the P1-F asset and sustained-reel progress ledger](NVP_P1F_ASSET_AND_SUSTAINED_REEL_PROGRESS.md) for the detailed production dependency register.
