@@ -12,6 +12,7 @@
 #include <sddl.h>
 #include <string>
 #include <stdexcept>
+#pragma comment(lib,"user32.lib")
 
 namespace nvp_p1f_private_desktop {
 struct PrivateDesktop {
