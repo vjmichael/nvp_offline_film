@@ -33,8 +33,8 @@ from backend.nvp_resource_guard import AdmissionRequest
 
 JOB_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,79}$")
 SHA = re.compile(r"^[a-f0-9]{64}$")
-VALID_KINDS = frozenset({"png","json_audit","blend","exr"})
-ALLOWED_ARGS = frozenset({"--output","--manifest","--audit","--render","--take","--plan","--out","--preview"})
+VALID_KINDS = frozenset({"png","json_audit","blend","exr","glb"})
+ALLOWED_ARGS = frozenset({"--output","--manifest","--audit","--render","--take","--plan","--out","--preview","--payload","--package","--skip-render"})
 TERMINAL = frozenset({"SUCCEEDED","FAILED","CANCELLED","TIMED_OUT","INTERRUPTED"})
 
 
@@ -291,6 +291,12 @@ class BlenderWorkerSupervisor:
         for flag,value in op.arguments.items():
             if type(value) is not str:
                 raise ValueError("Blender argument must be a workspace-relative file/directory")
+            # Audit-only is a finite literal switch, never an arbitrary path.
+            if flag=="--skip-render":
+                if value!="1":
+                    raise ValueError("Only explicit audit-only mode is supported")
+                argv.extend([flag,"1"])
+                continue
             target=_safe_relative(jobdir,value)
             # Inputs and outputs must be specifically authorized in the contract.
             if value not in op.inputs and value not in op.outputs:
@@ -307,7 +313,7 @@ class BlenderWorkerSupervisor:
             if not 8<=size<=512*1024*1024:
                 raise RuntimeError("Blender output size outside approved bound")
             with path.open("rb") as f:
-                head=f.read(8)
+                head=f.read(12)
             if ((kind=="png" and head!=b"\x89PNG\r\n\x1a\n") or
                 # Blender 5.x can save Zstandard-compressed .blend containers
                 # (28 b5 2f fd), not just legacy raw BLENDER headers. Media
@@ -315,7 +321,13 @@ class BlenderWorkerSupervisor:
                 # establishes actual scene validity before NVP acceptance.
                 (kind=="blend" and not (head.startswith(b"BLENDER") or
                     head.startswith(bytes.fromhex("28b52ffd")))) or
-                (kind=="exr" and head[:4]!=b"\x76\x2f\x31\x01")):
+                (kind=="exr" and head[:4]!=b"\x76\x2f\x31\x01") or
+                # GLB 2.0 header: real glTF magic + exact byte length.
+                # Actual mesh, skin and accessor provenance is independently
+                # parsed by the source character inspector after this audit.
+                (kind=="glb" and (head[:4]!=b"glTF" or
+                    int.from_bytes(head[4:8],"little")!=2 or
+                    int.from_bytes(head[8:12],"little")!=size))):
                 raise RuntimeError("Blender output failed media magic verification")
             if kind=="json_audit":
                 doc=json.loads(path.read_text("utf8"))
