@@ -62,9 +62,9 @@ def sandbox_command(command,jobdir):
     job=Path(jobdir)
     if (not job.is_absolute() or job.is_symlink() or not job.is_dir() or
             str(job)!=str(job.resolve()) or
-            any(str(arg).startswith(("/home/","/root/")) and
+            any(isinstance(arg,str) and arg.startswith("/") and
                 not Path(arg).resolve().is_relative_to(job)
-                for arg in command[1:] if isinstance(arg,str))):
+                for arg in command[1:])):
         raise RuntimeError("Private Blender invocation contains unauthorized host path")
     binary=Path(command[0]).resolve()
     if not (binary.is_file() and binary.is_relative_to(Path("/usr"))):
@@ -80,7 +80,15 @@ def sandbox_command(command,jobdir):
          "--setenv","PATH","/usr/bin:/bin"]
     for path in RO_SYSTEM:
         p=Path(path)
-        if p.exists():
+        if p.is_symlink():
+            # Ubuntu merged-/usr images have /lib and /lib64 symlinks.
+            # Bind-mounting onto a symlink is neither portable nor safe.
+            link=os.readlink(path)
+            if (not link or link.startswith("/") or
+                    ".." in Path(link).parts):
+                raise RuntimeError("Unreviewed runtime symlink in private mount boundary")
+            cmd.extend(["--symlink",link,path])
+        elif p.is_dir():
             cmd.extend(["--ro-bind",path,path])
     for path in RO_ETC:
         p=Path(path)
