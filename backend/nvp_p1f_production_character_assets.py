@@ -13,6 +13,7 @@ import json
 import math
 
 from backend.nvp_character_assets import inspect_rigged_glb
+from backend.nvp_p1f_glb_mesh_audit import audit_glb_skinned_mesh
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_openusd_assets import OpenUSDAssetRegistry
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
@@ -92,6 +93,7 @@ class P1FReviewedProductionCharacters:
         rig, original_joints, _ = _source_rig(
             self.index, pid, actor_asset_id, actor_asset_revision, actor_id)
         original = inspect_rigged_glb(glb_bytes)
+        decoded = audit_glb_skinned_mesh(glb_bytes, original)
         mapped = _joint_map(joint_map, original_joints, original["joint_names"])
         placement = _calibration(calibration)
         evidence = _rights(rights, rights_evidence)
@@ -107,6 +109,7 @@ class P1FReviewedProductionCharacters:
             "original_actor_revision": actor_asset_revision,
             "original_actor_document_sha256": rig["document_sha256"],
             "glb_sha256": source_sha,
+            "decoded_geometry": decoded,
             "joint_map": mapped,
             "calibration": placement,
             "rights": evidence,
@@ -125,6 +128,7 @@ class P1FReviewedProductionCharacters:
             "original_actor_revision": actor_asset_revision,
             "original_actor_document_sha256": rig["document_sha256"],
             "glb_sha256": source_sha, "glb_inspection": original,
+            "decoded_geometry": decoded,
             "joint_map": mapped, "calibration": placement,
             "rights": evidence, "rights_evidence_sha256": evidence_sha,
             "creator_source_reviewed": True,
@@ -175,6 +179,8 @@ class P1FReviewedProductionCharacters:
         original = self.index.get_blob(pid, d["glb_sha256"])
         if inspect_rigged_glb(original) != d["glb_inspection"]:
             raise RuntimeError("Reviewed skinned GLB geometry/skeleton differs on cold reopen")
+        if audit_glb_skinned_mesh(original, d["glb_inspection"]) != d["decoded_geometry"]:
+            raise RuntimeError("Original decoded skinning/mesh differs on cold reopen")
         if _joint_map(d["joint_map"], joints, d["glb_inspection"]["joint_names"]) != d["joint_map"]:
             raise RuntimeError("Reviewed joint mapping changed")
         if _calibration(d["calibration"]) != d["calibration"]:
