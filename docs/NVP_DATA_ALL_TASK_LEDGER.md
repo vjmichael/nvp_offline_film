@@ -1,3 +1,20 @@
+## Authoritative execution order — NVP backlog, 2026-11-13
+
+This order **supersedes older execution-order recommendations elsewhere in this historical ledger**, without erasing previous task evidence. Implementation may advance on independent workstreams while GitHub Actions runs; the corresponding acceptance/release gates remain strict. Refer to [the P1-F asset and sustained-reel progress ledger](NVP_P1F_ASSET_AND_SUSTAINED_REEL_PROGRESS.md) for the detailed production dependency register.
+
+1. **Repair the demonstrated original-shot test mismatch** and finish all four Windows/Linux native combinations, including the genuine Cycles picture/audio test.
+2. **Finish professional scene assets and performance**, using the reviewed material bindings already implemented.
+3. **Run sustained rendering across genuine reel boundaries**, validating uninterrupted picture/sound delivery and adversarial recovery.
+4. **Complete creator-facing filming, editing and live A/V**, including physical recording and spatial sound where hardware validation is required.
+5. **Produce the 30-second film, then the actual 30-minute film**, before attempting the three-hour target.
+6. **Complete packaging and release acceptance** only after the required independent evidence passes.
+
+**Active Step 1 evidence (source head before repair `bdd653ceeb8769a3590b25db0c5dd135be3257e8`):** [Windows public native Cycles run #43555255623](https://github.com/vjmichael/nvp_offline_film/actions/runs/43555255623) and Linux 3.11/3.13 [P1-D/E run #43555255586](https://github.com/vjmichael/nvp_offline_film/actions/runs/43555255586) both exposed `test_cross_scene_nonmatching_take_and_tampered_original_png_refused` accepting a second material look ID for the same original scene/environment/material revision. The unchanged original assertion requires denial. Refuse equivalent active binding aliases under the FilmIndex writer lock; preserve separate genuinely distinct look/source scopes. At the same head, genuine Windows Blender preview UV/PBR source tests passed individually before the combined-shot suite was blocked by this original test; no two-shot Cycles/picture/WAV acceptance may be inferred. Required Linux root-owned OS custody, Windows SCM kernel and public broker tests passed separately; real installed private creator-signature acceptance remains OPEN.
+
+**Release decision:** draft only; no merge or production installation, no complete 30-second/30-minute/three-hour film accepted.
+
+---
+
 2026-11-13 P1-F ASSET/SUSTAINED BACKLOG ADVANCE (DRAFT, NOT RELEASE): implemented source-reviewed authored UV/PBR PNG material sets with original license/ownership evidence, exact FilmIndex source/dependency hashes, and original UV mesh bindings; implemented contiguous verified-frame next-reel review plus per-frame durable no-overlap across distinct batch IDs. Original Windows/Linux Python 3.11/3.13 native/no-FFmpeg acceptance queued; no completed professional assets, genuine textured Cycles output, 30-minute or 3-hour film. See docs/NVP_P1F_ASSET_AND_SUSTAINED_REEL_PROGRESS.md for implementation and remaining acceptance gates. No SCM/AppContainer private creator release or P2 long-film acceptance inferred from earlier public fixture tests.
 
 2026-11-13 DA-00/DA-03 SLATE-05 FIXTURE REPAIR (e806118): exact predecessor 69cddc0 SCALE-01 compact editorial workflow #43409008466 PASSED on Windows/Linux; zero-FFmpeg audit and DATA-AV Windows/Linux/React jobs PASSED while installed NVP.exe job was IN PROGRESS (not accepted). Original SLATE-05 #43409008164 failed all native fixture setup because two branch dictionaries in tests/test_nvp_slate05_preview_native.py had trailing assignment commas, producing singleton tuples rejected by strict typed-branch validation. Removed the two accidental tuple commas without weakening production validation. SOURCE COMMITTED; changed-head SLATE-05 Windows/Linux and installed acceptance UNVERIFIED. SLATE-06/07 still fail creator-approval bindings and SLATE-07 also has a stale document-shape assertion. DA-00 repository-wide zero-FFmpeg audit PARTIAL; DA-03 native microphone/custody/restart and 3D A/V/HRTF/final 2D acceptance OPEN. Retired proxy PRs untouched.
@@ -244,7 +261,7 @@ relevant installed-app evidence passed. Do not collapse these statuses.
 
 **Source-status reconciliation:** DA-02, DA-05, DA-06 and DA-07 all contain substantive limited source implementation even though the older table describes some as OPEN; mark them *PARTIAL SOURCE*, never ACCEPTED. DA-00 remains IN PROGRESS; DA-01/03/04 remain PARTIAL. **All DA-00–DA-07 native/installed acceptance statuses remain OPEN at this source snapshot.**
 
-### 3. Execution order — concrete next work, no duplicate build of existing tools
+### 3. Historical execution order — superseded by the authoritative six-step sequence at the top
 
 1. **P0: Close active native defects and source divergence.** First repair P1-B `makensis` path from original Windows log; finish new Windows installed-candidate run. Reconcile source from #156 on latest #74 (including the original PCM/OS authority and updated legacy recorder cleanup); repair demonstrated Windows E2E-01D and USD-02C exact-time failures. Keep physical ADC/EFS gates open without blocking unrelated source implementation. Do not repeatedly launch GitHub jobs just to watch queues.
 2. **P1: DA-00 + DA-06 authority cleanup; DA-01/DA-02 missing source/editor seams.** Audit the actual app and bundle for reachable legacy/FFmpeg execution. Finish source-immutable exact-time editor/ActorID/scene/Take controls and correct source identity/capture recovery. PLAN-02-C (camera rails + human-reviewed local GGUF) follows PLAN-02-B in the **existing** integration map; reconcile its source tests/GUI, no independent model grant.
