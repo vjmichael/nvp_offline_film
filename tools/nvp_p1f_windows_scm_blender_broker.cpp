@@ -10,6 +10,7 @@
 // project can supply arbitrary executables, scripts, argv, or host file paths.
 #define NVP_P1F_EMBEDDED_IN_SCM_SERVICE 1
 #include "nvp_p1f_windows_private_kernel_probe.cpp"
+#include "nvp_p1f_windows_creator_signature.hpp"
 #include <wincrypt.h>
 #include <algorithm>
 #include <array>
@@ -126,6 +127,8 @@ static void private_acl_proof(const fs::path& dir) {
 }
 struct Request {
     std::wstring ticket,id,project,plan,binary,script,usda,pcm,spec;
+    bool private_signoff_required=false;
+    std::wstring consent_expires;
 };
 static Request consume_approved_public_preview() {
     HKEY key=nullptr;
@@ -153,8 +156,14 @@ static Request consume_approved_public_preview() {
                 hexsha(r.binary)&&hexsha(r.script)&&
                 hexsha(r.usda)&&hexsha(r.pcm)&&hexsha(r.spec),
                 "Wrong or replayed finite source/job/Blender identity");
-        require(fixture==L"1",
-                "Private film denied: no independent signed creator approval verifier");
+        if(fixture==L"1") {
+            r.private_signoff_required=false;
+        } else if(fixture==L"0") {
+            r.private_signoff_required=true;
+            r.consent_expires=reg_string(key,L"CreatorConsentExpiryUtc");
+        } else {
+            throw std::runtime_error("Invalid source admission mode");
+        }
         // Fail-stop before touching the installed Blender or original bytes.
         DWORD n=static_cast<DWORD>((r.ticket.size()+1)*sizeof(wchar_t));
         require(RegSetValueExW(key,L"ConsumedId",0,REG_SZ,
@@ -208,6 +217,39 @@ static int run_source_bound_blender() {
             sha256(usd)==r.usda && sha256(pcm)==r.pcm &&
             sha256(spec)==r.spec,
             "Source, Python script, portable Blender or PCM hash changed");
+    if(r.private_signoff_required) {
+        // The admin-issued one-use HKLM ticket is NECESSARY but insufficient.
+        // This independent desktop creator signature is mandatory and must
+        // be verified against an installer-owned, non-project trust anchor.
+        HKEY pinned=nullptr;
+        require(RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                L"SOFTWARE\\NVP\\P1F\\CreatorTrust",
+                0,KEY_QUERY_VALUE,&pinned)==ERROR_SUCCESS,
+                "No independently installed creator trust policy");
+        std::wstring allowed,issuer;
+        try {
+            allowed=reg_string(pinned,L"PrivateReleaseAccepted");
+            issuer=reg_string(pinned,L"SignerCertificateSha256");
+        } catch(...) {RegCloseKey(pinned);throw;}
+        RegCloseKey(pinned);
+        require(allowed==L"1",
+                "Private creator source cannot run before independent installed acceptance");
+        auto ascii=[](const std::wstring& wide){
+            // Every source, job, signer and expiry field is bounded ASCII.
+            if(!std::all_of(wide.begin(),wide.end(),[](wchar_t ch){
+                return ch>=32&&ch<=126;
+            })) throw std::runtime_error("Noncanonical creator signed field");
+            return std::string(wide.begin(),wide.end());
+        };
+        nvp_p1f_creator_signature::SignedScope scope{
+            ascii(r.ticket),ascii(r.project),ascii(r.id),
+            ascii(r.plan),ascii(r.binary),ascii(r.script),
+            ascii(r.usda),ascii(r.pcm),ascii(r.spec),
+            ascii(r.consent_expires)};
+        require(nvp_p1f_creator_signature::verify(
+                    scope,job/L"creator_approval.p7s",ascii(issuer)),
+                "Actual independent creator source signature not approved");
+    }
     durable_file(job/L"scm_native_started.txt",
         "format=nvp.p1f.scm_source_start.v1\n"+
         std::string("ticket=")+
@@ -310,7 +352,8 @@ static int run_source_bound_blender() {
         "original_png_sha256="+std::string(picture_sha.begin(),picture_sha.end())+"\n"+
         "blender_audit_sha256="+std::string(audit_sha.begin(),audit_sha.end())+"\n"+
         "actual_scm_owned_appcontainer_wfp_job=1\n"
-        "private_source_approval_proved=0\n"
+        "private_source_approval_proved="+
+        std::string(r.private_signoff_required?"1":"0")+"\n"+
         "finished_film=0\n";
     durable_file(job/L"scm_native_source_receipt.txt",receipt);
     return 0;
