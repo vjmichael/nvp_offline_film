@@ -39,8 +39,14 @@ def source_path(mod):
     if not mod.startswith(("backend.","tools.")):
         return None
     parts=mod.split(".")
-    p=ROOT.joinpath(*parts).with_suffix(".py")
-    return p if p.is_file() else None
+    base=ROOT.joinpath(*parts)
+    module_file=base.with_suffix(".py")
+    if module_file.is_file():
+        return module_file
+    # Python package imports execute __init__.py before their children.
+    # Skipping package initializers leaves an executable dependency blind spot.
+    initializer=base/"__init__.py"
+    return initializer if initializer.is_file() else None
 
 
 def dotted(node):
