@@ -1,5 +1,8 @@
 # NVP-STACK-02C3 — Memory safety, admission control and truthful progress
 
+> **Tracking notice (2026-11-13/14):** This is a historical/technical reference, **not an active task ledger or backlog**. The sole current NVP task journal, priorities, statuses, acceptance gates and branch/PR dispositions are maintained in [NVP_DATA_ALL_TASK_LEDGER.md](NVP_DATA_ALL_TASK_LEDGER.md), through draft convergence [PR #161](https://github.com/vjmichael/nvp_offline_film/pull/161). Older branch/PR claims below are source snapshots; preserve technical evidence but do not use them to decide current task priority.
+
+
 **Engineering date:** 2026-11-03  
 **Status:** **Initial development gate ACCEPTED** in [CI run 41774472490](https://github.com/vjmichael/nvp_offline_film/actions/runs/41774472490): **4/4 jobs green**. Full production rollout, on-device VRAM stress and managed AI load/unload remain open.  
 **Parent:** [STACK-02C2 native worker/cgroup acceptance](NVP_STACK02C2_LINUX_CGROUP_WHOLE_TREE.md) · [Reuse-first decision](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md)
