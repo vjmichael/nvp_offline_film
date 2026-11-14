@@ -83,9 +83,13 @@ def inspect_original_rig(index: FilmIndex, pid, take_id, actor_path, expected_ta
     anim_names = [str(x) for x in (animation.GetBlendShapesAttr().Get() or [])]
     paths = list(binding.GetBlendShapeTargetsRel().GetTargets() or [])
     expected = rig.get("facial_shape_names", [])
-    if not mesh_names or mesh_names != anim_names or \
-       mesh_names != expected or len(paths) != len(mesh_names):
-        raise PermissionError("No complete original, named USD facial rig")
+    if not mesh_names:
+        # This actor legitimately has no authored facial geometry: callers
+        # must choose object-actor mode, not invent lips or change its source.
+        raise ValueError("Original actor has no authored named USD facial rig")
+    if mesh_names != anim_names or mesh_names != expected or \
+       len(paths) != len(mesh_names):
+        raise PermissionError("Original USD facial rig source identity changed")
     points = mesh.GetPointsAttr().Get()
     if points is None or len(points) != rig["skin_vertex_count"]:
         raise RuntimeError("Skinned face mesh source topology changed")
