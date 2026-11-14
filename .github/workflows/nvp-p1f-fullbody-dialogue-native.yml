@@ -1,0 +1,53 @@
+name: NVP P1-F Full-Body Rest/Foot and Actor Dialogue Native Evidence
+
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_p1f_full_body_retarget.py'
+      - 'backend/nvp_p1f_actor_dialogue_evidence.py'
+      - 'tests/test_nvp_p1f_full_body_retarget_native.py'
+      - 'tests/test_nvp_p1f_actor_dialogue_evidence_native.py'
+      - '.github/workflows/nvp-p1f-fullbody-dialogue-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-p1f-body-dialogue-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  original-source-native:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install actual OpenUSD and reviewed project dependency set
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Preserve original no-FFmpeg contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/nvp_no_ffmpeg_contract.py
+      - name: Original rest-axis, terrain contact and voice-to-face source clocks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_p1f_full_body_retarget.py backend/nvp_p1f_actor_dialogue_evidence.py tests/test_nvp_p1f_full_body_retarget_native.py tests/test_nvp_p1f_actor_dialogue_evidence_native.py
+          python -m unittest discover -s tests -p 'test_nvp_p1f_full_body_retarget_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_actor_dialogue_evidence_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_production_character_assets_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_imported_actor_native.py' -v
