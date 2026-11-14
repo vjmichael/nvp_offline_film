@@ -62,6 +62,18 @@ class P1FVerifiedPictureAudioPrefix:
         frames=coverage["verified_frames"]
         if type(frames) is not int or not 1<=frames<=MAX_SOURCE_FRAMES:
             raise RuntimeError("No independently verified nonempty original film prefix")
+        # A fixed count alone cannot authorize substitution of a different
+        # source segment under the same output-frame interval. Bind each
+        # original independently reopened source manifest SHA in order.
+        with self.coverage._connect() as db:
+            rows=db.execute("""SELECT batch_id,first_frame,frame_count,
+                       source_manifest_sha256 FROM verified_segments
+                       WHERE project_id=? AND plan_id=?
+                       ORDER BY first_frame,batch_id""",(pid,plan_id)).fetchall()
+        manifest_chain=_digest([
+            {"batch_id":bid,"first_frame":first,"frame_count":count,
+             "source_manifest_sha256":digest}
+            for bid,first,count,digest in rows])
         doc={
             "format":FORMAT,
             "status":"REVIEW_ONLY_NOT_EXPORTED",
@@ -69,6 +81,7 @@ class P1FVerifiedPictureAudioPrefix:
             "plan_id":plan_id,
             "plan_document_sha256":coverage["plan_document_sha256"],
             "source_frames":frames,
+            "source_segment_manifest_chain_sha256":manifest_chain,
             "original_audio_samples_per_channel":frames*FRAME_SAMPLES,
             "complete_source_film":coverage["all_source_frames_verified"],
             "ready_to_publish_master":False,
@@ -146,8 +159,10 @@ class P1FVerifiedPictureAudioPrefix:
                                 src_audio.getnframes()!=count*FRAME_SAMPLES):
                             raise RuntimeError("Original segment PCM sample clock changed")
                         for frame in segment["frames"]:
-                            if frame["global_frame"]!=copied:
-                                raise RuntimeError("Original frame order changed during prefix export")
+                            from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+                            if (frame["global_frame"]!=copied or
+                                    frame["output_tick"]!=copied*(TICKS_PER_SECOND//24)):
+                                raise RuntimeError("Original picture frame or Film Time order changed")
                             origin=segment_root/frame["picture_file"]
                             if origin.is_symlink() or not origin.is_file():
                                 raise RuntimeError("Original source PNG missing or linked")
@@ -205,6 +220,8 @@ class P1FVerifiedPictureAudioPrefix:
                 "project_id":pid,"plan_id":plan_id,
                 "sequence_id":sequence_id,
                 "plan_document_sha256":review["plan_document_sha256"],
+                "source_segment_manifest_chain_sha256":
+                    review["source_segment_manifest_chain_sha256"],
                 "source_frames":complete,
                 "source_audio_samples_per_channel":complete*FRAME_SAMPLES,
                 "picture_sha256_chain":picture_chain.hexdigest(),
@@ -245,7 +262,9 @@ class P1FVerifiedPictureAudioPrefix:
             raise RuntimeError("Source prefix receipt cannot claim completed film")
         original=self.review(pid,plan_id)
         if (original["plan_document_sha256"]!=summary["plan_document_sha256"] or
-                original["source_frames"]!=summary["source_frames"]):
+                original["source_frames"]!=summary["source_frames"] or
+                original["source_segment_manifest_chain_sha256"]!=
+                    summary["source_segment_manifest_chain_sha256"]):
             raise RuntimeError("Source prefix coverage changed after assembly")
         index=root/"frame_sources.jsonl"
         if index.is_symlink() or _hash_file(index)!=summary["frame_index_sha256"]:
