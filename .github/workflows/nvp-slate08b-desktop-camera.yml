@@ -10,7 +10,7 @@ on:
       - "tools/nvp_desktop_alpha.py"
       - "frontend/src/FilmCameraSourcePanel.jsx"
       - "frontend/src/CameraLensWorkbench.jsx"
-      - "frontend/src/FilmCameraNativeBridge.test.jsx src/DirectorCameraActorContinuity.test.jsx"
+      - "frontend/src/FilmCameraNativeBridge.test.jsx"
       - "frontend/src/DirectorCameraActorContinuity.jsx"
       - "frontend/src/DirectorCameraActorContinuity.test.jsx"
       - "backend/nvp_conv06_trusted_director_desktop.py"
@@ -63,4 +63,4 @@ jobs:
           node-version: "22"
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx
+      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx src/DirectorCameraActorContinuity.test.jsx
