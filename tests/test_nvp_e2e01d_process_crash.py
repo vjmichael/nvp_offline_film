@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import subprocess
 import sys
 import tempfile
@@ -232,7 +233,7 @@ class ProcessDeathRecovery(unittest.TestCase):
                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=60,check=False)
             self.assertEqual(result.returncode,EXIT,result.stderr.decode("utf8","replace"))
             pid=(root/"pid.txt").read_text()
-            with sqlite3.connect(root/"ledger"/"task_activity.sqlite3") as db:
+            with closing(sqlite3.connect(root/"ledger"/"task_activity.sqlite3")) as db:
                 if case=="reservation":
                     row=db.execute("""SELECT state,reserved,ram_mb FROM tasks
                         WHERE id='owned_native_worker'""").fetchone()
@@ -279,7 +280,7 @@ class ProcessDeathRecovery(unittest.TestCase):
                     "distribution":"DISTRIBUTION_UNCERTAIN"}[case])
                 self.assertTrue(recovered["requires_native_reconciliation"])
                 self.assertFalse(recovered.get("recovered_without_relaunch",False))
-            with sqlite3.connect(root/"studio.sqlite3") as db:
+            with closing(sqlite3.connect(root/"studio.sqlite3")) as db:
                 self.assertEqual(db.execute(
                     "SELECT COUNT(*) FROM projects WHERE id=?",(pid,)).fetchone()[0],1)
                 film_table=db.execute("""SELECT name FROM sqlite_master
