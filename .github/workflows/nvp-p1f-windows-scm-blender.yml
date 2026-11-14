@@ -1,0 +1,62 @@
+name: NVP P1-F SCM Finite Source-Hashed Blender Broker Negative Gate
+
+on:
+  pull_request:
+    paths:
+      - 'tools/nvp_p1f_windows_private_kernel_probe.cpp'
+      - 'tools/nvp_p1f_windows_scm_blender_broker.cpp'
+      - '.github/workflows/nvp-p1f-windows-scm-blender.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-hashed-scm-native-admission:
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile actual finite source-only SCM Blender broker with native Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'Actual MSVC/Windows SDK missing' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $src='tools\nvp_p1f_windows_scm_blender_broker.cpp'
+          $cmd='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_p1f_windows_scm_blender_broker.exe "'+$src+'" /link userenv.lib fwpuclnt.lib advapi32.lib ws2_32.lib ole32.lib crypt32.lib'
+          cmd.exe /d /s /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw 'Native finite Blender SCM service compile failure' }
+          Get-FileHash .\nvp_p1f_windows_scm_blender_broker.exe -Algorithm SHA256
+      - name: Independently refuse missing exact HKLM creator grant and direct CLI launch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $name='NVP-P1F-SourceBound-Blender-Preview'
+          $key='HKLM\SOFTWARE\NVP\P1F\ApprovedPreview'
+          $binary=(Resolve-Path '.\nvp_p1f_windows_scm_blender_broker.exe').Path
+          try {
+            & reg.exe delete $key /f 2>&1 | Out-Null
+            & .\nvp_p1f_windows_scm_blender_broker.exe
+            if ($LASTEXITCODE -ne 96) { throw 'Model-accessible direct SCM Blender CLI did not refuse' }
+            & sc.exe create $name binPath= ('"'+$binary+'" --service') start= demand obj= LocalSystem
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot install genuine Windows service for denial test' }
+            & sc.exe start $name
+            $done=$false
+            for ($i=0;$i -lt 75;$i++) {
+              Start-Sleep -Milliseconds 350
+              $value=(& sc.exe queryex $name) -join [Environment]::NewLine
+              if ($value -match 'STATE\s*:\s*1\s+STOPPED') { $done=$true;break }
+            }
+            if (-not $done) { throw 'Unapproved SCM worker failed to terminate' }
+            if ($value -match 'WIN32_EXIT_CODE\s*:\s*0') {
+              throw 'Unapproved service accepted a missing independent one-use authorization'
+            }
+            Write-Host 'NVP_P1F_REAL_SCM_BLENDER_UNAUTHORIZED_DENIED'
+          }
+          finally {
+            & sc.exe delete $name | Out-Host
+            & reg.exe delete $key /f 2>&1 | Out-Null
+          }
