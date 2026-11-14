@@ -24,7 +24,7 @@ def _source_files():
     if "--" not in sys.argv:
         raise RuntimeError("Fixed reviewed PBR render arguments missing")
     a=sys.argv[sys.argv.index("--")+1:]
-    if len(a)!=8 or a[::2]!=["--plan","--source","--output","--audit"]:
+    if len(a)!=8 or a[::2]!=["--plan","--take","--output","--audit"]:
         raise RuntimeError("Only fixed original PBR source/Cycles preview contract accepted")
     cwd=Path.cwd().resolve()
     paths=[Path(x) for x in a[1::2]]
