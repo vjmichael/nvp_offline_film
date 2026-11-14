@@ -19,6 +19,7 @@ from backend.nvp_openusd_assets import OpenUSDAssetRegistry
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND as T
+from backend.nvp_data_av_source import RecordedSoundSources
 from backend.nvp_usd_film01_world import OpenUSDWorldComposer
 from backend.nvp_usd_film01d_shot_working_set import FilmWorldShotPlanner
 from backend.nvp_usd_film01e_world_take import OpenUSDWorldTakeCapture
@@ -114,6 +115,11 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             path=cls.camera_paths[(angle,framing)]
             if not stage.GetPrimAtPath(path).IsA(UsdGeom.Camera):
                 raise RuntimeError("Nine native original camera prims not authored")
+        # 48 kHz FilmIndex-recorded original source provenance, but PCM is
+        # disposable CI test data and NOT a real human voice or film master.
+        cls.recorded_test_pcm=RecordedSoundSources(cls.index).publish(
+            cls.pid,"NineCamTestSourcePCM",
+            [b"\x10\x00"*24000,b"\x08\x00"*24000],expected_revision=0)
         cls.timeline=TemporalLedger(cls.index).publish(
             cls.pid,"OneThirtySecondTimeline",[
                 {"event_id":"OriginalObjectActorsMove","event_kind":"action",
@@ -121,6 +127,11 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                  "end_tick":30*T,
                  "source_id":"NineCameraOriginalScene","source_revision":1,
                  "payload":{"usd_prim_path":"/World/Donut"}},
+                {"event_id":"NineCamOriginalTestPCM","event_kind":"sound",
+                 "subject_id":"Donut","start_tick":0,"end_tick":T,
+                 "source_id":"NineCamTestSourcePCM","source_revision":1,
+                 "payload":{"usd_prim_path":"/World/Donut",
+                            "source_first_sample":0}},
                 {"event_id":"NineCamerasRecordOriginalEvent","event_kind":"camera",
                  "subject_id":"NineCameraDirector","start_tick":0,
                  "end_tick":30*T,
@@ -268,73 +279,89 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
                     "focal_length_mm":0,
                     "focus_distance_m":9}])
 
-    def test_real_nine_camera_cycles_three_film_times(self):
+    def test_real_efs_protected_original_multicamera_cycles_pcm_reopen(self):
+        """Physical Windows runner: true native Cycles/Job/.blend/EFS proof.
+
+        The original 01L uncontained Blender worker is deliberately retired.
+        This source-only fixture cannot create a human film-master approval.
+        """
         import os
-        import shutil
         import subprocess
-        from PIL import Image
         from backend.nvp_blender_worker import BlenderWorkerSupervisor,sha_file
-        from backend.nvp_usd_film01l_blender_smoke_host import (
-            ReviewedNineCameraCyclesSmoke)
-        executable=os.environ.get("NVP_FILM01L_BLENDER_BIN")
-        if not executable:
-            self.skipTest("Actual Blender 5.2 required for nine native camera smoke")
-        binary=Path(executable).resolve(strict=True)
-        version=subprocess.run(
-            [str(binary),"-b","--version"],capture_output=True,
-            text=True,check=True,timeout=30).stdout.splitlines()[0].strip()
+        from backend.nvp_usd_film01i_ninecam_take import OriginalNineCameraEditorialCut
+        from backend.nvp_usd_film01f_blender_host import ReviewedNineCameraCyclesHost
+        source=os.environ.get("NVP_FILM01I_PROTECTED_BLENDER_BIN")
+        if not source:
+            self.skipTest("No provisioned Windows protected Blender/EFS: not real acceptance")
+        if os.name!="nt":
+            raise PermissionError("Protected original world USD requires actual Windows EFS")
+        binary=Path(source).resolve(strict=True)
+        completed=subprocess.run([str(binary),"-b","--version"],
+            capture_output=True,text=True,check=True,timeout=30)
+        version=completed.stdout.splitlines()[0].strip()
         self.assertTrue(version.startswith("Blender 5.2."),version)
-        workers=self.root/"native_nine_camera_supervised"
-        supervisor=BlenderWorkerSupervisor(workers,
+        camera_grid=self.index.read_revision(
+            self.pid,"OnePerformanceNineCamBank",1)["data"]["cameras"]
+        segments=[{"start_frame":first,"stop_frame":last,
+                   "camera_shot_id":camera_grid[camera]["camera_shot_id"],
+                   "camera_shot_sha256":camera_grid[camera]["camera_shot_sha256"]}
+                  for first,last,camera in ((0,240,0),(240,480,4),(480,720,8))]
+        cut=OriginalNineCameraEditorialCut(
+            self.index,verify_director_action=lambda event,scope:
+                event=="CI_ONLY_SOURCE_APPROVAL" and scope.get("operation")==
+                    "nvp.usd_film01i.commit_original_camera_cut.v1" and
+                scope.get("film_master_approved") is False).publish(
+                self.pid,"OriginalThreeViewTechnicalCut",
+                rig_id="OnePerformanceNineCamBank",
+                segments=segments,director_event="CI_ONLY_SOURCE_APPROVAL")
+        supervisor=BlenderWorkerSupervisor(
+            self.root/"genuine_efs_original_multicam",
             blender_executable=binary,blender_sha256=sha_file(binary),
             blender_version=version)
-        host=ReviewedNineCameraCyclesSmoke(
-            self.index,supervisor,
-            verify_director_action=lambda event,scope:
-                event=="APPROVE_NINE_REAL_CAMERA_SMOKE" and
-                scope["operation"]==
-                    "nvp.render.usd_film01l_ninecam_native_smoke.v1" and
-                len(scope["native_camera_shas"])==9)
-        result=host.render_smoke(
-            self.pid,"OnePerformanceNineCamBank",
-            job_prefix="realNineCam",
-            director_event="APPROVE_NINE_REAL_CAMERA_SMOKE")
-        self.assertEqual(result["rendered_original_cycles_frames"],27)
-        self.assertEqual(result["independently_supervised_job_count"],3)
-        self.assertFalse(result["all_6480_source_camera_frames_produced"])
-        artifact=Path(os.environ.get(
-            "NVP_FILM01L_ARTIFACT_DIR",
-            str(self.root/"native_nine_camera_images"))).resolve()
-        artifact.mkdir(parents=True,exist_ok=True)
-        hashes=set()
-        for item in result["jobs"]:
-            folder=item["job_dir"]
-            audit=json.loads((folder/"audit.json").read_text("utf8"))
-            self.assertEqual(audit["actual_native_cycles_image_count"],9)
-            for row in audit["camera_views"]:
-                file=folder/row["rendered_png_file"]
-                self.assertEqual(row["rendered_png_sha256"],sha_file(file))
-                with Image.open(file) as img:
-                    self.assertEqual(img.size,(320,180))
-                    img.verify()
-                hashes.add(sha_file(file))
-                shutil.copyfile(file,artifact/(
-                    f"{item['source_frame']:04d}_"+
-                    row["rendered_png_file"]))
-            for filename in ("scene.blend","audit.json","source.json",
-                             "source.usda"):
-                shutil.copyfile(folder/filename,artifact/(
-                    f"{item['source_frame']:04d}_"+filename))
-        self.assertGreaterEqual(len(hashes),9)
-        (artifact/"27_native_camera_smoke_summary.json").write_text(
-            json.dumps({"source_rig_sha256":result["original_rig_sha256"],
-                "same_original_world_take_sha256":
-                    result["original_world_take_sha256"],
-                "native_supervised_frames":27,
-                "independent_native_worker_jobs":3,
-                "distinct_rendered_png_shas":len(hashes),
-                "complete_nine_roll_movie_produced":False,
-                "director_approved":False},indent=2,sort_keys=True),"utf8")
+        host=ReviewedNineCameraCyclesHost(
+            self.index,supervisor,verify_director_action=lambda event,scope:
+                event=="CI_ONLY_NATIVE_FRAME_APPROVAL" and
+                scope.get("operation")==
+                    "nvp.usd_film01i.render_original_selected_camera_frame.v1" and
+                scope.get("cut_sha256")==cut["document_sha256"] and
+                scope.get("film_master_approved") is False)
+        original_take_sha=self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"]
+        camera_paths=set()
+        for frame in (0,360,719):
+            job="NineCamPhysical_"+str(frame)
+            result=host.render_selected_frame(
+                self.pid,"OriginalThreeViewTechnicalCut",frame,job,
+                director_event="CI_ONLY_NATIVE_FRAME_APPROVAL")
+            self.assertEqual(result["status"],
+                "ORIGINAL_SELECTED_CAMERA_NATIVE_FRAME_REOPEN_VERIFIED")
+            self.assertTrue(result["independent_blender_reopen"]["passed"])
+            self.assertTrue(result["original_pcm_stems"][
+                "actual_original_pcm_readback_verified"])
+            self.assertEqual(result["original_pcm_stems"]["stem_count"],1)
+            self.assertFalse(result["film_master_approved"])
+            self.assertFalse(result["soundtrack_mixed"])
+            self.assertEqual(supervisor.verify_completed(job)["state"],"SUCCEEDED")
+            self.assertEqual(supervisor.verify_completed(job+"_reopen")["state"],"SUCCEEDED")
+            directory=supervisor.root/job
+            self.assertEqual(sha_file(directory/"frame.png"),
+                             result["rendered_png_sha256"])
+            self.assertEqual(sha_file(directory/"scene.blend"),
+                             result["saved_blend_sha256"])
+            for row in result["original_pcm_stems"]["original_stems"]:
+                self.assertEqual(sha_file(directory/"original_audio"/row["file"]),
+                                 row["file_sha256"])
+            camera_paths.add(result["selected_camera"]["selected_native_camera_path"])
+            with self.assertRaises((RuntimeError,FileExistsError)):
+                host.render_selected_frame(
+                    self.pid,"OriginalThreeViewTechnicalCut",frame,job,
+                    director_event="CI_ONLY_NATIVE_FRAME_APPROVAL")
+        self.assertEqual(len(camera_paths),3)
+        self.assertEqual(self.index.read_revision(
+            self.pid,"OneThirtySecondWorldTake",1)["document_sha256"],
+            original_take_sha)
+        # Three frames are not 720 edited frames, nine full rolls, original
+        # licensed speech, installed release acceptance or a film master.
 
     def test_camera_swap_and_wrong_scene_are_not_new_source_performances(self):
         forged=deepcopy(self.camera_shots)
