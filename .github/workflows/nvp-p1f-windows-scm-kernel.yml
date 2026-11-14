@@ -1,0 +1,87 @@
+name: NVP P1-F Windows SCM-Owned AppContainer WFP Kernel Service
+
+on:
+  pull_request:
+    paths:
+      - 'tools/nvp_p1f_windows_private_kernel_probe.cpp'
+      - 'tools/nvp_p1f_windows_scm_kernel_service.cpp'
+      - '.github/workflows/nvp-p1f-windows-scm-kernel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scm-native-kernel-one-use:
+    runs-on: windows-2025
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile native SCM service and first-party finite AppContainer/WFP/Job witness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'Actual MSVC compiler is required' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $src='tools\nvp_p1f_windows_scm_kernel_service.cpp'
+          $args='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_p1f_windows_scm_kernel_service.exe "'+$src+'" /link userenv.lib fwpuclnt.lib advapi32.lib ws2_32.lib ole32.lib'
+          cmd.exe /d /s /c $args
+          if ($LASTEXITCODE -ne 0) { throw 'SCM native broker compilation failed' }
+          Get-FileHash .\nvp_p1f_windows_scm_kernel_service.exe -Algorithm SHA256
+      - name: Actual SCM LocalSystem one-use ticket, AppContainer/WFP/Job and cold receipt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $name='NVP-P1F-Kernel-Broker-Probe'
+          $key='HKLM\SOFTWARE\NVP\P1F\KernelTicket'
+          $ticket=[guid]::NewGuid().ToString('N')
+          $file=Join-Path $env:ProgramData ('NVP\P1F\KernelOnly\scm_receipt_'+$ticket+'.txt')
+          $binary=(Resolve-Path '.\nvp_p1f_windows_scm_kernel_service.exe').Path
+          if (Test-Path $file) { throw 'One-use SCM test ticket already used' }
+          try {
+            & reg.exe add $key /v PendingId /t REG_SZ /d $ticket /f
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot provision independent admin-only SCM ticket' }
+            & sc.exe create $name binPath= ('"'+$binary+'" --service') start= demand obj= LocalSystem
+            if ($LASTEXITCODE -ne 0) { throw 'Actual Windows SCM service creation failed' }
+            & sc.exe start $name
+            if ($LASTEXITCODE -ne 0) { throw 'Actual Windows SCM service did not start' }
+            $done=$false
+            for ($i=0;$i -lt 90;$i++) {
+              Start-Sleep -Milliseconds 300
+              $status=(& sc.exe queryex $name) -join [Environment]::NewLine
+              if ($status -match 'STATE\s*:\s*1\s+STOPPED') { $done=$true;break }
+            }
+            if (-not $done) { throw 'SCM-owned kernel test did not reach durable stopped state' }
+            if ($status -notmatch 'WIN32_EXIT_CODE\s*:\s*0') { throw ('SCM reported native kernel custody failure: '+$status) }
+            if (-not (Test-Path $file)) { throw 'No original SCM-owned one-use kernel result' }
+            $body=Get-Content $file -Raw
+            if ($body -notmatch 'scm_service_owned=1' -or
+                $body -notmatch 'appcontainer_wfp_job_kernel_probe=0' -or
+                $body -notmatch 'creator_film_approved=0' -or
+                $body -notmatch 'private_blender_execution=0' -or
+                $body -notmatch 'production_ready=0' -or
+                $body -notmatch [regex]::Escape("ticket=$ticket")) {
+              throw ('SCM receipt failed independent source/authorization boundaries: '+$body)
+            }
+            $consumed=(& reg.exe query $key /v ConsumedId) -join [Environment]::NewLine
+            if ($consumed -notmatch $ticket) { throw 'SCM one-use consumption not durable in registry' }
+            $pending=(& reg.exe query $key /v PendingId 2>&1) -join [Environment]::NewLine
+            if ($pending -match $ticket) { throw 'Spent one-use SCM authorization still pending' }
+            Write-Host 'NVP_P1F_REAL_SCM_APP_CONTAINER_WFP_ONE_USE_NATIVE_PASS'
+            & reg.exe add $key /v PendingId /t REG_SZ /d $ticket /f | Out-Null
+            & sc.exe start $name | Out-Host
+            Start-Sleep -Seconds 2
+            $after=(& sc.exe queryex $name) -join [Environment]::NewLine
+            if ($after -notmatch 'STATE\s*:\s*1\s+STOPPED') { throw 'Replay unexpectedly left SCM worker running' }
+            $replay=Get-Content $file -Raw
+            if ($replay -ne $body) { throw 'Replayed SCM attempt altered original native receipt' }
+            if ($after -match 'WIN32_EXIT_CODE\s*:\s*0') { throw 'Replayed admin ticket was spuriously accepted by SCM' }
+            Write-Host 'NVP_P1F_REAL_SCM_ONE_USE_REPLAY_DENIED'
+          }
+          finally {
+            & sc.exe delete $name | Out-Host
+            & reg.exe delete $key /f | Out-Host
+            Remove-Item $file -Force -ErrorAction SilentlyContinue
+          }

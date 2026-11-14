@@ -73,6 +73,7 @@ class BlenderOperation:
     timeout_seconds: int = 90
     memory_limit_mb: int = 8192
     require_linux_cgroup_v2: bool = False
+    require_private_isolation: bool = False
     gpu_memory_mb: int = 0
     gpu_device_id: str | None = None
 
@@ -245,6 +246,10 @@ class BlenderWorkerSupervisor:
             raise ValueError("Worker memory limit must be 256 to 65536 MiB")
         if type(op.require_linux_cgroup_v2) is not bool:
             raise ValueError("Strict Linux cgroup requirement must be boolean")
+        if type(op.require_private_isolation) is not bool:
+            raise ValueError("Production private source isolation must be boolean")
+        if op.require_private_isolation and not op.require_linux_cgroup_v2:
+            raise ValueError("Private source requires OS whole-tree process custody")
         if (type(op.gpu_memory_mb) is not int or not 0<=op.gpu_memory_mb<=65536 or
             op.gpu_memory_mb and not op.gpu_device_id):
             raise ValueError("GPU workload requires a measured GPU device and memory budget")
@@ -411,6 +416,9 @@ class BlenderWorkerSupervisor:
                 raise RuntimeError("Idempotency ID reused for different Blender operation")
             raise RuntimeError("Blender job already registered; never rerun or overwrite an existing attempt")
         jobdir,script,script_args=self._validate(op)
+        if op.require_private_isolation:
+            from backend.nvp_worker_private_sandbox import private_os_preflight
+            private_os_preflight()
         self.probe(strict_linux_cgroup=op.require_linux_cgroup_v2,
                    memory_limit_mb=op.memory_limit_mb)
         with self._lock,self._connect() as db:
@@ -447,7 +455,8 @@ class BlenderWorkerSupervisor:
             with log.open("wb") as stdout, err.open("wb") as stderr:
                 proc=launch_contained(command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
                                       memory_mb=op.memory_limit_mb,
-                                      linux_cgroup_tree_required=op.require_linux_cgroup_v2)
+                                      linux_cgroup_tree_required=op.require_linux_cgroup_v2,
+                                      private_isolation_required=op.require_private_isolation)
                 self._transition(op.job_id,"RUNNING",worker_pid=proc.pid)
                 if self.activity is not None:
                     self.activity.update(self._activity_id(op.job_id),

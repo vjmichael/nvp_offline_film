@@ -292,7 +292,9 @@ class RealCharacterAndLens(unittest.TestCase):
             scene_revision=1,camera_path="/World/Camera",settings=optics,
             start_tick=0,end_tick=2*T,creator_event="director",
             reason="Director selects wide lens for emotional geography")
-        self.assertTrue(shot["data"]["director_shot_change_approved"])
+        reopened=self.index.read_revision(self.pid,"lens_shot",1)
+        self.assertEqual(shot["document_sha256"],reopened["document_sha256"])
+        self.assertTrue(reopened["data"]["director_shot_change_approved"])
         evaluated=OpenUSDShotOverrides(
             self.index,verify_director_action=lambda *_:False).evaluate(
                 self.pid,"lens_shot",1,tick=T)
@@ -388,90 +390,97 @@ class RealCharacterAndLens(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("NVP_NATIVE_BLENDER_EXECUTABLE"),
                          "Real Blender executable not configured")
     def test_native_desktop_camera_bridge_end_to_end_real_blender(self):
-        """SLATE-08B true original USD skinned scene -> desktop consent
-        -> native supervised Blender -> audited scene/lens PNG, no Take.
+        """DA-06 migration: retired desktop proxy denied; genuine native USD
+        camera audition requires a separate original creator approval and
+        an independently supervised picture receipt. Never mint a legacy ticket.
         """
-        import time
         from backend.nvp_slate08b_native_camera_ipc import (
             TrustedDesktopCameraBridge)
         binary=Path(os.environ["NVP_NATIVE_BLENDER_EXECUTABLE"]).resolve()
-        self.assertTrue(binary.is_file(),"An actual Blender executable is required")
+        self.assertTrue(binary.is_file(),"Native Blender executable required")
         version=subprocess.run(
             [str(binary),"-b","--version"],capture_output=True,
             text=True,timeout=30,check=True).stdout.splitlines()[0]
         root=Path(self.tmp.name)
+        # The old URL-mediated path is explicitly retired by canonical DA-06.
+        # Its only accepted result is a denial BEFORE a worker/job is created.
         created=[]
-        def factory(approval_callback):
-            ledger=TaskLedger(root/"desktop_tasks",sampler=collect_resources)
-            worker=BlenderWorkerSupervisor(
-                root/"desktop_workers",blender_executable=binary,
-                blender_sha256=sha_file(binary),blender_version=version,
-                activity_ledger=ledger)
-            cache=SlatePreviewCache(root/"desktop_cache")
-            host=NativeSlatePreviewHost(self.index,worker,ledger,cache,
-                verify_creator_action=approval_callback)
-            host.recover()
-            created.append(host)
-            return host
-
+        def forbidden_factory(approval_callback):
+            created.append("unexpected_legacy_worker")
+            raise AssertionError("Retired DA-06 worker was created")
         class ConfirmingWindow:
             calls=0
             def get_current_url(self):
                 return "http://127.0.0.1:7777/"
             def create_confirmation_dialog(self,title,message):
                 self.calls+=1
-                assert "Scene: world rev 1" in message
-                assert "Camera: /World/Camera" in message
                 return True
         window=ConfirmingWindow()
         bridge=TrustedDesktopCameraBridge(
             self.index,origin="http://127.0.0.1:7777",
-            host_factory=factory)
+            host_factory=forbidden_factory)
         bridge._attach_window(window)
         optics=lens_settings(lens="portrait_85",f_stop=1.4)
         try:
-            requested=bridge.request_camera_still({
-                "project_id":self.pid,"source_scene_id":"world",
-                "source_scene_revision":1,
-                "source_scene_document_sha256":self.original_scene_sha,
-                "source_tick":T,"camera_path":"/World/Camera",
-                "lens_settings":optics,"source_modified":False,
-                "frozen_take_created":False,
-            })
-            self.assertEqual(requested["status"],"QUEUED")
-            deadline=time.monotonic()+240
-            state=None
-            while time.monotonic()<deadline:
-                state=bridge.poll_camera_still(requested["ticket_id"])
-                if state["status"]=="READY":
-                    break
-                if state["status"]!="QUEUED":
-                    self.fail("Actual native desktop render failed closed: "+
-                              str(state))
-                time.sleep(.25)
-            self.assertIsNotNone(state)
-            self.assertEqual(state["status"],"READY")
-            self.assertTrue(state["image_data_url"].startswith(
-                "data:image/png;base64,"))
-            self.assertEqual(state["scene_document_sha256"],
-                             self.original_scene_sha)
-            self.assertEqual(state["lens_settings"],optics)
-            self.assertFalse(state["frozen_take_created"])
-            self.assertFalse(state["film_master_approved"])
-            self.assertEqual(window.calls,1)
-            self.assertEqual(
-                self.index.read_revision(self.pid,"world",1)["document_sha256"],
-                self.original_scene_sha)
-            self.assertEqual(self.index.list_objects(self.pid,kind="take"),[])
-            self.assertTrue(created)
-            jobs=created[0].supervisor
-            with created[0].cache._db() as db:
-                row=db.execute("SELECT job_id FROM slate_preview_cache "
-                               "WHERE project_id=?",(self.pid,)).fetchone()
-            proof=jobs.verify_completed(row[0])
-            self.assertEqual(proof["state"],"SUCCEEDED")
+            with self.assertRaisesRegex(PermissionError,"retired by DA-06"):
+                bridge.request_camera_still({
+                    "project_id":self.pid,"source_scene_id":"world",
+                    "source_scene_revision":1,
+                    "source_scene_document_sha256":self.original_scene_sha,
+                    "source_tick":T,"camera_path":"/World/Camera",
+                    "lens_settings":optics,"source_modified":False,
+                    "frozen_take_created":False,
+                })
+            self.assertEqual(created,[])
+            self.assertEqual(window.calls,0)
         finally:
             bridge._close()
+        # Replacement path: direct trusted NVP native OpenUSD camera, with
+        # its own creator event, immutable source/lens settings and Job receipt.
+        ledger=TaskLedger(root/"native_desktop_tasks",sampler=collect_resources)
+        worker=BlenderWorkerSupervisor(
+            root/"native_desktop_workers",blender_executable=binary,
+            blender_sha256=sha_file(binary),blender_version=version,
+            activity_ledger=ledger)
+        cache=SlatePreviewCache(root/"native_desktop_cache")
+        host=NativeSlatePreviewHost(
+            self.index,worker,ledger,cache,
+            verify_creator_action=lambda event,context:
+                event is self.auth and
+                context["operation"]=="nvp.camera.authorize_pre_take_still.v1")
+        with self.assertRaises(PermissionError):
+            host.request_camera_workbench(
+                self.pid,"world",1,source_tick=T,
+                camera_path="/World/Camera",settings=optics,
+                creator_event=None,quality="thumbnail",
+                ram_mb=4096,timeout_seconds=240)
+        request=host.request_camera_workbench(
+            self.pid,"world",1,source_tick=T,
+            camera_path="/World/Camera",settings=optics,
+            creator_event=self.auth,quality="thumbnail",
+            ram_mb=4096,timeout_seconds=240)
+        self.assertEqual(request["status"],"QUEUED")
+        result=host.run_next()
+        if result["state"]!="SUCCEEDED":
+            job=worker.root/request["job_id"]
+            logs={}
+            for name in ("worker_stdout.log","worker_stderr.log"):
+                file=job/name
+                if file.is_file():
+                    logs[name]=file.read_text("utf8",errors="replace")[-9000:]
+            self.fail("NATIVE_DA06_CAMERA_REPLACEMENT_FAILURE: "+
+                      repr({"result":result,"logs":logs}))
+        png=host.read_camera_workbench_png(self.pid,request["cache_key"])
+        self.assertEqual((png["width"],png["height"]),(320,180))
+        self.assertGreater(len(png["png_bytes"]),100)
+        self.assertFalse(png["frozen_take_created"])
+        self.assertEqual(png["scene_document_sha256"],self.original_scene_sha)
+        self.assertEqual(png["lens_settings"],optics)
+        self.assertEqual(worker.verify_completed(request["job_id"])["state"],
+                         "SUCCEEDED")
+        self.assertEqual(self.index.list_objects(self.pid,kind="take"),[])
+        self.assertEqual(self.index.read_revision(
+            self.pid,"world",1)["document_sha256"],self.original_scene_sha)
 
 
 if __name__=="__main__":

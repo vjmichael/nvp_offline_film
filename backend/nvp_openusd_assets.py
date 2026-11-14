@@ -67,9 +67,58 @@ class OpenUSDAssetRegistry:
             expected_revision=expected_revision, dependencies=[],
             precommit_guard=guard)
 
+    def import_rigged_actor(self, project_id, asset_id, source, *,
+                            actor_id, approve_import, creator_event):
+        """Import reviewed original USD; no external files or model authority."""
+        from backend.nvp_p1f_imported_actor import import_actor
+        return import_actor(
+            self.index, project_id, asset_id, source, actor_id=actor_id,
+            approve_import=approve_import, creator_event=creator_event)
+
+    def import_environment(self,project_id,asset_id,source,*,
+                           location_id,approve_import,creator_event):
+        """A reviewed original source, not a new procedural NVP placeholder."""
+        from backend.nvp_p1f_imported_environment import publish_environment
+        return publish_environment(
+            self.index,project_id,asset_id,source,location_id=location_id,
+            approve_import=approve_import,creator_event=creator_event)
+
+    def import_reviewed_pbr_materials(self,project_id,material_set_id,**reviewed):
+        """Import human-approved PNG/PBR UV maps with original rights evidence.
+
+        This does not authorize filesystem access, Blender execution,
+        commercial licensing or a finished film master.
+        """
+        from backend.nvp_p1f_reviewed_pbr_materials import P1FReviewedPBRMaterials
+        return P1FReviewedPBRMaterials(self.index).publish(
+            project_id,material_set_id,**reviewed)
+
+    def review_production_character(self, project_id, package_id, glb_bytes, **reviewed):
+        """Bind a user-supplied rigged GLB to an original USD ActorID.
+
+        Source rights, calibration and the exact joint map require a separate
+        creator approval. This does not grant Blender or film-master rights.
+        """
+        from backend.nvp_p1f_production_character_assets import P1FReviewedProductionCharacters
+        return P1FReviewedProductionCharacters(self.index).publish(
+            project_id, package_id, glb_bytes, **reviewed)
+
+    def cast_production_character(self, project_id, cast_id, **reviewed):
+        """Pin a reviewed GLB package to one original OpenUSD scene/ActorID."""
+        from backend.nvp_p1f_production_character_assets import P1FReviewedProductionCharacters
+        return P1FReviewedProductionCharacters(self.index).cast(
+            project_id, cast_id, **reviewed)
+
     def open(self, project_id, asset_id, revision):
         record = self.index.read_revision(project_id, asset_id, revision)
         doc = record["data"]
+        from backend.nvp_p1f_imported_actor import FORMAT as RIGGED_FORMAT,open_actor
+        from backend.nvp_p1f_imported_environment import (
+            FORMAT as ENV_FORMAT,open_environment)
+        if doc.get("format")==RIGGED_FORMAT:
+            return open_actor(self.index,project_id,asset_id,revision)
+        if doc.get("format")==ENV_FORMAT:
+            return open_environment(self.index,project_id,asset_id,revision)
         if (record["kind"] != "asset" or
             doc.get("format") != FORMAT or
             doc.get("source") != "nvp_authored_procedural_geometry" or

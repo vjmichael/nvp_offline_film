@@ -359,6 +359,15 @@ class Slate05RealBlenderSmoke(Slate05NativeTests):
             self.pid,"cut",1,film_tick=0,quality="thumbnail",
             creator_event=self.trusted_event,ram_mb=3072,timeout_seconds=180)
         result=host.run_next()
+        if result["state"]!="SUCCEEDED":
+            job=supervisor.root/request["job_id"]
+            logs={}
+            for name in ("worker_stdout.log","worker_stderr.log"):
+                file=job/name
+                if file.is_file():
+                    logs[name]=file.read_text("utf8",errors="replace")[-9000:]
+            self.fail("ORIGINAL_SLATE05_NATIVE_WORKER_FAILURE: "+
+                      repr({"result":result,"logs":logs}))
         self.assertEqual(result["state"],"SUCCEEDED")
         png=real_cache.lookup(self.pid,request["cache_key"])
         self.assertEqual(png["status"],"READY")

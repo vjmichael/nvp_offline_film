@@ -1,0 +1,40 @@
+# NVP P1-F — Production Assets and Sustained Multi-Reel Execution
+
+This ledger continues the canonical data-first NVP sequence after the passing public-fixture Windows SCM AppContainer/WFP/Job Cycles and original Linux delegated-cgroup/namespace acceptance. The current branch is draft PR #159, not a production release.
+
+## P1-F-A1 — Reviewed UV/PBR source maps (implemented, native acceptance pending)
+
+- `backend/nvp_p1f_reviewed_pbr_materials.py` and `OpenUSDAssetRegistry.import_reviewed_pbr_materials` admit exact frozen PNG source bytes for base color, roughness, metallic and normal into project-scoped SHA-addressed FilmIndex blobs.
+- The texture set is bound to one immutable imported environment revision, the exact original USD material path, and every genuinely authored mesh UV primvar. Reject materials without bounded vertex/face-varying UVs, incompatible/unreadable images, missing base color, inconsistent dimensions, changed material bindings and changed frozen source bytes.
+- A human-approved operation must cover the exact source digests, material/UV binding and supplied rights evidence (owner, license identifier and explicit render/derivative/distribution uses). An evidence document is stored immutably. This is **evidence custody, not independent legal verification** or a blanket commercial license.
+- Does **not** allow an external USD resolver, arbitrary texture path, downloaded asset, model-selected file, protected worker admission or automatic film release.
+- Native test: `tests/test_nvp_p1f_reviewed_pbr_materials_native.py`; original environment/actor tests remain unchanged. Actual licensed detailed assets, UV-to-Blender transfer, MaterialX and Cycles source-to-pixel material validation still OPEN.
+
+## P1-F-R2 — Sustained source-range sequencing (implemented, native acceptance pending)
+
+- `backend/nvp_p1f_sustained_reel_queue.py` independently reopens verified original picture/audio coverage, finds the next missing contiguous frame window and caps it at the current 240-frame / 10-second native reel boundary.
+- Returns a review-only source manifest including plan document SHA, original Take and camera identities and exact source/output Film Time. The creator must approve the exact review SHA before the finite durable batch can be reserved. A batch does **not** authorize worker execution.
+- `P1FDurableShotReels.create_batch` now checks historical overlapping original source frames under the same SQLite `BEGIN IMMEDIATE` writer lease. Distinct batch IDs cannot double-dispatch a queued, running, accepted or untrusted frame; terminal interrupted/failed frames need a fresh separately approved batch.
+- Each actual frame still requires individual one-use host authorization, independent private OS worker boundary, verified Cycles PNG and original 48k actor-owned PCM. No unattended multi-hour batch authority, silent retry or accepting a partial film as master.
+- Native tests extend `test_nvp_p1f_multishot_recovery.py` with overlap, partial acceptance, stale review, creator refusal and finite next-source admission. Earlier genuine public 2-frame Cycles and WAV coverage acceptance remains separate.
+- **No 30-minute or 3-hour film has been rendered.** Required outputs are 43,200 / 259,200 genuine picture frames and 86,400,000 / 518,400,000 independently validated 48k samples per channel.
+
+## Remaining execution backlog (do not conflate with implementation)
+
+1. Reconcile original P1-F-A1/R2 Windows/Linux Python 3.11/3.13 native suite, preserving all original tests and the no-FFmpeg policy. Repair only demonstrated failures at one SHA.
+2. Derive reviewed UV/PBR texture maps onto actual imported original environment geometry in a fixed, fully authorized Blender/Cycles worker; independently verify source image SHA, original USD, decoded result and frame receipt. Production-private source must use the accepted native kernel boundary, not a public fixture shortcut.
+3. Import genuinely detailed licensed character and environment assets with reviewed rights, full articulated body, face/visemes, stage lighting and continuity. Miniature CI actors do not qualify.
+4. Run multiple source-verified finite reels under genuine installed Windows SCM AppContainer/WFP and root-owned Linux cgroup+namespace custody. Test cancellation, guardian death, restart, revoked approval, missing frame and replay denial without weakening the original security matrix.
+5. Deliver independently audited picture/audio segments with cross-reel continuity, then secure film mastering and creator-controlled export. Only accept actual complete 30-minute production after genuine full output; then scale to 3 hours.
+
+**Status:** source implementation in draft, no merge/production install; all asset, sustained film and distribution acceptance above remain independent gates. The optional speculative photoreal 2D generative-transfer concept has not been implemented.
+
+## P1-F-A2 — Reviewed rigged GLB production source and original ActorID casting (source implemented; native verification pending)
+
+- Source module: `backend/nvp_p1f_production_character_assets.py`. Reuses the established PROD-06C bounded, self-contained GLB 2.0 skin/mesh structural inspector, but stores the exact reviewed source as an immutable **FilmIndex GLB blob** instead of a parallel legacy-only store.
+- Source approval is scoped to the authoritative imported **OpenUSD ActorID / USD revision / document SHA**, the GLB binary SHA, explicit original-USD-to-GLB skeleton joint mapping, scale/height/yaw calibration and creator-supplied rights documentation SHA. No automatic bone-name guessing, file URIs or model-directed shader/code paths are permitted.
+- The owner-approved `P1FReviewedProductionCharacters.cast` binds the package to one original scene revision, exact actor prim and source asset binding. `for_frame` independently reopens the frozen scene/Take, original facial keys at exact Film Time, original rig and GLB bytes, skeleton correspondence and rights evidence. It produces a **source-only** evidence receipt, not pixels/audio, an authorized private worker or retargeting proof.
+- Registry entry points: `OpenUSDAssetRegistry.review_production_character` and `cast_production_character`. Tests: `tests/test_nvp_p1f_production_character_assets_native.py` in the existing Windows/Linux Python3.11/3.13 native matrix. Native test covers creator refusal, external GLB image URI, invalid duplicate joint mappings, misidentified ActorID, wrong calibration, missing license, independent cross-scene Take refusal and tampered original GLB bytes.
+- Original fixture is only a **synthetic seven-joint 3-vertex GLB** with a two-joint original USD actor. All production quality indicators remain **false**: independent rights verification, body deformation and retargeted bone-axis validation, foot/ground contact, live performer capture, actor-mouth/dialogue sync, physical Windows/Linux private rendering and professional aesthetic quality. The importer does not automatically mark a character fit for distribution.
+
+**Step 2 remaining implementation:** real owner-supplied professionally licensed character/environment/texture sets; multiple real meshes with UV/material/skin weights, explicit full-body rest-pose conversion, matching rig height and axes, verified locomotion foot contact and dialogue-driven facial state, real Blender/Cycles side-by-side scene performance and independent picture/audio receipts. Finish these as separate native and creator-review gates; avoid claiming the synthetic fixture as a professional character. Step 1 regression native acceptance continues independently.

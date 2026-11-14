@@ -1,0 +1,170 @@
+name: NVP P1-F Genuine SCM AppContainer Blender Public Actor Cycles
+
+on:
+  pull_request:
+    paths:
+      - 'tools/nvp_p1f_windows_private_kernel_probe.cpp'
+      - 'tools/nvp_p1f_windows_scm_blender_broker.cpp'
+      - 'tools/nvp_p1f_windows_private_desktop.hpp'
+      - 'tools/nvp_p1f_scm_public_fixture.py'
+      - 'backend/nvp_p1f_cycles_picture_sound.py'
+      - '.github/workflows/nvp-p1f-windows-scm-blender-real.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-scm-blender-source-and-replay:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Provision real pinned public OpenUSD rig and real Blender
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+          choco install blender --no-progress -y --limit-output
+          if ($LASTEXITCODE -ne 0) { throw 'Real reviewed Blender not provisioned' }
+          $bins=Get-ChildItem 'C:\Program Files\Blender Foundation' -Filter blender.exe -File -Recurse -ErrorAction SilentlyContinue
+          $bin=$bins | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $bin) { throw 'No genuine Blender binary for actual native SCM acceptance' }
+          $nvp=Join-Path $env:ProgramFiles 'NVP'
+          New-Item $nvp -ItemType Directory -Force | Out-Null
+          $installed=Join-Path $nvp 'Blender'
+          if (Test-Path $installed) { throw 'Refuse to replace an installed trusted Blender runtime' }
+          New-Item -ItemType Junction -Path $installed -Target $bin.DirectoryName -ErrorAction Stop | Out-Null
+          $exact=Join-Path $installed 'blender.exe'
+          if (-not (Test-Path $exact)) { throw 'Review-pinned runtime junction failed' }
+          "NVP_P1F_SCM_TEST_BINARY=$exact" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          'NVP_PUBLIC_SYNTHETIC_CI=1' | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Compile finite SCM Blender broker and make original public source-only bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'Real MSVC compiler missing' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $source='tools\nvp_p1f_windows_scm_blender_broker.cpp'
+          $cmd='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_p1f_windows_scm_blender_broker.exe "'+$source+'" /link userenv.lib fwpuclnt.lib advapi32.lib ws2_32.lib ole32.lib crypt32.lib'
+          cmd.exe /d /s /c $cmd
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows source-only SCM native broker compile failed' }
+          python -m tools.nvp_p1f_scm_public_fixture $env:NVP_P1F_SCM_TEST_BINARY
+          if ($LASTEXITCODE -ne 0) { throw 'Original public USD/PCM source-only staging failed' }
+          $job=Join-Path $env:ProgramData 'NVP\P1F\ApprovedJobs\public_scm_actor0'
+          # Exact SIDs avoid account-name ambiguity. Directory inheritance
+          # alone does NOT prove an already-created source file is readable
+          # by the actual LocalSystem service account.
+          & icacls.exe $job /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
+          if ($LASTEXITCODE -ne 0) { throw 'No protected one-job Windows source directory ACL' }
+          foreach ($source in (Get-ChildItem $job -File)) {
+            & icacls.exe $source.FullName /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F'
+            if ($LASTEXITCODE -ne 0) { throw ('SCM SYSTEM cannot own original source file '+$source.Name) }
+            & icacls.exe $source.FullName | Out-Host
+          }
+          & icacls.exe $job | Out-Host
+          Get-FileHash .\nvp_p1f_windows_scm_blender_broker.exe -Algorithm SHA256
+      - name: Actual SCM AppContainer WFP Job executes original-source Cycles and refuses replay
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $name='NVP-P1F-SourceBound-Blender-Preview'
+          $key='HKLM\SOFTWARE\NVP\P1F\ApprovedPreview'
+          $job=Join-Path $env:ProgramData 'NVP\P1F\ApprovedJobs\public_scm_actor0'
+          $receipt=Join-Path $job 'scm_native_source_receipt.txt'
+          $png=Join-Path $job 'original_frame.png'
+          $audit=Join-Path $job 'cycles_audit.json'
+          $binary=(Resolve-Path '.\nvp_p1f_windows_scm_blender_broker.exe').Path
+          $grant=Get-Content 'scm_public_fixture_source_manifest.json' -Raw | ConvertFrom-Json
+          $ticket=[guid]::NewGuid().ToString('N')
+          try {
+            if (Test-Path $receipt) { throw 'Refuse stale native SCM preview fixture' }
+            & reg.exe add $key /v PendingId /t REG_SZ /d $ticket /f
+            if ($LASTEXITCODE -ne 0) { throw 'No independently admin-provisioned one-use native ticket' }
+            foreach ($property in @('JobId','ProjectId','OriginalPlanSha256','BlenderSha256','FixedScriptSha256','OriginalUsdSha256','OriginalPcmSha256','FrameSpecSha256','PublicFixtureOnly')) {
+              $value=[string]$grant.$property
+              & reg.exe add $key /v $property /t REG_SZ /d $value /f
+              if ($LASTEXITCODE -ne 0) { throw ('Native source scope could not be provisioned: '+$property) }
+            }
+            & sc.exe create $name binPath= ('"'+$binary+'" --service') start= demand obj= LocalSystem
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot install real source-only SCM Blender service' }
+            & sc.exe start $name
+            if ($LASTEXITCODE -ne 0) { throw 'SCM declined actual native Blender job start' }
+            $done=$false
+            for ($i=0;$i -lt 1300;$i++) {
+              Start-Sleep -Milliseconds 300
+              $status=(& sc.exe queryex $name) -join [Environment]::NewLine
+              if ($status -match 'STATE\s*:\s*1\s+STOPPED') { $done=$true;break }
+            }
+            if (-not $done) { throw 'Genuine SCM worker failed finite completion' }
+            if ($status -notmatch 'WIN32_EXIT_CODE\s*:\s*0') {
+              $failure=Join-Path $env:ProgramData 'NVP\P1F\KernelOnly\scm_blender_last_error.txt'
+              if (Test-Path $failure) { Get-Content $failure | Out-Host }
+              # Read original OS diagnostics rather than guessing whether a
+              # hosted lowbox loader was denied by DLL ACL, user profile, or
+              # graphics initialization. This is PUBLIC synthetic media only.
+              Write-Host 'NVP_PUBLIC_SCM_BLENDER_RUNTIME_ACL_DIAGNOSTICS'
+              & icacls.exe (Join-Path $env:ProgramFiles 'NVP\Blender') | Out-Host
+              $blenderInfo=Get-Item $env:NVP_P1F_SCM_TEST_BINARY
+              & icacls.exe $blenderInfo.FullName | Out-Host
+              $nativeBin=Get-Item 'C:\Program Files\Blender Foundation\Blender 5.3\blender.exe' -ErrorAction SilentlyContinue
+              if ($nativeBin) {
+                & icacls.exe $nativeBin.DirectoryName | Out-Host
+                & icacls.exe $nativeBin.FullName | Out-Host
+              }
+              try {
+                Get-WinEvent -FilterHashtable @{LogName='Application';StartTime=(Get-Date).AddMinutes(-8)} -MaxEvents 80 -ErrorAction Stop |
+                  Where-Object { $_.Message -match 'blender|SideBySide|DLL|0xc0000142' } |
+                  Select-Object -First 10 TimeCreated,ProviderName,Id,Message |
+                  Format-List | Out-String | Out-Host
+              } catch { Write-Host ('No accessible Windows Application fault event: '+$_.Exception.Message) }
+              throw ('Real SCM AppContainer Blender failed: '+$status)
+            }
+            if (-not (Test-Path $receipt) -or -not (Test-Path $png) -or -not (Test-Path $audit)) {
+              throw 'SCM source bound Blender did not produce an original PNG/audit/receipt'
+            }
+            $proof=Get-Content $receipt -Raw
+            if ($proof -notmatch 'actual_scm_owned_appcontainer_wfp_job=1' -or
+                $proof -notmatch 'private_source_approval_proved=0' -or
+                $proof -notmatch 'finished_film=0' -or
+                $proof -notmatch [regex]::Escape("ticket=$ticket")) {
+              throw 'Source-only SCM native receipt mismatched custody or overclaimed creator approval'
+            }
+            $sha=(Get-FileHash $png -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($proof -notmatch [regex]::Escape("original_png_sha256=$sha")) {
+              throw 'Independently read PNG SHA differs from native SCM output receipt'
+            }
+            $consumed=(& reg.exe query $key /v ConsumedId) -join [Environment]::NewLine
+            if ($consumed -notmatch $ticket) { throw 'One-use native SCM job was not durably spent' }
+            Write-Host 'NVP_P1F_GENUINE_SCM_WIN_APPCONTAINER_WFP_CYCLES_PNG_PASS'
+            # Genuine replay attempt: identical ticket, hashes and job IDs
+            # must never mint another worker or replace the native PNG.
+            & reg.exe add $key /v PendingId /t REG_SZ /d $ticket /f | Out-Null
+            & sc.exe start $name | Out-Host
+            Start-Sleep -Seconds 3
+            $replay=(& sc.exe queryex $name) -join [Environment]::NewLine
+            if ($replay -notmatch 'STATE\s*:\s*1\s+STOPPED' -or
+                $replay -match 'WIN32_EXIT_CODE\s*:\s*0' -or
+                (Get-FileHash $png -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha) {
+              throw 'SCM one-use replay denial did not hold'
+            }
+            Write-Host 'NVP_P1F_GENUINE_SCM_NATIVE_REPLAY_DENIED'
+          }
+          finally {
+            & sc.exe delete $name | Out-Host
+            & reg.exe delete $key /f 2>&1 | Out-Null
+          }
+      - name: Upload audit of original public source worker
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-p1f-scm-source-public-native-evidence
+          path: |
+            scm_public_fixture_source_manifest.json
+          retention-days: 10

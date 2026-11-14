@@ -446,6 +446,16 @@ class Slate06NativeTests(unittest.TestCase):
             creator_event=self.trusted_event,presentation="geometry",
             camera_path="/World/Camera",ram_mb=4096,timeout_seconds=240)
         result=native_host.run_next()
+        if result["state"]!="SUCCEEDED":
+            details=native_supervisor.inspect(req["job_id"])
+            folder=native_supervisor.root/req["job_id"]
+            logs={}
+            for name in ("worker_stdout.log","worker_stderr.log"):
+                file=folder/name
+                if file.is_file():
+                    logs[name]=file.read_text("utf8",errors="replace")[-9000:]
+            self.fail("ORIGINAL_SLATE06_NATIVE_BLENDER_FAILURE: "+
+                      repr({"result":result,"inspection":details,"logs":logs}))
         self.assertEqual(result["state"],"SUCCEEDED")
         image=native_host.read_preview_png(self.pid,req["cache_key"])
         self.assertTrue(image["authored_geometry_preview_only"])

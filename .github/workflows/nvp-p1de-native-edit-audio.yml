@@ -1,0 +1,94 @@
+name: NVP P1-D/E Native Edit and Actor PCM (NO FFMPEG)
+
+on:
+  push:
+    branches:
+      - nvp/p1de-p1f-p2-source-reconciliation-20261113
+  pull_request:
+    paths:
+      - 'backend/nvp_p1de_edit_audio.py'
+      - 'backend/nvp_p1f_p2_reel_plan.py'
+      - 'backend/nvp_p1f_cycles_source_admission.py'
+      - 'backend/nvp_p1f_imported_actor.py'
+      - 'backend/nvp_p1f_imported_environment.py'
+      - 'backend/nvp_p1f_reviewed_pbr_materials.py'
+      - 'backend/nvp_p1f_shot_material_binding.py'
+      - 'backend/nvp_p1f_production_character_assets.py'
+      - 'backend/nvp_p1f_glb_mesh_audit.py'
+      - 'backend/nvp_character_assets.py'
+      - 'tests/test_nvp_p1f_production_character_assets_native.py'
+      - 'tests/test_nvp_p1f_shot_material_binding_native.py'
+      - 'tools/nvp_p1f_cycles_actor_worker.py'
+      - 'tests/test_nvp_p1f_reviewed_pbr_materials_native.py'
+      - 'tests/test_nvp_p1f_imported_environment_native.py'
+      - 'backend/nvp_p1f_cycles_picture_sound.py'
+      - 'backend/nvp_p1f_multishot_reel.py'
+      - 'backend/nvp_p1f_sustained_reel_queue.py'
+      - 'backend/nvp_p1f_picture_audio_prefix.py'
+      - 'backend/nvp_p1f_picture_audio_delivery.py'
+      - 'backend/nvp_p1f_p2_verified_coverage.py'
+      - 'backend/nvp_worker_private_sandbox.py'
+      - 'backend/nvp_worker_containment.py'
+      - 'backend/nvp_blender_worker.py'
+      - 'tests/test_nvp_p1f_private_sandbox_native.py'
+      - 'tests/test_nvp_p1f_multishot_recovery.py'
+      - 'tools/nvp_p1f_cycles_actor_worker.py'
+      - 'backend/nvp_openusd_scene.py'
+      - 'backend/nvp_openusd_assets.py'
+      - 'tests/test_nvp_p1f_imported_actor_native.py'
+      - 'tests/test_nvp_p1de_edit_audio_native.py'
+      - '.github/workflows/nvp-p1de-native-edit-audio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-p1de-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-ffmpeg-source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Original-source dependency audit
+        run: python tools/nvp_no_ffmpeg_contract.py
+
+  genuine-native-edit-audio:
+    needs: no-ffmpeg-source
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install real OpenUSD and existing native foundation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Execute original FilmIndex/OpenUSD/PCM and edited actor-audio matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_p1de_edit_audio.py backend/nvp_p1f_p2_reel_plan.py backend/nvp_p1f_cycles_source_admission.py backend/nvp_p1f_imported_actor.py backend/nvp_p1f_imported_environment.py backend/nvp_p1f_reviewed_pbr_materials.py backend/nvp_p1f_shot_material_binding.py backend/nvp_p1f_production_character_assets.py backend/nvp_p1f_glb_mesh_audit.py backend/nvp_p1f_cycles_picture_sound.py tools/nvp_p1f_cycles_actor_worker.py backend/nvp_p1f_multishot_reel.py backend/nvp_p1f_sustained_reel_queue.py backend/nvp_p1f_picture_audio_prefix.py backend/nvp_p1f_picture_audio_delivery.py backend/nvp_p1f_p2_verified_coverage.py backend/nvp_worker_private_sandbox.py tools/nvp_p1f_cycles_actor_worker.py tests/test_nvp_p1de_edit_audio_native.py tests/test_nvp_p1f_imported_actor_native.py
+          python -m unittest discover -s tests -p 'test_nvp_p1de_edit_audio_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_imported_actor_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_multishot_recovery.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_imported_environment_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_reviewed_pbr_materials_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_shot_material_binding_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_production_character_assets_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_private_sandbox_native.py' -v
