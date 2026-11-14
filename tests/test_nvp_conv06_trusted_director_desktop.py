@@ -110,6 +110,35 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
         self.assertTrue(result["native_director_identity_approved"])
         self.assertFalse(result["voice_or_animation_generated"])
 
+    def test_native_original_texture_tile_stays_with_live_take_and_exact_window(self):
+        # Original WO2 test verifies genuine FilmIndex PNG/Take/asset binding,
+        # cache and stop/replay. Here the installed-origin IPC surface is gated.
+        bridge=fake_bridge()
+        received=[]
+        bridge._data_av=lambda:SimpleNamespace(
+            read_original_texture_tile=lambda session,payload:
+                (received.append((session,payload)) or
+                 {"take_document_sha256":"a"*64,
+                  "source_modified":False,"ffmpeg_used":False}))
+        request={"asset_id":"SourceMesh","asset_revision":1,
+                 "asset_document_sha256":"b"*64,
+                 "texture_sha256":"c"*64,
+                 "mip_level":0,"tile_x":0,"tile_y":0}
+        with self.assertRaisesRegex(PermissionError,"native Take-bound"):
+            bridge.data_av_texture_tile("active",{
+                **request,"asset_filename":"unapproved-private-source.png"})
+        returned=bridge.data_av_texture_tile("active",request)
+        self.assertFalse(returned["source_modified"])
+        self.assertEqual(received,[("active",request)])
+        bridge.window.get_current_url=lambda:"https://attacker.example/"
+        with self.assertRaisesRegex(PermissionError,"origin"):
+            bridge.data_av_texture_tile("active",request)
+        bridge.window.get_current_url=lambda:"http://127.0.0.1:19991/"
+        bridge._project_lock_check=lambda:True
+        with self.assertRaisesRegex(PermissionError,"protected"):
+            bridge.data_av_texture_tile("active",request)
+        self.assertEqual(len(received),1)
+
     def test_original_actor_district_shot_binding_requires_exact_one_use_native_consent(self):
         # Real source composition and original actor/PCM identity are covered
         # by the unchanged 01E/02M-H native source test. This case protects
