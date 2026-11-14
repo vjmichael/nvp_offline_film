@@ -12,7 +12,7 @@ import math
 
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
-from backend.nvp_temporal_ledger import TemporalLedger
+from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND, MAX_TICK, _int
 
 SCHEMA="nvp.data_av.usd_spatial_bindings.v1"
 
@@ -21,6 +21,8 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
                      timeline_id,timeline_revision,tick,*,limit=32):
     if not isinstance(index,FilmIndex):
         raise TypeError("Authoritative NVP FilmIndex required")
+    _int(tick, "time tick")
+    _int(limit, "spatial source budget", minimum=1, maximum=32)
     from pxr import Sdf,Usd,UsdMedia
     record,stage=OpenUSDSceneBridge(index).open(
         project_id,scene_id,scene_revision)
@@ -63,11 +65,15 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
         # USD floating time codes are not an exact Film Time representation.
         # Preserve integer ticks as private review-stage metadata; the indexed
         # frozen event remains authoritative for playback and synchronization.
-        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeStartTick", str(event["start_tick"]))
-        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeEndTick", str(event["end_tick"]))
-        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeTicksPerSecond", "7056000000")
-        prim.CreateStartTimeAttr(Sdf.TimeCode(float(event["start_tick"])))
-        prim.CreateEndTimeAttr(Sdf.TimeCode(float(event["end_tick"])))
+        start_tick = _int(event["start_tick"], "sound event start")
+        end_tick = _int(event["end_tick"], "sound event end")
+        if end_tick < start_tick:
+            raise RuntimeError("Invalid indexed sound event interval")
+        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeStartTick", str(start_tick))
+        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeEndTick", str(end_tick))
+        prim.GetPrim().SetCustomDataByKey("nvp:filmTimeTicksPerSecond", str(TICKS_PER_SECOND))
+        prim.CreateStartTimeAttr(Sdf.TimeCode(float(start_tick)))
+        prim.CreateEndTimeAttr(Sdf.TimeCode(float(end_tick)))
         descriptors.append({
             "event_id":event["event_id"],
             "usd_schema":"UsdMediaSpatialAudio",
@@ -76,8 +82,8 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
             "source_id":event["source_id"],
             "source_revision":event["source_revision"],
             "source_document_sha256":source["document_sha256"],
-            "start_tick":str(event["start_tick"]),
-            "end_tick":str(event["end_tick"]),
+            "start_tick":str(start_tick),
+            "end_tick":str(end_tick),
             "gain":float(gain),
             "revised_frozen_layer":False,
         })
