@@ -100,6 +100,54 @@ static fs::path no_reparse_file(const fs::path& f) {
             "Pinned original source must be regular, never a link");
     return f;
 }
+static void allow_exact_original_readonly(const fs::path& file,PSID appcontainer_sid) {
+    // Original USD/PCM/spec/script files use protected SYSTEM/Admin DACLs.
+    // An inheritable ACL added to the *parent* is not retroactive on these
+    // protected children. Grant this one worker SID READ only, NEVER write,
+    // delete, ACL change, source replacement or broad ALL_APP_PACKAGES access.
+    no_reparse_file(file);
+    PACL old_dacl=nullptr,derived=nullptr;
+    PSECURITY_DESCRIPTOR sd=nullptr;
+    DWORD rc=GetNamedSecurityInfoW(
+        const_cast<LPWSTR>(file.c_str()),SE_FILE_OBJECT,
+        DACL_SECURITY_INFORMATION,nullptr,nullptr,&old_dacl,nullptr,&sd);
+    require(rc==ERROR_SUCCESS&&old_dacl&&sd,
+            "Exact frozen source DACL inspection unavailable");
+    try {
+        EXPLICIT_ACCESSW rule{};
+        rule.grfAccessPermissions=FILE_GENERIC_READ;
+        rule.grfAccessMode=GRANT_ACCESS;
+        rule.grfInheritance=NO_INHERITANCE;
+        rule.Trustee.TrusteeForm=TRUSTEE_IS_SID;
+        rule.Trustee.TrusteeType=TRUSTEE_IS_USER;
+        rule.Trustee.ptstrName=reinterpret_cast<LPWSTR>(appcontainer_sid);
+        rc=SetEntriesInAclW(1,&rule,old_dacl,&derived);
+        require(rc==ERROR_SUCCESS&&derived,
+                "Cannot construct read-only one-use AppContainer source ACE");
+        rc=SetNamedSecurityInfoW(
+            const_cast<LPWSTR>(file.c_str()),SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,nullptr,nullptr,derived,nullptr);
+        require(rc==ERROR_SUCCESS,
+                "Cannot grant exact pinned source file READ to lowbox SID");
+        ACCESS_MASK observed=0;
+        TRUSTEE_W trustee{};
+        trustee.TrusteeForm=TRUSTEE_IS_SID;
+        trustee.TrusteeType=TRUSTEE_IS_USER;
+        trustee.ptstrName=reinterpret_cast<LPWSTR>(appcontainer_sid);
+        require(GetEffectiveRightsFromAclW(derived,&trustee,&observed)==ERROR_SUCCESS &&
+                (observed&FILE_GENERIC_READ)==FILE_GENERIC_READ &&
+                (observed&(FILE_WRITE_DATA|FILE_APPEND_DATA|DELETE|
+                            WRITE_DAC|WRITE_OWNER))==0,
+                "One-use source ACL unexpectedly grants AppContainer write/erase");
+    } catch(...) {
+        if(derived)LocalFree(derived);
+        LocalFree(sd);
+        throw;
+    }
+    LocalFree(derived);
+    LocalFree(sd);
+}
+
 static void private_acl_proof(const fs::path& dir) {
     DWORD attr=GetFileAttributesW(dir.c_str());
     require(attr!=INVALID_FILE_ATTRIBUTES &&
@@ -264,6 +312,11 @@ static int run_source_bound_blender() {
         "Native service unable to create lowbox AppContainer SID");
     h.profile_created=true;
     allow_one_job_root(job.wstring(),h.sid,h);
+    // Host source hashes were checked BEFORE lowbox admission. Four
+    // pre-existing source files have protected DACLs; explicitly grant only
+    // finite read-only access to the exact one-use package SID.
+    for(const auto& original: {script,usd,pcm,spec})
+        allow_exact_original_readonly(original,h.sid);
     FWPM_SESSION0 session{};session.flags=FWPM_SESSION_FLAG_DYNAMIC;
     require(FwpmEngineOpen0(nullptr,RPC_C_AUTHN_WINNT,nullptr,&session,
                             &h.wfp)==ERROR_SUCCESS && h.wfp,
