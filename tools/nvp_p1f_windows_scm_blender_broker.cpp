@@ -126,7 +126,8 @@ static void allow_exact_original_readonly(const fs::path& file,PSID appcontainer
                 "Cannot construct read-only one-use AppContainer source ACE");
         rc=SetNamedSecurityInfoW(
             const_cast<LPWSTR>(file.c_str()),SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION,nullptr,nullptr,derived,nullptr);
+            DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,
+            nullptr,nullptr,derived,nullptr);
         require(rc==ERROR_SUCCESS,
                 "Cannot grant exact pinned source file READ to lowbox SID");
         ACCESS_MASK observed=0;
