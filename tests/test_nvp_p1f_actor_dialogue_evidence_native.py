@@ -40,8 +40,11 @@ class ActorFaceDialogueTests(unittest.TestCase):
         self.assertFalse(first["new_voice_synthesized"])
         self.assertEqual(self.sample(), first)
         next_frame = self.sample(frame=1)
-        self.assertEqual(next_frame["status"], "ORIGINAL_ACTOR_NO_ACTIVE_DIALOGUE")
-        self.assertIsNone(next_frame["voice_pcm_sha256"])
+        self.assertEqual(next_frame["status"],
+                         "ORIGINAL_ACTOR_FACE_PCM_PAIR_NOT_LIPSYNC_VERIFIED")
+        self.assertEqual(next_frame["first_original_sample"], 2000)
+        self.assertNotEqual(next_frame["source_tick"], first["source_tick"])
+        self.assertNotEqual(next_frame["facial_weights"], first["facial_weights"])
 
     def test_tampered_original_pcm_and_out_of_scope_samples_denied(self):
         with self.assertRaises(ValueError):
