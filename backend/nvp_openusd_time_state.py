@@ -56,8 +56,8 @@ class OpenUSDTimeState:
         for path in wanted:
             _path(path,Sdf)
             prim=stage.GetPrimAtPath(path)
-            if not prim or not prim.IsDefined() or not prim.IsA(UsdGeom.Xform):
-                raise RuntimeError("Composed scene object is missing")
+            if not prim or not prim.IsDefined() or not prim.IsA(UsdGeom.Xformable):
+                raise RuntimeError("Composed scene object is missing or not spatial")
             matrix=UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(
                 Usd.TimeCode(float(tick)))
             values=[[float(matrix.GetRow(i)[j]) for j in range(4)]

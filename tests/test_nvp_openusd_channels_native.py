@@ -64,6 +64,13 @@ class PerformanceChannelNativeTests(unittest.TestCase):
         self.assertEqual(record["data"]["layer_order"],
                          ["parameters","motion","layout"])
         self.assertEqual(len(record["data"]["performance_channels"]),4)
+        # Every authored sublayer must share the exact Film Time rate;
+        # otherwise USD silently maps its default 24-fps samples into the root.
+        from pxr import Sdf
+        for layer_id in stage.GetRootLayer().subLayerPaths:
+            layer = Sdf.Layer.Find(layer_id)
+            self.assertIsNotNone(layer)
+            self.assertEqual(layer.timeCodesPerSecond, float(T))
         snapshot=self.state.evaluate(
             self.pid,"usd_scene",1,"timeline",1,tick=T)
         values={p["property"]:p["value"]

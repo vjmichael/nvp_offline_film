@@ -27,7 +27,7 @@ describe('SLATE-08 main UI read-only real scene camera',()=>{
     const {container}=render(<FilmCameraSourcePanel
       projectId={pid} api={api}/>);
     expect(await screen.findByText(/50 mm · 39.6° horizontal FOV/)).toBeTruthy();
-    expect(api).toHaveBeenCalledTimes(2);
+    await waitFor(()=>expect(api).toHaveBeenCalledTimes(2));
     fireEvent.change(screen.getByLabelText('Lens preset'),
                      {target:{value:'wide_24'}});
     expect(screen.getByText(/24 mm · 73.7° horizontal FOV/)).toBeTruthy();
@@ -51,4 +51,22 @@ describe('SLATE-08 main UI read-only real scene camera',()=>{
     render(<FilmCameraSourcePanel projectId={pid} api={api}/>);
     expect((await screen.findByRole('alert')).textContent).toMatch(/no longer matches/);
   });
+  it('DA-06 never discovers or calls retired native Blender still IPC',async()=>{
+    const api=vi.fn(async path=>path.endsWith('/film/camera-scenes')?list:snapshot);
+    const nativeBridge={
+      camera_render_capabilities:vi.fn(async()=>({
+        format:'nvp.camera.desktop_capability.v1',native_window:true,
+        blender_discovered:true,supports_approved_still:true,
+      })),
+      request_camera_still:vi.fn(),poll_camera_still:vi.fn(),
+      cancel_camera_still:vi.fn(),
+    };
+    render(<FilmCameraSourcePanel projectId={pid} api={api}
+      nativeBridge={nativeBridge}/>);
+    expect(await screen.findByText(/50 mm · 39.6° horizontal FOV/)).toBeTruthy();
+    expect(screen.getByText('Render accurate optics still').disabled).toBe(true);
+    expect(screen.getByText(/Retired Blender still delivery is unavailable/)).toBeTruthy();
+    for(const fn of Object.values(nativeBridge))expect(fn).not.toHaveBeenCalled();
+  });
+
 });

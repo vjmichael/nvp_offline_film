@@ -1,16 +1,7 @@
 name: NVP E2E-01E Installed Windows Desktop Alpha
+# DATA-AV-01 migration: legacy imported-video/benchmark workflow is
+# manual-only; it must not gate or relaunch native Digital Take A/V.
 on:
-  pull_request:
-    paths:
-      - 'tools/nvp_desktop_alpha.py'
-      - 'packaging/nvp-alpha.nsi'
-      - 'tools/nvp_e2e01e_validate_installer_payload.py'
-      - 'tests/test_nvp_e2e01e_package_guard.py'
-      - 'packaging/build-nvp-nsis.sh'
-      - '.github/workflows/nvp-e2e01e-windows-alpha.yml'
-      - 'frontend/**'
-      - 'backend/nvp_api.py'
-      - 'backend/nvp_studio.py'
   workflow_dispatch:
 permissions:
   contents: read

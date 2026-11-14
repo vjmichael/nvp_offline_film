@@ -238,7 +238,7 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
     expect(screen.getByText('Render authored 3D preview').disabled).toBe(true);
   });
 
-  it('shows authored OpenUSD geometry separately from proxy and never claims skinning',()=>{
+  it('distinguishes authored OpenUSD geometry from proxy and flags missing actor meshes',()=>{
     const graph={project_id:'c'.repeat(32),scene_label:'01',
       parallel_groups:{reaction:[node(1,true)]}};
     const cut={edit_document_sha256:'f'.repeat(64),
@@ -253,9 +253,9 @@ describe('SLATE-03 paged timeline and assembly source cards',()=>{
       graphView={graph} activeView={cut} previewPane={presentation}/>);
     expect(screen.getByText('Authored OpenUSD geometry preview')).toBeTruthy();
     fireEvent.click(container.querySelector('.nvp-slate-assembly-card'));
-    expect(screen.getByAltText(/Native OpenUSD geometry and camera preview/)).toBeTruthy();
-    expect(screen.getByText(/actor geometry or rigged deformation/)).toBeTruthy();
-    expect(screen.getByText(/no skinned performance or master approval/)).toBeTruthy();
+    expect(screen.getByAltText(/Authored OpenUSD camera and geometry preview/)).toBeTruthy();
+    expect(screen.getByText(/at least one actor lacks supported/)).toBeTruthy();
+    expect(screen.getByText(/supported weighted skinning · no final master approval/)).toBeTruthy();
   });
 
   it('scrubs real performance Film Time without changing a source Take or activating a draft',()=>{

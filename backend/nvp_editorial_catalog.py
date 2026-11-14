@@ -100,7 +100,7 @@ class EditorialCatalog:
                 frames = _positive(clip["frame_count"], "clip frame count")
                 if first > MAX_I64 - frames + 1 or position > MAX_I64 - frames + 1:
                     raise OverflowError("Clip source/output interval exceeds signed 64-bit range")
-                db.execute("""INSERT INTO scale_editorial_clips VALUES (?,?,?,?,?,?,?,?)""",
+                db.execute("""INSERT INTO scale_editorial_clips (project_id, edit_id, revision, ordinal, source_id, source_revision, source_first_frame, frame_count, output_first_frame) VALUES (?,?,?,?,?,?,?,?,?)""",
                            (project_id, edit_id, revision, count, source_id,
                             source_revision, first, frames, position))
                 position += frames
