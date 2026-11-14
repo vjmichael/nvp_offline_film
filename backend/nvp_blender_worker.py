@@ -314,7 +314,7 @@ class BlenderWorkerSupervisor:
                 raise RuntimeError("Blender output size outside approved bound")
             with path.open("rb") as f:
                 head=f.read(12)
-            if ((kind=="png" and head!=b"\x89PNG\r\n\x1a\n") or
+            if ((kind=="png" and head[:8]!=b"\x89PNG\r\n\x1a\n") or
                 # Blender 5.x can save Zstandard-compressed .blend containers
                 # (28 b5 2f fd), not just legacy raw BLENDER headers. Media
                 # magic is only a preflight; independent Blender reopen/audit
