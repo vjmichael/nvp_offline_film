@@ -80,7 +80,10 @@ class DurableOriginalShotTests(unittest.TestCase):
             self.assertEqual(fresh.verify("first_batch")["frames_accepted"],2)
             with self.assertRaises(RuntimeError):
                 fresh.run_next("first_batch",creator_event="replay")
-            with self.assertRaises(RuntimeError):
+            # A previously approved batch ID may not be reused even when a
+            # fresh trusted caller again permits the exact same scope.
+            fresh.approve_batch=lambda event,scope: event=="approved_batch"
+            with self.assertRaisesRegex(RuntimeError,"already registered"):
                 fresh.create_batch(
                     self.fixture.pid,"rigged_reel_plan","first_batch",
                     reel_index=0,first_frame_offset=0,frame_count=2,
