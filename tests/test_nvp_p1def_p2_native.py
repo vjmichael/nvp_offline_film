@@ -157,6 +157,25 @@ class OriginalP1DEditorAndP1FOutput(unittest.TestCase):
             self.assertEqual(complete["verified_frames"],48)
             self.assertEqual(complete["status"],
                 "ALL_TECHNICAL_PICTURE_PCM_DERIVATIVES_VERIFIED_NOT_MASTER")
+            self.assertFalse(complete["verified_30_minute_original_film"])
+            # These are source-only PNG test doubles: even after independent
+            # file/PCM reopen they MUST NOT satisfy protected Blender custody.
+            with self.assertRaises(PermissionError):
+                planner.reconcile_all(
+                    self.pid,"TwoSecondReelPlan",1,output_parent=tmp,
+                    require_protected_worker=True)
+            with self.assertRaises(RuntimeError):
+                planner.reconcile_all(
+                    self.pid,"TwoSecondReelPlan",1,output_parent=tmp,
+                    require_protected_worker=True,
+                    native_worker_verifier=lambda _receipt:True)
+            # A cold-restart audit can be cancelled without touching any
+            # already verified picture/audio or running another renderer.
+            with self.assertRaises(InterruptedError):
+                planner.reconcile_all(
+                    self.pid,"TwoSecondReelPlan",1,output_parent=tmp,
+                    cancelled=lambda:True)
+            self.assertEqual(len(renderer_calls),48)
             (Path(tmp)/"P1F_P2FilmChunk000000"/"pictures"/"000001.png"
                 ).write_bytes(b"tampered")
             with self.assertRaises(RuntimeError):
