@@ -727,18 +727,34 @@ class ObjectActorDialogue:
                  "value": f["fact_value"], "id": f["id"]}
                 for f in entity["facts"] if f["status"] == "accepted"
             ], key=lambda x:(x["key"],x["scope"],x["id"]))[:32]
+            # Resource links (new wardrobe/model/voice/performance) advance
+            # the StoryBible entity revision but are not canon changes.
+            # Check accepted canon and exact script-scene binding instead
+            # of invalidating an original delivery for an unrelated link.
+            linked_scene = any(
+                s["scene_id"] == snapshot["linked_scene_id"] and
+                s["scene_sha"] == snapshot["linked_scene_sha256"] and
+                s["screenplay_revision"] == snapshot["screenplay_revision"]
+                for s in entity["scene_links"])
             if (_digest(canonical) != snapshot["accepted_canon_fact_digest"] or
-                    entity["revision"] != snapshot["entity_revision"]):
+                    not linked_scene):
                 retained_old.append(oid)
                 if not preserve_prior_script_performances or not preservation_reason.strip():
                     raise PermissionError("Production bible changed: explicitly review old character performance")
             start, stop = doc["first_tick"], doc["end_tick"]
-            actor_id = doc["openusd_actor_prim_path"].rsplit("/", 1)[-1]
-            _id(actor_id, "OpenUSD actor subject")
+            # FilmIndex event subject uses a valid, deterministic encoding
+            # of the canonical StoryBible ActorID. OpenUSD prim names are
+            # mutable scene geometry, NEVER speaker identity.
+            actor_id = snapshot["entity_id"]
+            if (type(actor_id) is not str or len(actor_id) != 32 or
+                    any(ch not in "0123456789abcdef" for ch in actor_id)):
+                raise PermissionError("Invalid canonical production ActorID")
+            actor_subject = "Actor_" + actor_id
+            _id(actor_subject, "canonical timeline actor subject")
             events.append({
                 "event_id": "D_" + oid,
                 "event_kind": "dialogue",
-                "subject_id": actor_id,
+                "subject_id": actor_subject,
                 "start_tick": start,
                 "end_tick": stop,
                 "source_id": oid,
@@ -761,7 +777,7 @@ class ObjectActorDialogue:
                 events.append({
                     "event_id": "Voice_" + oid,
                     "event_kind": "sound",
-                    "subject_id": actor_id,
+                    "subject_id": actor_subject,
                     "start_tick": start,
                     "end_tick": stop,
                     "source_id": snd["audio_id"],
@@ -771,6 +787,8 @@ class ObjectActorDialogue:
                         "gain": 1.0,
                         "performance_id": oid,
                         "production_bible_entity_id": snapshot["entity_id"],
+                        "actor_id": snapshot["entity_id"],
+                        "script_line_id": doc["script_line_id"],
                         "recorded_dialogue_not_final_mix": True,
                     },
                 })
