@@ -31,8 +31,8 @@ def full_body_glb(mutation=None):
         nodes[i]["translation"] = xyz
         if children:
             nodes[i]["children"] = children
-    pose(0, [0., 1., 0.], [1, 3, 4, 5, 6])
-    pose(1, [0., .4, 0.], [2])
+    pose(0, [0., 1., 0.], [1, 5, 6])
+    pose(1, [0., .4, 0.], [2, 3, 4])
     pose(2, [0., .3, 0.])
     pose(3, [-.4, 0., 0.])
     pose(4, [.4, 0., 0.])
