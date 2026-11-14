@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'backend/nvp_p1f_full_body_retarget.py'
+      - 'backend/nvp_p1f_production_character_assets.py'
       - 'backend/nvp_p1f_actor_dialogue_evidence.py'
       - 'tests/test_nvp_p1f_full_body_retarget_native.py'
       - 'tests/test_nvp_p1f_actor_dialogue_evidence_native.py'
