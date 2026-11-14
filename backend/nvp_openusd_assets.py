@@ -83,6 +83,16 @@ class OpenUSDAssetRegistry:
             self.index,project_id,asset_id,source,location_id=location_id,
             approve_import=approve_import,creator_event=creator_event)
 
+    def import_reviewed_pbr_materials(self,project_id,material_set_id,**reviewed):
+        """Import human-approved PNG/PBR UV maps with original rights evidence.
+
+        This does not authorize filesystem access, Blender execution,
+        commercial licensing or a finished film master.
+        """
+        from backend.nvp_p1f_reviewed_pbr_materials import P1FReviewedPBRMaterials
+        return P1FReviewedPBRMaterials(self.index).publish(
+            project_id,material_set_id,**reviewed)
+
     def open(self, project_id, asset_id, revision):
         record = self.index.read_revision(project_id, asset_id, revision)
         doc = record["data"]
