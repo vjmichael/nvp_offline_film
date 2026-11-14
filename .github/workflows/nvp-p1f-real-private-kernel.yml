@@ -1,0 +1,111 @@
+name: NVP P1-F Real Private Kernel and Unchanged Adversarial Custody
+
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_worker_private_sandbox.py'
+      - 'backend/nvp_worker_containment.py'
+      - 'backend/nvp_worker_linux_cgroup.py'
+      - 'backend/nvp_p1f_cycles_picture_sound.py'
+      - 'tests/test_nvp_p1f_private_kernel_real.py'
+      - 'tests/test_nvp_p1f_private_sandbox_native.py'
+      - '.github/workflows/nvp-p1f-real-private-kernel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-p1f-private-kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-source-boundary:
+    name: P1-F original source denial and sandbox contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install reviewed native OpenUSD for original unmodified replay tests
+        run: |
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          python -m pip install -r requirements-foundation.txt
+      - name: Original unchanged Linux cgroup, P1-F cancellation/restart/replay and new private contracts
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_worker_private_sandbox.py backend/nvp_worker_containment.py backend/nvp_p1f_cycles_picture_sound.py tests/test_nvp_p1f_private_kernel_real.py
+          python -m unittest discover -s tests -p 'test_nvp_p1f_private_sandbox_native.py' -v
+          python -m unittest discover -s tests -p 'test_linux_cgroup_tree.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_multishot_recovery.py' -v
+
+  linux-genuine-delegated-kernel:
+    name: REQUIRED real systemd delegated cgroup/bwrap net+mount cancel/guardian-loss/hard-exit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Provision ROOT-owned distro namespace executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap
+          stat -c 'BWRAP owner=%u mode=%a file=%n' /usr/bin/bwrap
+          sha256sum /usr/bin/bwrap | tee kernel-bwrap-sha256.txt
+          cat /proc/self/cgroup | tee kernel-host-membership.txt
+          mount | grep cgroup2 | tee kernel-mount.txt
+      - name: Run original cgroup guardian and genuine private namespace tests under actual systemd delegation
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD"
+          # NO mocks, and NO skips accepted. No systemd manager/delegation
+          # means this gate FAILS; synthetic hosted tests cannot close it.
+          run_native() {
+            env NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
+              python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v
+            env NVP_REQUIRE_REAL_P1F_KERNEL=1 \
+              python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v
+          }
+          export -f run_native
+          if systemd-run --user --scope --collect --quiet \
+              -p Delegate=yes -p DelegateSubgroup=nvp.host \
+              env PATH="$PATH" PYTHONPATH="$PWD" \
+                NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
+              bash -ec 'run_native() { python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v; }; run_native' \
+              2>&1 | tee kernel-actual-output.txt; then
+            echo 'REAL_USER_SYSTEMD_DELEGATION_PROVED' | tee -a kernel-actual-output.txt
+          else
+            echo 'User scope unavailable; attempting genuine systemd system scope (not an uncontained fallback)' | tee -a kernel-actual-output.txt
+            sudo systemd-run --system --scope --collect --quiet \
+              -p Delegate=yes -p DelegateSubgroup=nvp.host \
+              --uid="$(id -un)" \
+              env PATH="$PATH" PYTHONPATH="$PWD" \
+                NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
+              bash -ec 'python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v' \
+              2>&1 | tee -a kernel-actual-output.txt
+            echo 'REAL_SYSTEM_SYSTEMD_DELEGATION_PROVED' | tee -a kernel-actual-output.txt
+          fi
+      - name: Record true kernel result without inventing acceptance
+        if: always()
+        shell: bash
+        run: |
+          cat /proc/self/cgroup > kernel-after.txt
+          test -f kernel-actual-output.txt || echo 'BLOCKED: native delegated fixture could not start' > kernel-actual-output.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-p1f-original-native-kernel-custody-evidence
+          path: |
+            kernel-host-membership.txt
+            kernel-mount.txt
+            kernel-bwrap-sha256.txt
+            kernel-actual-output.txt
+            kernel-after.txt
+          retention-days: 14
