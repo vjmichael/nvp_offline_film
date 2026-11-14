@@ -1026,6 +1026,122 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
         derived.mkdir(mode=0o700,exist_ok=True)
         return derived
 
+    def data_av_film_stage_ninecam_preflight(self,request):
+        """Verified original 01I camera selection; no render or grant issued."""
+        self._native_window()
+        allowed={"project_id","cut_id","frame"}
+        if type(request) is not dict or set(request)!=allowed:
+            raise ValueError("Nine-camera native source requires only project, cut and frame")
+        from backend.nvp_usd_film01i_ninecam_take import (
+            OriginalNineCameraEditorialCut)
+        pid=_require_pid(request["project_id"])
+        cut_id=_id(request["cut_id"],"director camera cut")
+        frame=request["frame"]
+        if type(frame) is not int or not 0<=frame<720:
+            raise ValueError("Original nine-camera frame must be 0..719")
+        read=OriginalNineCameraEditorialCut(
+            self.index,verify_director_action=lambda *_:False)
+        cut=read.verify(pid,cut_id)
+        source=read.at_frame(pid,cut_id,frame)
+        sha=self.index.read_revision(pid,cut_id,1)["document_sha256"]
+        return {
+            "format":"nvp.usd_film01i.native_selected_camera_preflight.v1",
+            "project_id":pid,"cut_id":cut_id,"cut_sha256":sha,
+            "source_rig_sha256":cut["source_rig_sha256"],
+            "original_world_take_sha256":cut["world_take_sha256"],
+            "original_performance_sha256":cut["source_performance_sha256"],
+            "selected_camera":source,
+            "worker_authorized":False,"rendered":False,
+            "film_master_approved":False,
+        }
+
+    def data_av_film_stage_ninecam_begin(self,request):
+        """One private, native-window-authorized world Take Cycles frame.
+
+        No browser-supplied paths, binaries, scripts, approvals or worker IDs.
+        Same bounded ticket machinery used for P1-F/P2 cancellation/recovery.
+        """
+        preflight=self.data_av_film_stage_ninecam_preflight(request)
+        with self._lock:
+            if self._closing:
+                raise PermissionError("Original film window is closing")
+            if ((self._p1f_export is not None and
+                 not self._p1f_export["future"].done()) or
+                (self._edited_export is not None and
+                 not self._edited_export["future"].done())):
+                raise RuntimeError("Only one native protected picture worker at a time")
+            if (self._data_av_controller is not None and
+                    self._data_av_controller._active is not None):
+                raise RuntimeError("Stop original sound audition before protected camera")
+            if (self._original_capture_controller is not None and
+                    self._original_capture_controller._active is not None):
+                raise RuntimeError("Finish original PCM capture before camera render")
+            ticket=secrets.token_urlsafe(32)
+            job_id="ninecam_"+secrets.token_hex(16)
+            action=secrets.token_urlsafe(24)
+            cancel=threading.Event()
+            progress={"stage":"WAITING_FOR_PRIVATE_NATIVE_CAMERA",
+                      "completed":0,"planned":1}
+            approval_spent={"value":False}
+            requested=dict(request)
+
+            def perform():
+                from backend.nvp_usd_film01f_blender_host import (
+                    ReviewedNineCameraCyclesHost)
+                if cancel.is_set():
+                    raise InterruptedError("Original camera render was cancelled")
+                protected_host=self._get_host()
+                supervisor=protected_host.supervisor
+                with self._lock:
+                    if (self._p1f_export is not None and
+                            self._p1f_export["ticket"]==ticket):
+                        self._p1f_export["nine_camera_supervisor"]=supervisor
+                def confirm(event,scope):
+                    if (event!=action or approval_spent["value"] or
+                            cancel.is_set() or
+                            scope.get("cut_sha256")!=preflight["cut_sha256"] or
+                            scope.get("source_world_take_sha256")!=
+                                preflight["original_world_take_sha256"] or
+                            scope.get("camera_shot_sha256")!=preflight[
+                                "selected_camera"]["selected_camera_shot_sha256"] or
+                            scope.get("job_id")!=job_id):
+                        return False
+                    approval_spent["value"]=True
+                    return self._ask(
+                        "Approve ONE original world-Take camera frame through "
+                        "OS-contained Blender/Cycles and an independent Blender "
+                        "reopen? The original stage must be EFS encrypted. "
+                        "No source, actor, VoiceID or film master is changed.\n"+
+                        json.dumps(scope,sort_keys=True,indent=2))
+                worker=ReviewedNineCameraCyclesHost(
+                    self.index,supervisor,verify_director_action=confirm)
+                proof=worker.render_selected_frame(
+                    requested["project_id"],requested["cut_id"],
+                    requested["frame"],job_id,
+                    director_event=action,cancelled=cancel.is_set)
+                if cancel.is_set():
+                    raise InterruptedError("Native camera render cancelled before publication")
+                with self._lock:
+                    progress.update({"stage":"NATIVE_CAMERA_AND_SOURCE_PCM_REOPENED",
+                                     "completed":1})
+                return proof
+
+            future=self._executor.submit(perform)
+            self._p1f_export={
+                "ticket":ticket,"future":future,"cancel":cancel,
+                "progress":progress,"project_id":request["project_id"],
+                "nine_camera":True,"nine_camera_job_id":job_id,
+                "nine_camera_supervisor":None,
+            }
+            return {
+                "format":"nvp.p1f.native_source_chunk_ticket.v1",
+                "status":"QUEUED_NATIVE_APPROVAL",
+                "ticket":ticket,"source_cut_sha256":preflight["cut_sha256"],
+                "original_world_take_sha256":
+                    preflight["original_world_take_sha256"],
+                "frame_count":1,"film_master_approved":False,
+            }
+
     def data_av_film_stage_reel_preflight(self,request):
         self._native_window()
         required={"project_id","plan_id","revision","first_index",
@@ -1290,6 +1406,18 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
             return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
                     "status":"FAILED_UNVERIFIED","reason":str(exc)[:250],
                     "original_modified":False,"film_master_approved":False}
+        if job.get("nine_camera") is True:
+            if (result.get("format")!=
+                    "nvp.usd_film01i.protected_original_camera_picture_pcm.v1" or
+                result.get("status")!=
+                    "ORIGINAL_SELECTED_CAMERA_NATIVE_FRAME_REOPEN_VERIFIED" or
+                result.get("film_master_approved") is not False):
+                return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                        "status":"FAILED_UNVERIFIED",
+                        "film_master_approved":False}
+            return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
+                    "status":"ORIGINAL_SELECTED_CAMERA_REOPENED_NOT_FILM",
+                    "receipt":result,"film_master_approved":False}
         if job.get("reel_batch") is True:
             if (result.get("format")!="nvp.p2.bounded_source_film_reel_grant.v1"
                 or result.get("status")!="BOUNDED_REEL_PICTURE_PCM_VERIFIED"
@@ -1315,6 +1443,12 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
             job["cancel"].set()
             worker=job.get("cycles_renderer")
             if worker is not None:worker.cancel_active()
+            supervisor=job.get("nine_camera_supervisor")
+            if supervisor is not None:
+                for ident in (job["nine_camera_job_id"],
+                              job["nine_camera_job_id"]+"_reopen"):
+                    try:supervisor.cancel(ident)
+                    except (KeyError,RuntimeError,ValueError):pass
         return {"format":"nvp.p1f.native_source_chunk_ticket.v1",
                 "status":"CANCELLATION_REQUESTED_NOT_VERIFIED",
                 "original_modified":False,"film_master_approved":False}
@@ -1610,6 +1744,12 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                 renderer=self._p1f_export.get("cycles_renderer")
                 if renderer is not None:
                     renderer.cancel_active()
+                supervisor=self._p1f_export.get("nine_camera_supervisor")
+                if supervisor is not None:
+                    for ident in (self._p1f_export["nine_camera_job_id"],
+                                  self._p1f_export["nine_camera_job_id"]+"_reopen"):
+                        try:supervisor.cancel(ident)
+                        except (KeyError,RuntimeError,ValueError):pass
             if self._data_av_controller is not None:
                 self._data_av_controller.close()
             if self._original_capture_controller is not None:

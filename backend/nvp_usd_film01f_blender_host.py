@@ -300,6 +300,9 @@ class ReviewedWorldTakeCyclesHost:
             raise FileExistsError("World Take render job already exists")
         job.mkdir(mode=0o700)
         try:
+            if nine_camera_cut_id is not None:
+                from backend.nvp_w1g_encrypted_source import require_efs_stage
+                require_efs_stage(job)
             if (nine_camera_cut_id is None)!=(nine_camera_frame is None):
                 raise ValueError("Exact nine-camera source needs cut identity and frame")
             original=(
@@ -315,6 +318,9 @@ class ReviewedWorldTakeCyclesHost:
             if script.is_symlink() or not script.is_file():
                 raise RuntimeError("Reviewed original world Blender worker unavailable")
             (job/SCRIPT).write_bytes(script.read_bytes())
+            if nine_camera_cut_id is not None:
+                from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+                verify_efs_inputs(job,names=(USD,MANIFEST,SCRIPT))
             op=BlenderOperation(
                 job_id=job_id, script=SCRIPT,
                 script_sha256=sha_file(job/SCRIPT),
@@ -328,15 +334,18 @@ class ReviewedWorldTakeCyclesHost:
                 memory_limit_mb=8192,timeout_seconds=600,
                 gpu_memory_mb=0,require_linux_cgroup_v2=True,require_private_isolation=True)
             self.supervisor._validate(op)
-            return {"packet":packet,"operation":op,"job_dir":job}
+            return {"packet":packet,"operation":op,"job_dir":job,
+                    "protected_original_camera":nine_camera_cut_id is not None}
         except Exception:
             # Failed predispatch artifacts aren't approved source. Delete
             # only the newly created job folder.
             shutil.rmtree(job)
             raise
 
-    def _run_verified(self,pid,staged):
+    def _run_verified(self,pid,staged,*,cancelled=lambda:False):
         """Run one private Cycles job with independent saved .blend and original PCM."""
+        if cancelled():
+            raise InterruptedError("Director cancelled source before protected Cycles execution")
         src=staged["packet"]["source"]
         current=self.index.read_revision(pid,src["original_world_take_id"],1)
         if current["document_sha256"]!=src["original_world_take_sha256"]:
@@ -346,6 +355,12 @@ class ReviewedWorldTakeCyclesHost:
             raise RuntimeError("Original Blender shot failed: "+str(state["state"]))
         self.supervisor.verify_completed(staged["operation"].job_id)
         job=staged["job_dir"]
+        if staged.get("protected_original_camera"):
+            from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+            verify_efs_inputs(job,names=(
+                USD,MANIFEST,SCRIPT,FRAME,BLEND,AUDIT))
+        if cancelled():
+            raise InterruptedError("Director cancelled before independent Blender reopen")
         audit=json.loads((job/AUDIT).read_text("utf8"))
         if (audit.get("format")!=AUDIT_FORMAT or
             audit.get("passed") is not True or
@@ -369,6 +384,9 @@ class ReviewedWorldTakeCyclesHost:
         if folder.exists() or folder.is_symlink():
             raise RuntimeError("Independent Blender reopen job already exists")
         folder.mkdir(mode=0o700)
+        if staged.get("protected_original_camera"):
+            from backend.nvp_w1g_encrypted_source import require_efs_stage
+            require_efs_stage(folder)
         shutil.copyfile(job/BLEND,folder/BLEND)
         reopen_source={
             "source":src,"source_blend_sha256":sha_file(folder/BLEND)}
@@ -387,10 +405,20 @@ class ReviewedWorldTakeCyclesHost:
             arguments={"--manifest":MANIFEST,"--audit":AUDIT},
             memory_limit_mb=8192,timeout_seconds=600,
             require_linux_cgroup_v2=True,require_private_isolation=True)
+        if staged.get("protected_original_camera"):
+            from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+            verify_efs_inputs(folder,names=(BLEND,MANIFEST,REOPEN_SCRIPT))
+        if cancelled():
+            raise InterruptedError("Director cancelled before independent Blender reread")
         outcome=self.supervisor.run(check_op)
         if outcome["state"]!="SUCCEEDED":
             raise RuntimeError("Independent original Blender reopen failed")
         self.supervisor.verify_completed(secondary_id)
+        if staged.get("protected_original_camera"):
+            from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+            verify_efs_inputs(folder,names=(BLEND,MANIFEST,REOPEN_SCRIPT,AUDIT))
+        if cancelled():
+            raise InterruptedError("Director cancelled before source PCM stems")
         proof=json.loads((folder/AUDIT).read_text("utf8"))
         if (proof.get("passed") is not True or
             proof.get("format")!=
@@ -407,6 +435,15 @@ class ReviewedWorldTakeCyclesHost:
         original_sound=render_original_source_stems(
             self.index,pid,src["original_world_take_id"],
             job/"original_audio")
+        if staged.get("protected_original_camera"):
+            from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+            verify_efs_inputs(job,names=(
+                USD,MANIFEST,SCRIPT,FRAME,BLEND,AUDIT,
+                *["original_audio/"+item["file"] for item in
+                  original_sound["original_stems"]],
+                "original_audio/source_stems_manifest.json"))
+        if cancelled():
+            raise InterruptedError("Director cancelled after original PCM verification")
         if (not original_sound["actual_original_pcm_readback_verified"] or
             original_sound["world_take_sha256"] !=
                 src["original_world_take_sha256"] or
@@ -468,7 +505,8 @@ class ReviewedWorldTakeCyclesHost:
 class ReviewedNineCameraCyclesHost(ReviewedWorldTakeCyclesHost):
     """Exact original 01I selected-view Cycles frame + independent OS reopen."""
 
-    def render_selected_frame(self,pid,cut_id,frame,job_id,*,director_event):
+    def render_selected_frame(self,pid,cut_id,frame,job_id,*,
+                              director_event,cancelled=lambda:False):
         from backend.nvp_usd_film01i_ninecam_take import (
             OriginalNineCameraEditorialCut,FPS,FRAMES_PER_CAMERA)
         from backend.nvp_temporal_ledger import TICKS_PER_SECOND
@@ -521,7 +559,7 @@ class ReviewedNineCameraCyclesHost(ReviewedWorldTakeCyclesHost):
             # journaled and is never silently retried with a reused approval.
             shutil.rmtree(staged["job_dir"])
             raise
-        proof=self._run_verified(pid,staged)
+        proof=self._run_verified(pid,staged,cancelled=cancelled)
         if (proof["source"]["original_world_take_sha256"]!=
                 scope["source_world_take_sha256"] or
                 proof["audit"]["original_camera_shot_sha256"]!=
