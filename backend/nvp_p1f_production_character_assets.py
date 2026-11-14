@@ -14,6 +14,7 @@ import math
 
 from backend.nvp_character_assets import inspect_rigged_glb
 from backend.nvp_p1f_glb_mesh_audit import audit_glb_skinned_mesh
+from backend.nvp_p1f_full_body_retarget import audit_full_body_rest_pose
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_openusd_assets import OpenUSDAssetRegistry
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
@@ -80,7 +81,7 @@ class P1FReviewedProductionCharacters:
     def publish(self, pid, package_id, glb_bytes, *,
                 actor_id, actor_asset_id, actor_asset_revision,
                 joint_map, calibration, rights, rights_evidence,
-                approve_import, creator_event):
+                approve_import, creator_event, full_body_role_map=None):
         _require_pid(pid)
         _id(package_id, "reviewed production character package")
         _id(actor_id, "authoritative ActorID")
@@ -96,6 +97,10 @@ class P1FReviewedProductionCharacters:
         decoded = audit_glb_skinned_mesh(glb_bytes, original)
         mapped = _joint_map(joint_map, original_joints, original["joint_names"])
         placement = _calibration(calibration)
+        full_body = (audit_full_body_rest_pose(
+            glb_bytes, full_body_role_map,
+            meters_per_source_unit=placement["meters_per_source_unit"])
+            if full_body_role_map is not None else None)
         evidence = _rights(rights, rights_evidence)
         evidence_sha = sha256(rights_evidence).hexdigest()
         source_sha = original["sha256"]
@@ -112,6 +117,7 @@ class P1FReviewedProductionCharacters:
             "decoded_geometry": decoded,
             "joint_map": mapped,
             "calibration": placement,
+            "full_body_rest_axes": full_body,
             "rights": evidence,
             "rights_evidence_sha256": evidence_sha,
         }
@@ -130,6 +136,7 @@ class P1FReviewedProductionCharacters:
             "glb_sha256": source_sha, "glb_inspection": original,
             "decoded_geometry": decoded,
             "joint_map": mapped, "calibration": placement,
+            "full_body_rest_axes": full_body,
             "rights": evidence, "rights_evidence_sha256": evidence_sha,
             "creator_source_reviewed": True,
             "license_independently_verified": False,
@@ -185,6 +192,14 @@ class P1FReviewedProductionCharacters:
             raise RuntimeError("Reviewed joint mapping changed")
         if _calibration(d["calibration"]) != d["calibration"]:
             raise RuntimeError("Reviewed original rest-pose calibration changed")
+        rest = d.get("full_body_rest_axes")
+        if rest is not None:
+            if (type(rest) is not dict or
+                    audit_full_body_rest_pose(
+                        original, rest["role_to_joint"],
+                        meters_per_source_unit=d["calibration"]["meters_per_source_unit"]
+                    ) != rest):
+                raise RuntimeError("Full-body actual GLB inverse binds/axes changed on reopen")
         license_bytes = self.index.get_blob(pid, d["rights_evidence_sha256"])
         if (sha256(license_bytes).hexdigest() != d["rights_evidence_sha256"] or
                 _rights(d["rights"], license_bytes) != d["rights"]):
@@ -222,6 +237,7 @@ class P1FReviewedProductionCharacters:
             "scene_document_sha256": scene["document_sha256"],
             "actor_path": actor_path, "actor_id": source["actor_id"],
             "glb_sha256": source["glb_sha256"],
+            "full_body_rest_axes_audited": source.get("full_body_rest_axes") is not None,
             "rest_pose_reviewed": source["calibration"]["rest_pose_reviewed"],
         }
         if approve_cast(creator_event, dict(scope)) is not True:
@@ -302,6 +318,7 @@ class P1FReviewedProductionCharacters:
             "facial_weights": [float(v) for v in expression],
             "joint_map": package["data"]["joint_map"],
             "calibration": package["data"]["calibration"],
+            "glb_full_body_rest_axes": package["data"].get("full_body_rest_axes"),
             "source_rights_evidence_sha256": package["data"]["rights_evidence_sha256"],
             "retargeted_body_motion_verified": False,
             "worker_authorized": False, "film_master_created": False,
