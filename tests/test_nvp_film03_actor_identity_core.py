@@ -367,7 +367,7 @@ class NativeActorIdentityDirectorApproval(unittest.TestCase):
     def test_native_host_denies_AI_identity_updates_and_exposes_only_a_read_only_tts_plan(self):
         import os
         from unittest.mock import patch
-        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+        from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 
         class HumanWindow:
             def __init__(self):
@@ -395,7 +395,7 @@ class NativeActorIdentityDirectorApproval(unittest.TestCase):
             changed["voice_type"]["cadence"]="Quicker with short breaths"
             with patch.dict(os.environ,{
                     "NVP_HOME":str(Path(d).resolve()/"native_app_home")}):
-                host=TrustedDesktopWO6Bridge(
+                host=TrustedDesktopCameraBridge(
                     s["index"],origin="http://127.0.0.1:43231",
                     host_factory=lambda *_:None)
                 self.addCleanup(host._close)
@@ -409,16 +409,16 @@ class NativeActorIdentityDirectorApproval(unittest.TestCase):
                     "director_note":"Director authorizes a new speaking cadence",
                 }
                 with self.assertRaises(PermissionError):
-                    host.film03_publish_actor_identity_profile(request)
+                    host.film03_actor_profile_publish(request)
                 self.assertEqual(original.current(pid,aid)["current"][
                     "document_sha256"],old_sha)
                 self.assertTrue(any(aid in message
                                     for _,message in window.prompts))
                 window.answers=[True]
-                result=host.film03_publish_actor_identity_profile(request)
+                result=host.film03_actor_profile_publish(request)
                 self.assertEqual(result["current"]["profile_revision"],2)
-                self.assertTrue(result["host_native_director_confirmation"])
-                self.assertFalse(result["tts_or_animation_worker_invoked"])
+                self.assertTrue(result["native_director_identity_approved"])
+                self.assertFalse(result["voice_or_animation_generated"])
                 plan=host.film03_preview_actor_ai_voice_contract({
                     "project_id":pid,"actor_id":aid,
                     "source_route":s["request"],"profile_revision":2})

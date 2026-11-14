@@ -209,6 +209,36 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                 self._host=self._host_factory(self._approve)
             return self._host
 
+    def film03_preview_actor_ai_voice_contract(self, request):
+        """Read-only source-pinned ActorID/VoiceID contract; never invoke TTS.
+
+        This restores the original director preview in the newer trusted
+        desktop, without resurrecting the retired WO6 process launcher.
+        Browser requests cannot select voice provider, binary, worker
+        command, script text, engine settings, or replace the actor.
+        """
+        self._native_window()
+        allowed={"project_id","actor_id","source_route","profile_revision"}
+        if type(request) is not dict or set(request)!=allowed:
+            raise PermissionError("Only original Director ActorID voice preview fields")
+        from backend.nvp_film03_actor_identity_core import ActorIdentityCore
+        pid=_require_pid(request["project_id"])
+        actor=_id(request["actor_id"],"canonical StoryBible ActorID")
+        route=request["source_route"]
+        revision=request["profile_revision"]
+        if (type(route) is not dict or route.get("actor_id")!=actor or
+                type(revision) is not int or revision<1):
+            raise PermissionError("Native ActorID source route/profile mismatch")
+        core=ActorIdentityCore(
+            self.index,verify_creator_action=lambda *_:False)
+        preview=core.prepare_generated_voice(
+            pid,route,profile_revision=revision)
+        if (preview["actor_id"]!=actor or
+                preview["audio_generation_executed"] is not False or
+                preview["tts_worker_authorized"] is not False):
+            raise RuntimeError("Original read-only voice identity contract changed")
+        return preview
+
     def film03_audition_original_voice(self, request):
         """Native-window-only exact original 48k mono PCM audition, never TTS.
 
