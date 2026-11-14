@@ -158,6 +158,66 @@ class TrustedDataAVController:
                 raise RuntimeError("Native audio result changed source identity")
             return {**result,"session_id":ticket}
 
+    def read_original_texture_tile(self,ticket,request):
+        """One verified PNG tile, constrained to the approved frozen Take."""
+        with self._lock:
+            active=self._session(ticket)
+            if type(request) is not dict or set(request)!={
+                "asset_id","asset_revision","asset_document_sha256",
+                "texture_sha256","mip_level","tile_x","tile_y"}:
+                raise PermissionError("Exact frozen scene asset/tile identity required")
+            aid=request["asset_id"]
+            _id(aid,"USD source texture mesh")
+            rev=request["asset_revision"]
+            if type(rev) is not int or rev<1:
+                raise ValueError("Original asset revision must be positive")
+            asset_sha=_sha(request["asset_document_sha256"])
+            texture_sha=_sha(request["texture_sha256"])
+            pid=active["pid"]
+            source=active["session"]
+            source._current_take()
+            scene=self.index.read_revision(
+                pid,source.data["scene_id"],source.data["scene_revision"])
+            if scene["document_sha256"]!=source.data["scene_document_sha256"]:
+                raise RuntimeError("Approved source scene changed")
+            grants=[entry for entry in scene["data"].get("asset_bindings",[])
+                    if entry["asset_id"]==aid and
+                    entry["asset_revision"]==rev and
+                    entry["asset_document_sha256"]==asset_sha]
+            if not grants:
+                raise PermissionError("Texture is not bound to approved Take scene")
+            key=(aid,rev,asset_sha,texture_sha)
+            asset_cache=active.get("tile_asset_cache")
+            if asset_cache is not None and asset_cache[0]==key:
+                desc=asset_cache[1]
+            else:
+                from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+                record,_=OpenUSDAssetRegistry(self.index).open(pid,aid,rev)
+                desc=(record["data"].get("preview_material") or {}).get("texture")
+                if record["document_sha256"]!=asset_sha or (
+                        desc is None or desc["sha256"]!=texture_sha):
+                    raise PermissionError("Original texture does not match frozen source")
+                active["tile_asset_cache"]=(key,desc)
+                active["tile_cache"]=None
+            from backend.nvp_native_usd_texture import (
+                verified_texture,_tile_from_verified)
+            # Bound one decoded original image to this approved Take session.
+            # Tile #2..64 never reopen/redecode the same 2K source image.
+            cached=active.get("tile_cache")
+            if cached is None or cached[0]!=texture_sha:
+                _,decoded=verified_texture(self.index,pid,desc)
+                active["tile_cache"]=(texture_sha,decoded)
+            else:
+                decoded=cached[1]
+            tile=_tile_from_verified(
+                desc,decoded,
+                mip_level=request["mip_level"],
+                tile_x=request["tile_x"],tile_y=request["tile_y"])
+            return {**tile,
+                "take_document_sha256":source.take["document_sha256"],
+                "asset_document_sha256":asset_sha,
+                "source_modified":False,"ffmpeg_used":False}
+
     def scene_at(self,ticket,tick):
         with self._lock:
             state=self._session(ticket)
