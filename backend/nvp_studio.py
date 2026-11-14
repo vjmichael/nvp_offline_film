@@ -9,6 +9,7 @@ import hashlib
 import os
 import re
 import sqlite3
+import sys
 from contextlib import contextmanager
 import uuid
 from datetime import datetime, timezone
@@ -99,6 +100,19 @@ class Studio:
     def __init__(self, db_path: str | Path | None = None):
         root = Path(os.environ.get("NVP_HOME", str(Path.home() / "NVP_Projects")))
         self.db_path = Path(db_path) if db_path else root / "nvp_studio.sqlite3"
+        if getattr(sys,"frozen",False):
+            # An NSIS/Debian upgrade/uninstall may replace the executable
+            # installation tree, but must NEVER own movie projects, original
+            # USD/PCM, approved creative history or imported film packages.
+            # Use the historical user NVP_Projects root unless the director
+            # explicitly selected NVP_HOME; no silent path migration.
+            executable=Path(sys.executable).resolve(strict=True).parent
+            selected=self.db_path.expanduser().resolve()
+            if selected==executable or executable in selected.parents:
+                raise RuntimeError(
+                    "NVP project storage cannot be inside the installed "
+                    "application directory. Move NVP_HOME to a user-owned "
+                    "folder before opening your original films.")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -162,15 +176,25 @@ class Studio:
                 raise RuntimeError("Screenplay changed during restore; reload and try again")
         return self.get_project(project_id)
 
-    def create_project(self, title: str, idea: str):
+    def create_project(self, title: str, idea: str, screenplay: str = ""):
+        """Atomically create a film, optionally with its original screenplay.
+
+        A rejected source cannot leave behind an empty half-created movie.
+        This is screenplay parsing, NOT a claim that AI has staged scenes.
+        """
+        if not all(isinstance(x, str) for x in (title, idea, screenplay)):
+            raise ValueError("Movie title, idea and screenplay must be text")
         title, idea = title.strip(), idea.strip()
         if not title or len(title) > 150 or len(idea) > 10000:
             raise ValueError("Enter a title (up to 150 characters) and an idea under 10,000 characters")
+        parse_screenplay(screenplay)
         project_id = uuid.uuid4().hex
         stamp = now()
         with self._connection() as db:
-            db.execute("INSERT INTO projects (id, title, idea, created_at, updated_at) VALUES (?,?,?,?,?)",
-                       (project_id, title, idea, stamp, stamp))
+            db.execute("""INSERT INTO projects
+                (id, title, idea, screenplay, created_at, updated_at)
+                VALUES (?,?,?,?,?,?)""",
+                (project_id, title, idea, screenplay, stamp, stamp))
         return self.get_project(project_id)
 
     def list_projects(self):

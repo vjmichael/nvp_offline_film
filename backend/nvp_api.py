@@ -1,7 +1,10 @@
 """Truthful local NVP planning API and optional local screenplay-writing proposals."""
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from backend.nvp_studio import Studio
+from backend.nvp_g04_preproduction import G04Preproduction
+from backend.nvp_g05_scene_authoring import G05SceneAuthoring
 from backend.nvp_screenplay_review import ScreenplayContinuityReview
 from backend.nvp_story_bible import StoryBible
 from backend.nvp_idea_pipeline import IdeaPipeline, LocalModelUnavailable, STAGES, local_llm_endpoint
@@ -9,15 +12,128 @@ from backend.nvp_model_service import discover_models, writer_for
 from backend.nvp_resource_ledger import TaskLedger
 from backend.nvp_render_preflight import preflight_scene
 import uuid
+import re
+import sys
+import base64
+import binascii
+from backend.nvp_project_access import ProjectAccess, COOKIE, SESSION_SECONDS
+from backend.nvp_g03_live_store import LiveFilmStore, LiveFilmError
+from backend.nvp_g03_windows_vault import VaultError
 
 app = FastAPI(title="NVP — Your movie, your way", version="0.3.0-creative-foundation")
 studio = Studio()
 resource_activity = TaskLedger()
+_film_access = None
+_film_access_db = None
+_live_films = None
+_live_films_db = None
+_g08_controller = None
+
+def live_films():
+    """One trusted per-Studio encrypted live store, no keys in JavaScript."""
+    global _live_films, _live_films_db
+    source=str(studio.db_path.resolve())
+    if _live_films is None or _live_films_db != source:
+        _live_films=LiveFilmStore(
+            studio.db_path.parent/"nvp_g03_encrypted_live",
+            grant_checker=lambda pid,token: film_access().permitted(pid,token))
+        _live_films_db=source
+    return _live_films
+
+
+def film_access():
+    """Attach lock state to this exact Studio DB, including test DB swaps."""
+    global _film_access, _film_access_db
+    source = str(studio.db_path)
+    if _film_access is None or _film_access_db != source:
+        _film_access = ProjectAccess(source)
+        _film_access_db = source
+    return _film_access
+
+
+@app.middleware("http")
+async def film_project_access_guard(request: Request, call_next):
+    """All project-id URL families share the same authoritative lock gate."""
+    path = request.url.path
+    parts = path.split("/")
+    if (len(parts) >= 4 and parts[:3] == ["", "api", "projects"] and
+            re.fullmatch(r"[a-f0-9]{32}", parts[3])):
+        project_id = parts[3]
+        action = parts[4] if len(parts) == 5 else ""
+        if action in {"unlock", "protect"}:
+            if request.headers.get("x-nvp-director") != "1":
+                return JSONResponse({"detail": "Film action requires the local director UI"},
+                                    status_code=403)
+            return await call_next(request)
+        locks = film_access()
+        try:
+            protected = locks.protected(project_id)
+            authorized = locks.permitted(project_id, request.cookies.get(COOKIE),
+                                         renew=protected)
+        except KeyError:
+            return JSONResponse({"detail": "Movie not found"}, status_code=404)
+        if not authorized:
+            return JSONResponse({"detail": "This movie is locked. Unlock it to continue."},
+                                status_code=423)
+        if live_films().exists(project_id):
+            # Only host-backed encrypted routes may touch a secured movie.
+            # All 55 legacy source/UI/worker project API handlers are denied.
+            tail="/".join(parts[4:])
+            allowed=(request.method=="POST" and tail=="lock") or (
+                request.method=="GET" and tail in {"live","live/recovery"}) or (
+                request.method=="PUT" and tail=="live/screenplay") or (
+                request.method=="POST" and tail=="live/source") or (
+                tail=="live/preproduction" or tail.startswith("live/preproduction/")) or (
+                tail.startswith("live/stage/")) or (
+                tail.startswith("live/film/")) or (
+                tail=="live/edit" or tail.startswith("live/edit/")) or (
+                tail=="live/export" or tail.startswith("live/export/")) or (
+                tail.startswith("live/production/looks/")) or (
+                tail.startswith("live/production/actors/")) or (
+                tail.startswith("live/production/sound/")) or (
+                tail=="live/av" or tail.startswith("live/av/")) or (
+                tail=="live/finish" or tail.startswith("live/finish/")) or (
+                tail=="live/long-film" or tail.startswith("live/long-film/")) or (
+                tail=="live/film-library" or tail.startswith("live/film-library/"))
+            if not allowed:
+                return JSONResponse(
+                    {"detail":"Encrypted movie requires its protected director workspace"},
+                    status_code=403)
+        if (protected and request.method not in {"GET", "HEAD", "OPTIONS"} and
+                request.headers.get("x-nvp-director") != "1"):
+            return JSONResponse({"detail": "Film action requires the local director UI"},
+                                status_code=403)
+        response = await call_next(request)
+        if protected:
+            # Another native host may relock while a request is in progress.
+            # Never return decrypted body content after a grant was revoked.
+            token = request.cookies.get(COOKIE)
+            if (live_films().exists(project_id) and action!="lock" and
+                    not locks.permitted(project_id, token)):
+                live_films().revoke(project_id)
+                return JSONResponse(
+                    {"detail":"Movie locked while this operation was in progress"},
+                    status_code=423)
+            # A renewed HTTP-only cookie expires after an idle session.
+            if token and locks.permitted(project_id, token):
+                response.set_cookie(COOKIE, token, httponly=True,
+                                    samesite="strict", secure=request.url.scheme == "https",
+                                    max_age=SESSION_SECONDS, path="/api")
+        return response
+    return await call_next(request)
+
 
 
 @app.get('/api/system/activity')
 def resource_activity_snapshot():
-    # Read-only, host-derived telemetry; no web-exposed arbitrary job launcher.
+    # Task descriptions can contain director-created project names, source
+    # notes and sensitive movie details. Public telemetry must not bypass the
+    # protected-project API gate simply because its URI lacks a project ID.
+    if film_access().any_protected():
+        return {"format":"nvp.system.resource_activity.v1",
+                "redacted":True,"tasks":[],"sample":None,
+                "reservations":None,
+                "message":"Activity hidden while movies are locked"}
     return resource_activity.snapshot()
 
 
@@ -25,6 +141,17 @@ def resource_activity_snapshot():
 class NewProject(BaseModel):
     title: str = Field(min_length=1, max_length=150)
     idea: str = Field(default="", max_length=10000)
+    screenplay: str = Field(default="", max_length=1_000_000)
+
+
+class NewEncryptedProject(NewProject):
+    passphrase: str = Field(min_length=12, max_length=256)
+
+
+class NewEncryptedSource(BaseModel):
+    name: str = Field(min_length=1, max_length=240)
+    media_type: str = Field(default="application/octet-stream", max_length=120)
+    base64_data: str = Field(min_length=1, max_length=22_000_000)
 
 
 class ScreenplayUpdate(BaseModel):
@@ -57,18 +184,156 @@ def status():
             "capabilities": {"project_storage": "ready", "script_breakdown": "basic_fountain",
                              "editable_shots": "ready", "local_llm": "not_connected",
                              "3d_renderer": "not_connected", "voice": "not_connected",
+                             "project_file_encryption": "new_windows_movies_only" if sys.platform=="win32" else "not_available",
                              "3d_stage_planning": "deterministic_proxies_ready",
                              "blender_export": "bpy_script_only_not_executed"}}
 
 
 @app.get("/api/projects")
-def projects():
-    return studio.list_projects()
+def projects(request: Request):
+    rows=film_access().public_projects(studio.list_projects(),request.cookies.get(COOKIE))
+    for row in rows:
+        row["encrypted"]=live_films().exists(row["id"])
+    return rows
+
+
+class FilmPassphrase(BaseModel):
+    passphrase: str = Field(min_length=12, max_length=256)
+
+
+@app.post("/api/projects/{project_id}/protect")
+def protect_movie(project_id: str, payload: FilmPassphrase):
+    try:
+        return film_access().protect(project_id, payload.passphrase)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    except PermissionError:
+        raise HTTPException(status_code=409, detail="Movie already locked")
+
+
+@app.post("/api/projects/{project_id}/unlock")
+def unlock_movie(project_id: str, payload: FilmPassphrase, request: Request):
+    try:
+        token = film_access().unlock(project_id, payload.passphrase)
+        try:
+            if live_films().exists(project_id):
+                live_films().authorize(project_id, payload.passphrase, token)
+        except Exception:
+            film_access().lock(project_id, token)
+            raise
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    except (PermissionError, VaultError, LiveFilmError):
+        raise HTTPException(status_code=403, detail="Unable to unlock movie")
+    response = JSONResponse({"locked": False, "access": "unlocked",
+                             "encrypted": live_films().exists(project_id)})
+    response.set_cookie(COOKIE, token, httponly=True, samesite="strict",
+                        secure=request.url.scheme == "https",
+                        max_age=SESSION_SECONDS, path="/api")
+    return response
+
+
+@app.post("/api/projects/{project_id}/lock")
+def lock_movie(project_id: str, request: Request):
+    try:
+        result = film_access().lock(project_id, request.cookies.get(COOKIE))
+        from backend.nvp_g06_routes import revoke_recording
+        revoke_recording(project_id)
+        if _g08_controller is not None:
+            _g08_controller["ordinary"].cancel_project(project_id)
+            _g08_controller["sealed"].cancel_project(project_id)
+        live_films().revoke(project_id)
+    except (PermissionError, KeyError):
+        raise HTTPException(status_code=403, detail="Unable to lock movie")
+    response = JSONResponse(result)
+    response.delete_cookie(COOKIE, path="/api")
+    return response
+
 
 
 @app.post("/api/projects", status_code=201)
 def create_project(payload: NewProject):
-    return run(lambda: studio.create_project(payload.title, payload.idea))
+    return run(lambda: studio.create_project(payload.title, payload.idea, payload.screenplay))
+
+
+@app.post("/api/projects/encrypted", status_code=201)
+def create_encrypted_movie(payload: NewEncryptedProject, request: Request):
+    """All sensitive fields go straight to encrypted in-memory SQLite.
+
+    The legacy Studio receives only a public title and an empty shell. No
+    media or screenplay is ever first copied into plaintext shared SQLite.
+    """
+    if request.headers.get("x-nvp-director")!="1":
+        raise HTTPException(status_code=403,detail="Director confirmation required")
+    if sys.platform!="win32":
+        raise HTTPException(status_code=501,detail="Windows account encryption unavailable here")
+    # The legacy catalog has only public title metadata; orphan shells on
+    # failure can be removed without losing any private content.
+    shell=studio.create_project(payload.title,"","")
+    pid=shell["id"]
+    try:
+        live_films().create(pid,payload.title,payload.idea,payload.screenplay,
+                            payload.passphrase)
+    except Exception:
+        if not live_films().exists(pid):
+            with studio._connection() as db:
+                db.execute("DELETE FROM projects WHERE id=? AND idea='' AND screenplay=''",
+                           (pid,))
+        raise HTTPException(status_code=503,
+                            detail="Encrypted movie could not be created")
+    # The encrypted payload is durable and readable before granting access.
+    film_access().protect(pid,payload.passphrase)
+    token=film_access().unlock(pid,payload.passphrase)
+    live_films().authorize(pid,payload.passphrase,token)
+    output=live_films().read(pid,token)
+    response=JSONResponse(output,status_code=201)
+    response.set_cookie(COOKIE,token,httponly=True,samesite="strict",
+                        secure=request.url.scheme=="https",
+                        max_age=SESSION_SECONDS,path="/api")
+    return response
+
+
+@app.get("/api/projects/{project_id}/live")
+def encrypted_live_movie(project_id: str, request: Request):
+    try:
+        return live_films().read(project_id,request.cookies.get(COOKIE))
+    except (LiveFilmError, VaultError):
+        raise HTTPException(status_code=423,detail="Encrypted movie unavailable or locked")
+
+
+@app.put("/api/projects/{project_id}/live/screenplay")
+def save_encrypted_screenplay(project_id: str, payload: ScreenplayUpdate,
+                             request: Request):
+    try:
+        return live_films().save_screenplay(
+            project_id,request.cookies.get(COOKIE),
+            payload.screenplay,payload.expected_revision)
+    except (LiveFilmError, VaultError) as exc:
+        raise HTTPException(status_code=409,detail=str(exc))
+
+
+@app.post("/api/projects/{project_id}/live/source")
+def upload_encrypted_original(project_id: str, payload: NewEncryptedSource,
+                              request: Request):
+    try:
+        binary=base64.b64decode(payload.base64_data,validate=True)
+        if len(binary)>16*1024*1024:
+            raise ValueError("WebView source transfer too large; use native supervised capture")
+        return live_films().put_original(
+            project_id,request.cookies.get(COOKIE),
+            payload.name,binary,payload.media_type)
+    except (binascii.Error,ValueError):
+        raise HTTPException(status_code=422,detail="Invalid source content")
+    except (LiveFilmError,VaultError) as exc:
+        raise HTTPException(status_code=409,detail=str(exc))
+
+
+@app.get("/api/projects/{project_id}/live/recovery")
+def encrypted_recovery_receipts(project_id: str,request: Request):
+    try:
+        return live_films().recovery_candidates(project_id,request.cookies.get(COOKIE))
+    except (LiveFilmError,VaultError):
+        raise HTTPException(status_code=423,detail="Encrypted movie unavailable or locked")
 
 
 @app.get("/api/projects/{project_id}")
@@ -79,6 +344,204 @@ def get_project(project_id: str):
 @app.put("/api/projects/{project_id}/screenplay")
 def save_screenplay(project_id: str, payload: ScreenplayUpdate):
     return run(lambda: studio.save_screenplay(project_id, payload.screenplay, payload.expected_revision))
+
+
+# G04: director's Scene Library and approved Production Bible.
+# The model only suggests; no renderer, source write, or Take permission is
+# exposed from this surface. Secured movies use sealed in-memory SQLite.
+class G04SceneNotes(BaseModel):
+    notes: dict[str,str]
+    expected_notes_revision: int = Field(ge=0)
+    expected_screenplay_revision: int = Field(ge=0)
+
+class G04SceneAdd(BaseModel):
+    expected_screenplay_revision: int = Field(ge=0)
+
+class G04RestoreSceneNotes(BaseModel):
+    source_revision: int = Field(ge=0)
+    expected_notes_revision: int = Field(ge=0)
+    expected_screenplay_revision: int = Field(ge=0)
+
+class G04ScreenplayPrompt(BaseModel):
+    direction: str = Field(default="",max_length=1200)
+
+class G04ScreenplayDecision(BaseModel):
+    decision: str
+    expected_screenplay_revision: int = Field(ge=0)
+    edited_text: str | None = Field(default=None,max_length=1_000_000)
+
+class G04SpeakerAssignment(BaseModel):
+    source_cue: str = Field(min_length=1,max_length=40)
+    expected_screenplay_revision: int = Field(ge=0)
+    actor_id: str | None = Field(default=None,max_length=40)
+    new_name: str | None = Field(default=None,max_length=100)
+
+class G04SuggestionDecision(BaseModel):
+    decision: str
+    expected_screenplay_revision: int = Field(ge=0)
+    approved_value: str | None = Field(default=None,max_length=1500)
+
+def _director_preproduction(project_id: str, request: Request):
+    secured=live_films().exists(project_id)
+    return G04Preproduction(studio,
+        live=live_films() if secured else None,
+        token=request.cookies.get(COOKIE) if secured else None)
+
+@app.get("/api/projects/{project_id}/preproduction")
+@app.get("/api/projects/{project_id}/live/preproduction")
+def g04_scene_library(project_id: str,request: Request):
+    return run(lambda: _director_preproduction(project_id,request).view(project_id))
+
+@app.post("/api/projects/{project_id}/preproduction/screenplay/suggestions")
+@app.post("/api/projects/{project_id}/live/preproduction/screenplay/suggestions")
+def g04_suggest_screenplay(project_id:str,request:Request,
+                           payload:G04ScreenplayPrompt):
+    try:
+        return run(lambda:_director_preproduction(project_id,request)
+            .generate_screenplay(project_id,payload.direction))
+    except LocalModelUnavailable:
+        raise HTTPException(status_code=503,
+            detail="AI writing is unavailable. You can continue writing your own screenplay.")
+
+@app.post("/api/projects/{project_id}/preproduction/screenplay/{draft_id}/decision")
+@app.post("/api/projects/{project_id}/live/preproduction/screenplay/{draft_id}/decision")
+def g04_review_screenplay(project_id:str,draft_id:str,request:Request,
+                          payload:G04ScreenplayDecision):
+    return run(lambda:_director_preproduction(project_id,request)
+        .decide_screenplay(project_id,draft_id,payload.decision,
+            payload.expected_screenplay_revision,payload.edited_text))
+
+@app.post("/api/projects/{project_id}/preproduction/scenes")
+@app.post("/api/projects/{project_id}/live/preproduction/scenes")
+def g04_add_scene(project_id: str,request: Request,payload: G04SceneAdd):
+    return run(lambda:_director_preproduction(project_id,request).add_scene(
+        project_id,payload.expected_screenplay_revision))
+
+@app.put("/api/projects/{project_id}/preproduction/scenes/{scene_id}")
+@app.put("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}")
+def g04_edit_scene(project_id:str,scene_id:str,request:Request,
+                   payload:G04SceneNotes):
+    return run(lambda:_director_preproduction(project_id,request).save_scene(
+        project_id,scene_id,payload.notes,payload.expected_notes_revision,
+        payload.expected_screenplay_revision))
+
+@app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/restore")
+@app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/restore")
+def g04_restore_scene_details(project_id:str,scene_id:str,request:Request,
+                             payload:G04RestoreSceneNotes):
+    return run(lambda:_director_preproduction(project_id,request).restore_notes(
+        project_id,scene_id,payload.source_revision,payload.expected_notes_revision,
+        payload.expected_screenplay_revision))
+
+@app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/speakers")
+@app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/speakers")
+def g04_assign_speaker(project_id:str,scene_id:str,request:Request,
+                       payload:G04SpeakerAssignment):
+    return run(lambda:_director_preproduction(project_id,request).bind_speaker(
+        project_id,scene_id,payload.source_cue,
+        payload.expected_screenplay_revision,
+        actor_id=payload.actor_id,new_name=payload.new_name))
+
+@app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/suggestions")
+@app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/suggestions")
+def g04_ask_ai(project_id:str,scene_id:str,request:Request):
+    try:
+        return run(lambda:_director_preproduction(project_id,request).generate(
+            project_id,scene_id))
+    except LocalModelUnavailable:
+        raise HTTPException(status_code=503,
+            detail="AI assistance is unavailable. You can still develop your scene.")
+
+@app.post("/api/projects/{project_id}/preproduction/suggestions/{proposal_id}/decision")
+@app.post("/api/projects/{project_id}/live/preproduction/suggestions/{proposal_id}/decision")
+def g04_review_ai(project_id:str,proposal_id:str,request:Request,
+                  payload:G04SuggestionDecision):
+    return run(lambda:_director_preproduction(project_id,request).decide(
+        project_id,proposal_id,payload.decision,
+        payload.expected_screenplay_revision,payload.approved_value))
+
+
+# G05: model and UI may draft a native OpenUSD stage but cannot run
+# rendering, filmmaking workers, nor freeze a Take. All project identity,
+# G04 source and director approval checks remain native-host decisions.
+class G05Revision(BaseModel):
+    expected_revision: int = Field(ge=0,le=1000000)
+
+class G05Change(G05Revision):
+    operation: str = Field(min_length=2,max_length=20)
+    details: dict
+
+class G05Undo(G05Revision):
+    source_revision: int = Field(ge=1,le=1000000)
+
+class G05IdeaDecision(G05Revision):
+    decision: str = Field(min_length=6,max_length=6)
+
+def _director_scene_authoring(project_id: str,request: Request):
+    secured=live_films().exists(project_id)
+    return G05SceneAuthoring(studio,live=live_films() if secured else None,
+                            token=request.cookies.get(COOKIE) if secured else None)
+
+@app.get("/api/projects/{project_id}/stage/{scene_id}")
+@app.get("/api/projects/{project_id}/live/stage/{scene_id}")
+def g05_stage_read(project_id:str,scene_id:str,request:Request):
+    return run(lambda:_director_scene_authoring(project_id,request)
+               .view(project_id,scene_id))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/generate")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/generate")
+def g05_stage_generate(project_id:str,scene_id:str,request:Request,
+                       payload:G05Revision):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .generate(project_id,scene_id,payload.expected_revision))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/edit")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/edit")
+def g05_stage_edit(project_id:str,scene_id:str,request:Request,
+                   payload:G05Change):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .edit(project_id,scene_id,payload.expected_revision,
+              payload.operation,payload.details))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/reconcile")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/reconcile")
+def g05_stage_reconcile(project_id:str,scene_id:str,request:Request,
+                        payload:G05Revision):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .reconcile(project_id,scene_id,payload.expected_revision))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/restore")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/restore")
+def g05_stage_restore(project_id:str,scene_id:str,request:Request,
+                      payload:G05Undo):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .restore(project_id,scene_id,payload.expected_revision,
+                 payload.source_revision))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/ideas")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/ideas")
+def g05_stage_ai_ideas(project_id:str,scene_id:str,request:Request):
+    try:
+        return run(lambda:_director_scene_authoring(project_id,request)
+            .suggest_scene_objects(project_id,scene_id))
+    except LocalModelUnavailable:
+        raise HTTPException(status_code=503,
+            detail="Scene AI is unavailable. You can still arrange every object yourself.")
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/ideas/{idea_id}/decision")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/ideas/{idea_id}/decision")
+def g05_stage_idea_review(project_id:str,scene_id:str,idea_id:str,
+                          request:Request,payload:G05IdeaDecision):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .decide_scene_object(project_id,scene_id,idea_id,payload.decision,
+                             payload.expected_revision))
+
+@app.post("/api/projects/{project_id}/stage/{scene_id}/approve")
+@app.post("/api/projects/{project_id}/live/stage/{scene_id}/approve")
+def g05_stage_approve(project_id:str,scene_id:str,request:Request,
+                      payload:G05Revision):
+    return run(lambda:_director_scene_authoring(project_id,request)
+        .approve(project_id,scene_id,payload.expected_revision))
 
 
 @app.post("/api/projects/{project_id}/scenes/{scene_id}/shot-plan")
@@ -1421,3 +1884,56 @@ def native_color_read(project_id:str,grade_id:str,
                       revision:int|None=_FilmCameraQuery(default=None,ge=1,le=1000000)):
     return run(lambda:_NativeColor(_FilmCameraIndex(studio)).read(
         project_id,grade_id,revision))
+
+# G06 director-only film workspace. Separate route component reuses all G03
+# project access checks, and does not introduce a technical UI.
+from backend.nvp_g06_routes import mount_g06_routes
+mount_g06_routes(app,studio,live_films,COOKIE)
+
+# G07 editor is a separate director-facing Post-Production workspace. These
+# routes retain G03 host project/key checks and do not authorize rendering.
+from backend.nvp_g07_routes import mount_g07_routes
+mount_g07_routes(app,studio,live_films,COOKIE)
+
+# G08 first-party export route and OS-custodied worker manager. Fixed
+# software renderer/AVI container is not a legacy FFmpeg/ProRes pipeline.
+from backend.nvp_g08_routes import mount_g08_routes
+_g08_controller=mount_g08_routes(app,studio,film_access,live_films,COOKIE)
+
+# G09-A production looks live in the same director-reviewed film project,
+# not a separate technical tool or Blender authorization endpoint.
+from backend.nvp_g09_routes import mount_g09_routes
+mount_g09_routes(app,studio,live_films,COOKIE)
+
+# G09-B director-driven actor performances; ActorID, original voice and
+# non-destructive animation share the existing G03 unlock/session boundary.
+from backend.nvp_g09_actor_routes import mount_g09_actor_routes
+mount_g09_actor_routes(app,studio,live_films,COOKIE)
+
+# G09-C source-time spatial picture and authentic original-sound playback,
+# guarded by the existing G03 project unlock and director-session middleware.
+from backend.nvp_g09c_routes import mount_g09c_routes
+mount_g09c_routes(app,studio,live_films,COOKIE)
+
+# G09-D native SDR/sound finishing decisions and truthful cinema-readiness.
+# Locked movies remain protected by G03 director-session middleware.
+from backend.nvp_g09d_routes import (
+    mount_g09d_routes,mount_g09d_interchange_routes)
+mount_g09d_routes(app,studio,live_films,COOKIE)
+mount_g09d_interchange_routes(
+    app,_g08_controller,live_films,COOKIE)
+
+# G09-E durable bounded long-film reels, explicit resume and native
+# project-controlled worker custody; encrypted projects fail closed until
+# independent sealed long-render staging is integrated.
+from backend.nvp_g09e_routes import mount_g09e_routes
+_g09e_controller=mount_g09e_routes(
+    app,studio,film_access,live_films,COOKIE)
+
+# G09-F self-contained verified film distribution; original creative
+# data stays in the protected project store. The portable working-film
+# export/import path rejects secure encrypted original media until
+# independent AES-GCM film asset custody has passed native acceptance.
+from backend.nvp_g09f_routes import mount_g09f_routes
+_g09f_controller=mount_g09f_routes(
+    app,_g09e_controller,studio,film_access,live_films,COOKIE)
