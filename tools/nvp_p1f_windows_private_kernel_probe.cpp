@@ -306,6 +306,7 @@ static int parent() {
     return 0;
 }
 
+#ifndef NVP_P1F_EMBEDDED_IN_SCM_SERVICE
 int wmain(int argc,wchar_t** argv) {
     try {
         if(argc==6&&std::wstring(argv[1])==L"--child")
@@ -318,3 +319,4 @@ int wmain(int argc,wchar_t** argv) {
         return 90;
     }
 }
+#endif // NVP_P1F_EMBEDDED_IN_SCM_SERVICE
