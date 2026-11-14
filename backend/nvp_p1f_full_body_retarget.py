@@ -192,6 +192,40 @@ def audit_full_body_rest_pose(payload, mapping, *, meters_per_source_unit=1.):
         return world[i]
     for idx in range(len(nodes)):
         resolve(idx)
+    # The hierarchy alone is not enough: independently decode the actual
+    # inverse-bind floats and prove rest-pose skin matrices reconstruct the
+    # authored mesh bind frame. This is more stringent than structural glTF.
+    ibm_id = skin.get("inverseBindMatrices")
+    accessors = doc.get("accessors", [])
+    views = doc.get("bufferViews", [])
+    if type(ibm_id) is not int or not 0 <= ibm_id < len(accessors):
+        raise ValueError("Full-body skeletal rest proof requires explicit inverse binds")
+    a = accessors[ibm_id]
+    if (a.get("type") != "MAT4" or a.get("componentType") != 5126 or
+            a.get("count") != len(skin["joints"])):
+        raise ValueError("Original inverse bind matrix array differs from joints")
+    v = views[a["bufferView"]]
+    raw_start = 20 + struct.unpack_from("<I", payload, 12)[0] + 8
+    data_offset = raw_start + v.get("byteOffset", 0) + a.get("byteOffset", 0)
+    stride = v.get("byteStride", 64)
+    if (stride < 64 or data_offset < raw_start or
+            data_offset + (len(skin["joints"])-1)*stride+64 > len(payload)):
+        raise ValueError("Inverse bind matrices escape original GLB binary")
+    ibms = []
+    for ordinal in range(len(skin["joints"])):
+        flat = struct.unpack_from("<16f", payload, data_offset + ordinal*stride)
+        if any(not math.isfinite(x) or abs(x) > 1e6 for x in flat):
+            raise ValueError("Nonfinite original inverse bind rest matrix")
+        ibms.append([[float(flat[4*c+r]) for c in range(4)] for r in range(4)])
+    mesh_nodes = [i for i,n in enumerate(nodes) if n.get("skin") == 0]
+    if not mesh_nodes:
+        raise ValueError("No original full-body skin mesh node")
+    mesh_world = world[mesh_nodes[0]]
+    if any(any(abs(rest[r][c]-mesh_world[r][c]) > .001
+               for r in range(4) for c in range(4))
+           for i,j in enumerate(skin["joints"])
+           for rest in [_mul(world[j], ibms[i])]):
+        raise ValueError("Inverse binds do not restore full-body mesh rest pose")
     positions = {role: tuple(world[by_name[mapping[role]]][i][3] *
                              meters_per_source_unit for i in range(3))
                  for role in ROLES}
@@ -222,6 +256,7 @@ def audit_full_body_rest_pose(payload, mapping, *, meters_per_source_unit=1.):
         "meters_per_source_unit": float(meters_per_source_unit),
         "source_joint_positions_m": {r: list(positions[r]) for r in ROLES},
         "axis_corrections": axes,
+        "glb_inverse_bind_rest_verified": True,
         "usd_rest_pose_equivalence_verified": False,
         "full_body_deformation_verified": False,
         "ground_contact_verified": False,
