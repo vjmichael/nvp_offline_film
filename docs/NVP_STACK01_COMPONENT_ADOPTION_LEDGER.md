@@ -1,5 +1,8 @@
 # NVP-STACK-01 — Existing component evaluation ledger
 
+> **Tracking notice (2026-11-13/14):** This is a historical/technical reference, **not an active task ledger or backlog**. The sole current NVP task journal, priorities, statuses, acceptance gates and branch/PR dispositions are maintained in [NVP_DATA_ALL_TASK_LEDGER.md](NVP_DATA_ALL_TASK_LEDGER.md), through draft convergence [PR #161](https://github.com/vjmichael/nvp_offline_film/pull/161). Older branch/PR claims below are source snapshots; preserve technical evidence but do not use them to decide current task priority.
+
+
 **Status:** Candidate identification only; no new external engine is considered integrated or redistributable by creating this ledger.  
 **Owner:** NVP production engineering  
 **Policy:** [ADR STACK-001](NVP_ADR_STACK01_REUSE_FIRST_AND_ONE_INSTALLER.md)
