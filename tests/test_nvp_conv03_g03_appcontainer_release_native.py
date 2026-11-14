@@ -30,7 +30,7 @@ class OriginalAppContainerReleaseDispatch(TestCase):
         with self.assertRaisesRegex(PermissionError, "source grants require real kernel"):
             _dispatch(appcontainer_code_roots=[Path.cwd()])
         with self.assertRaisesRegex(ValueError, "Invalid native worker environment"):
-            _dispatch(env={"BAD\\0KEY": "value"})
+            _dispatch(env={"BAD\0KEY": "value"})
         with self.assertRaisesRegex(RuntimeError, "independent Windows kernel boundary"):
             _dispatch(windows_appcontainer_required=True,
                       linux_cgroup_tree_required=True)
