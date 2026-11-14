@@ -539,7 +539,7 @@ class NativeActorVoiceAuditionAndConsent(unittest.TestCase):
         import os
         import wave
         from unittest.mock import patch
-        from backend.nvp_wo6_desktop_bridge import TrustedDesktopWO6Bridge
+        from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 
         class HumanWindow:
             def __init__(self):
@@ -555,7 +555,7 @@ class NativeActorVoiceAuditionAndConsent(unittest.TestCase):
             s=construct_real_original_dialogue(Path(d).resolve(),recorded_voice=True)
             pid=s["pid"]; aid=s["people"]["DONUT"]
             with patch.dict(os.environ,{"NVP_HOME":str(Path(d)/"native-home")}):
-                bridge=TrustedDesktopWO6Bridge(
+                bridge=TrustedDesktopCameraBridge(
                     s["index"],origin="http://127.0.0.1:43231",
                     host_factory=lambda *_: None)
                 self.addCleanup(bridge._close)

@@ -269,6 +269,10 @@ class StoryBible:
     @staticmethod
     def _hydrate(db, row):
         entity_id=row["id"]
+        # Film03-02: canonical ActorID IS the persistent StoryBible character
+        # primary key. Expose that identity in every hydrated character,
+        # including reopen/rename; never mint an independent UUID.
+        row["actor_id"]=entity_id if row["kind"]=="character" else None
         row["aliases"]=[r["display_name"] for r in db.execute(
             "SELECT display_name FROM bible_names WHERE entity_id=? AND is_primary=0 ORDER BY display_name",
             (entity_id,)).fetchall()]

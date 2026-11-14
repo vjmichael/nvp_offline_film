@@ -209,6 +209,112 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                 self._host=self._host_factory(self._approve)
             return self._host
 
+    def film03_audition_original_voice(self, request):
+        """Native-window-only exact original 48k mono PCM audition, never TTS.
+
+        Source SHA and bounded sample window are read from canonical FilmIndex;
+        the browser supplies neither a file path nor an executable.
+        """
+        self._native_window()
+        allowed={"project_id","source_audio_id","source_audio_revision",
+                 "first_sample","sample_count"}
+        if type(request) is not dict or set(request)!=allowed:
+            raise ValueError("Original ActorID source audition requires exact native fields")
+        from backend.nvp_data_av_source import (
+            RecordedSoundSources, SAMPLE_RATE, MAX_READ_SAMPLES)
+        import io
+        import wave
+        pid=_require_pid(request["project_id"])
+        sid=_id(request["source_audio_id"],"original actor source audio")
+        revision=request["source_audio_revision"]
+        first=request["first_sample"]
+        count=request["sample_count"]
+        if (type(revision) is not int or revision<1 or
+                type(first) is not int or first<0 or
+                type(count) is not int or not 1<=count<=SAMPLE_RATE*3):
+            raise ValueError("Original audition must be bounded to 1..3 seconds at 48kHz")
+        sound=RecordedSoundSources(self.index)
+        record=sound.describe(pid,sid,revision)
+        if first+count>record["data"]["sample_count"]:
+            raise ValueError("Native audition would escape frozen source sound")
+        pieces=[]
+        cursor=first
+        while cursor<first+count:
+            n=min(MAX_READ_SAMPLES,first+count-cursor)
+            pieces.append(sound.read(pid,sid,revision,cursor,n))
+            cursor+=n
+        pcm=b"".join(pieces)
+        if len(pcm)!=count*2:
+            raise RuntimeError("Native original source PCM sample count changed")
+        wav=io.BytesIO()
+        with wave.open(wav,"wb") as writer:
+            writer.setnchannels(1)
+            writer.setsampwidth(2)
+            writer.setframerate(SAMPLE_RATE)
+            writer.writeframes(pcm)
+        return {
+            "format":"nvp.film03.original_actor_voice_audition.v1",
+            "project_id":pid,"source_audio_id":sid,
+            "source_audio_revision":revision,
+            "source_audio_sha256":record["document_sha256"],
+            "first_sample":first,"sample_count":count,
+            "sample_rate_hz":SAMPLE_RATE,
+            "original_pcm_window_sha256":sha256(pcm).hexdigest(),
+            "wav_data_base64":base64.b64encode(wav.getvalue()).decode("ascii"),
+            "original_recording_not_tts":True,
+            "audition_not_voice_identity_approval":True,
+            "source_modified":False,
+        }
+
+    def film03_approve_actor_voice_take(self, request):
+        """Independent native one-use consent for exact ActorID/VoiceID Take.
+
+        The VoiceID service reconstructs and rechecks all source SHAs and
+        original Take ownership before it calls this native consent closure.
+        No consent is inferred from a preview or supplied by model/JS input.
+        """
+        self._native_window()
+        allowed={"project_id","actor_id","performance_id","voice_id",
+                 "expected_cast_revision","expected_approval_revision",
+                 "reference_audio_sha256","director_comparison_note"}
+        if type(request) is not dict or set(request)!=allowed:
+            raise ValueError("Director voice comparison requires exact source fields")
+        from backend.nvp_film03_voice_identity import ProductionBibleVoiceIdentity
+        pid=_require_pid(request["project_id"])
+        token=secrets.token_urlsafe(24)
+        state={"spent":False}
+        def approve(event, scope):
+            if (state["spent"] or event!=token or type(scope) is not dict or
+                    scope.get("operation")!="film03_approve_actor_voice_performance" or
+                    scope.get("project_id")!=pid or
+                    scope.get("actor_id")!=request["actor_id"] or
+                    scope.get("voice_id")!=request["voice_id"] or
+                    scope.get("performance_id")!=request["performance_id"] or
+                    scope.get("reference_audio_sha256")!=request["reference_audio_sha256"]):
+                return False
+            state["spent"]=True
+            return self._native_window().create_confirmation_dialog(
+                "NVP — Director VoiceID Approval",
+                "Review the exact independently verified original voice comparison:\\n"+
+                json.dumps(scope,sort_keys=True,indent=2)+
+                "\\n\\nThis is one-use authorization. No synthetic voice or film master is approved."
+            ) is True
+        result=ProductionBibleVoiceIdentity(
+            self.index,verify_creator_action=approve).approve_delivery(
+                pid,request["actor_id"],request["performance_id"],
+                voice_id=request["voice_id"],
+                expected_cast_revision=request["expected_cast_revision"],
+                expected_approval_revision=request["expected_approval_revision"],
+                reference_audio_sha256=request["reference_audio_sha256"],
+                director_comparison_note=request["director_comparison_note"],
+                creator_event=token)
+        return {
+            **result,"host_native_director_confirmation":True,
+            "original_recording_overwritten":False,
+            "audio_voice_model_invoked":False,
+            "director_audition_comparison_claim_not_machine_voice_match":True,
+        }
+
     def camera_render_capabilities(self):
         # DA-06: external Blender still capture was part of the retired
         # frame/proxy bridge. NVP now auditions 3D USD directly. Never
