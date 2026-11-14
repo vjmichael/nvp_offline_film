@@ -155,7 +155,8 @@ class P1FVerifiedSegmentDelivery:
                         "picture_sha256":_hash_file(target),
                         "actor_pcm_sha256":sha256(pcm).hexdigest(),
                     })
-            with sound_path.open("rb") as handle:
+            with sound_path.open("r+b") as handle:
+                handle.flush()
                 os.fsync(handle.fileno())
             with wave.open(str(sound_path),"rb") as joined:
                 if (joined.getnframes()!=len(frames)*FRAME_SAMPLES or
