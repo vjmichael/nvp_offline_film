@@ -5,6 +5,7 @@ on:
     paths:
       - 'tools/nvp_p1f_windows_private_kernel_probe.cpp'
       - 'tools/nvp_p1f_windows_scm_blender_broker.cpp'
+      - 'tools/nvp_p1f_windows_private_desktop.hpp'
       - 'tools/nvp_p1f_scm_public_fixture.py'
       - 'backend/nvp_p1f_cycles_picture_sound.py'
       - '.github/workflows/nvp-p1f-windows-scm-blender-real.yml'
