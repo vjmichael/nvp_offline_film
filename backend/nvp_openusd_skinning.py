@@ -28,7 +28,7 @@ def _float(value):
 def normalize_skin(skin,joint_count):
     expected={"points","faces","joint_indices","joint_weights","display_color"}
     if (type(skin) is not dict or not expected.issubset(skin) or
-        not set(skin)<=expected|{"roughness","source_glb_sha256","facial_targets"}):
+        not set(skin)<=expected|{"roughness","source_glb_sha256","facial_targets","blend_shapes"}):
         raise ValueError("Skin requires exact typed point/topology/joint influence fields")
     points=skin["points"]
     faces=skin["faces"]
@@ -90,6 +90,37 @@ def normalize_skin(skin,joint_count):
                    roughness=float(rough))
     elif "roughness" in skin:
         raise ValueError("Authored skin roughness requires imported original PBR source")
+    if "blend_shapes" in skin:
+        # Historical Film03 artist-authored USD morphs remain separate from
+        # GLB-imported facial_targets; never claim they are imported GLB.
+        if "facial_targets" in skin or "source_glb_sha256" in skin:
+            raise ValueError("Cannot merge authored USD and imported GLB facial morph provenance")
+        shapes=skin["blend_shapes"]
+        if type(shapes) is not list or not 1<=len(shapes)<=16:
+            raise ValueError("Invalid original USD facial morph count")
+        names=set()
+        prepared=[]
+        for shape in shapes:
+            if type(shape) is not dict or set(shape)!={"name","offsets"}:
+                raise ValueError("Original USD facial morph must provide name and offsets")
+            name=shape["name"]
+            if (type(name) is not str or not re.fullmatch(
+                    r"[A-Za-z][A-Za-z0-9_]{0,39}",name) or name in names):
+                raise ValueError("Invalid or repeated original USD facial morph name")
+            names.add(name)
+            offsets=shape["offsets"]
+            if type(offsets) is not list or len(offsets)!=len(pts):
+                raise ValueError("Original USD facial offsets must cover every vertex")
+            parsed=[]
+            for point in offsets:
+                if type(point) is not list or len(point)!=3:
+                    raise ValueError("Original USD morph offsets must be 3D")
+                values=[_float(x) for x in point]
+                if any(abs(x)>2 for x in values):
+                    raise ValueError("Original USD facial offsets are unbounded")
+                parsed.append(values)
+            prepared.append({"name":name,"offsets":parsed})
+        out["blend_shapes"]=prepared
     if "facial_targets" in skin:
         if "source_glb_sha256" not in out:
             raise ValueError("Facial shapes must originate in immutable imported GLB geometry")
@@ -147,6 +178,21 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         not influence_weights.Set(Vt.FloatArray(
             [w for row in bound["joint_weights"] for w in row]))):
         raise RuntimeError("Could not author native USD per-vertex joint influences")
+    if bound.get("blend_shapes"):
+        names=[]
+        paths=[]
+        for item in bound["blend_shapes"]:
+            name=item["name"]
+            shape=UsdSkel.BlendShape.Define(
+                stage,actor_path+SKIN_MESH_SUFFIX+"/Blend_"+name)
+            if not shape.GetOffsetsAttr().Set(
+                    Vt.Vec3fArray([Gf.Vec3f(*v) for v in item["offsets"]])):
+                raise RuntimeError("Native authored USD face offsets could not be written")
+            names.append(name)
+            paths.append(shape.GetPrim().GetPath())
+        if (not binding.CreateBlendShapesAttr().Set(Vt.TokenArray(names)) or
+            not binding.CreateBlendShapeTargetsRel().SetTargets(paths)):
+            raise RuntimeError("Original authored USD facial morph binding failed")
     if bound.get("facial_targets"):
         # Genuine USD UsdSkel.BlendShape source offsets, from this GLB's
         # actual POSITION morph buffers; not a generated expression mesh.
