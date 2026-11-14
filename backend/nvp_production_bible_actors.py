@@ -565,8 +565,8 @@ class ProductionBibleActors:
             for role,oid,rev in required_links:
                 if not any(x["role"]==role and
                            x["source_family"]=="filmindex" and
-                           x["target_id"]==oid and
-                           x["target_revision"]==rev and
+                           x["source_id"]==oid and
+                           x["source_revision"]==rev and
                            x["source_verified_now"] for x in details):
                     failures.append({
                         "role":role,"link_id":None,

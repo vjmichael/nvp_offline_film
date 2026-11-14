@@ -50,7 +50,9 @@ class NativeSustainedPictureSound:
     def __init__(self,assembly:SlateSequenceAssembly,
                  continuity:NativeEditorialContinuity, *,
                  native_creator_approval,render_png,
-                 cancelled=lambda:False):
+                 cancelled=lambda:False,require_protected_worker=False):
+        if type(require_protected_worker) is not bool:
+            raise TypeError("Native protected worker requirement must be explicit")
         if (not isinstance(assembly,SlateSequenceAssembly) or
             not isinstance(continuity,NativeEditorialContinuity) or
             continuity.index is not assembly.index or
@@ -63,6 +65,7 @@ class NativeSustainedPictureSound:
         self.approve=native_creator_approval
         self.render_png=render_png
         self.cancelled=cancelled
+        self.require_protected_worker=require_protected_worker
 
     def preflight(self,project_id,continuity_id,revision, *,
                   first_frame,frame_count,listener_path,
@@ -232,9 +235,43 @@ class NativeSustainedPictureSound:
                                   "original_sources_immutable":True,
                                   "approved_plan_sha256":intent["plan_sha256"],
                                   "source_tick":source_tick}
-                    raw=self.render_png(
+                    rendered=self.render_png(
                         scope=render_scope,tick=source_tick,
                         camera_path=camera_path,source_snapshot=original)
+                    worker_receipt=None
+                    if type(rendered) is dict:
+                        if set(rendered)!={"png_bytes","native_worker_receipt"}:
+                            raise RuntimeError("Unrecognized trusted native worker result")
+                        raw=rendered["png_bytes"]
+                        worker_receipt=rendered["native_worker_receipt"]
+                    else:
+                        raw=rendered
+                    if self.require_protected_worker and worker_receipt is None:
+                        raise PermissionError("Real production demands proven protected Cycles worker")
+                    if worker_receipt is not None:
+                        expected={
+                            "format":"nvp.int02.real_native_cycles_frame_receipt.v1",
+                            "project_id":project_id,"chunk_id":chunk_id,
+                            "approved_plan_sha256":intent["plan_sha256"],
+                            "source_take_sha256":plan["source_take_sha256"],
+                            "source_shot_sha256":plan["source_shot_sha256"],
+                            "source_tick":str(source_tick),
+                            "camera_path":camera_path,
+                            "png_sha256":hashlib.sha256(raw).hexdigest(),
+                            "native_cycles_render_verified":True,
+                            "private_worker_required":True,
+                            "independent_blend_reopen_verified":False,
+                            "film_master_approved":False,
+                        }
+                        if (type(worker_receipt) is not dict or
+                                any(worker_receipt.get(k)!=v for k,v in expected.items()) or
+                                any(type(worker_receipt.get(k)) is not str or
+                                    len(worker_receipt[k])!=64 or
+                                    any(c not in "0123456789abcdef" for c in worker_receipt[k])
+                                    for k in ("job_spec_sha256","audit_sha256")) or
+                                type(worker_receipt.get("job_id")) is not str or
+                                not worker_receipt["job_id"].startswith("int02_")):
+                            raise RuntimeError("Native Blender audit/receipt differs from approved frame")
                     if type(raw) is not bytes or not 0<len(raw)<=MAX_PNG_BYTES:
                         raise RuntimeError("Supervised native renderer did not return bounded PNG bytes")
                     size=_png_header(raw)
@@ -247,7 +284,9 @@ class NativeSustainedPictureSound:
                     entries.append({"index":step,
                                     "output_frame":first_frame+step,
                                     "source_tick":str(source_tick),
-                                    "filename":name,"sha256":hashlib.sha256(raw).hexdigest()})
+                                    "filename":name,"sha256":hashlib.sha256(raw).hexdigest(),
+                                    **({"native_worker_receipt":worker_receipt}
+                                       if worker_receipt is not None else {})})
                 samples=plan["frame_count"]*AUDIO_PER_FRAME
                 first_source_sample=first_tick//TICKS_PER_SAMPLE
                 with wave.open(str(staged/"soundtrack.wav"),"wb") as wav:
@@ -288,7 +327,9 @@ class NativeSustainedPictureSound:
                       "audio_sha256":_file_sha256(staged/"soundtrack.wav"),
                       "audio_samples":samples,"source_modified":False,
                       "ffmpeg_used":False,"conventional_master_approved":False,
-                      "native_worker_receipts_embedded":False}
+                      "native_worker_receipts_embedded":all(
+                          "native_worker_receipt" in frame for frame in entries),
+                      "requires_protected_native_worker":self.require_protected_worker}
             with (staged/"manifest.json").open("x",encoding="utf8") as fd:
                 fd.write(_canon(manifest).decode("ascii"))
                 fd.flush();os.fsync(fd.fileno())
@@ -327,6 +368,16 @@ class NativeSustainedPictureSound:
             raise RuntimeError("Published picture/sound chunk plan mismatch")
         self._fresh(plan)
         frames=manifest["frames"]
+        receipts_present=(type(frames) is list and
+                          all(type(row) is dict and
+                              "native_worker_receipt" in row for row in frames))
+        if (type(manifest.get("native_worker_receipts_embedded")) is not bool or
+                manifest["native_worker_receipts_embedded"]!=receipts_present or
+                type(manifest.get("requires_protected_native_worker")) is not bool or
+                (manifest["requires_protected_native_worker"] and
+                 not receipts_present) or
+                (self.require_protected_worker and not receipts_present)):
+            raise RuntimeError("Source film cannot claim unproven private Cycles execution")
         if (type(frames) is not list or len(frames)!=plan["frame_count"] or
             type(manifest["picture_dimensions"]) is not list or
             len(manifest["picture_dimensions"])!=2):
@@ -345,6 +396,32 @@ class NativeSustainedPictureSound:
             if file.is_symlink() or not file.is_file():
                 raise RuntimeError("Original output picture missing or linked")
             payload=file.read_bytes()
+            receipt=pic.get("native_worker_receipt")
+            if receipt is not None:
+                required={
+                    "format":"nvp.int02.real_native_cycles_frame_receipt.v1",
+                    "project_id":project_id,
+                    "chunk_id":manifest["chunk_id"],
+                    "approved_plan_sha256":manifest["plan_sha256"],
+                    "source_take_sha256":plan["source_take_sha256"],
+                    "source_shot_sha256":plan["source_shot_sha256"],
+                    "source_tick":pic["source_tick"],
+                    "camera_path":plan["camera_path"],
+                    "png_sha256":pic["sha256"],
+                    "native_cycles_render_verified":True,
+                    "private_worker_required":True,
+                    "independent_blend_reopen_verified":False,
+                    "film_master_approved":False,
+                }
+                if (type(receipt) is not dict or
+                        any(receipt.get(k)!=v for k,v in required.items()) or
+                        any(type(receipt.get(k)) is not str or
+                            len(receipt[k])!=64 or
+                            any(c not in "0123456789abcdef" for c in receipt[k])
+                            for k in ("job_spec_sha256","audit_sha256")) or
+                        type(receipt.get("job_id")) is not str or
+                        not receipt["job_id"].startswith("int02_")):
+                    raise RuntimeError("Stored native worker receipt no longer matches source frame")
             if (len(payload)>MAX_PNG_BYTES or
                 hashlib.sha256(payload).hexdigest()!=pic["sha256"] or
                 list(_png_header(payload))!=manifest["picture_dimensions"]):
@@ -377,6 +454,9 @@ class NativeSustainedPictureSound:
                 "source_shot_sha256":plan["source_shot_sha256"],
                 "source_start_tick":plan["source_start_tick"],
                 "audio_samples":manifest["audio_samples"],
+                "native_worker_receipts_embedded":receipts_present,
+                "worker_receipts_linked_to_source_frame":receipts_present,
+                "independent_os_reopen_or_custody_not_proven_by_manifest":True,
                 "file_path":str(root.resolve()),
                 "original_source_modified":False,
                 "full_film_master_approved":False}

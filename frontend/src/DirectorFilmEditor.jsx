@@ -537,7 +537,7 @@ export default function DirectorFilmEditor({movie}){
               e.preventDefault();
               if(!dragId||dragId===seg.clip_id)return;
               commit('move',{clip_id:dragId,to_index:index},
-                'The film's shot order was updated.');
+                "The film's shot order was updated.");
               setDragId(null);
             }}
             className={'film-editor-strip '+(selectedId===seg.clip_id?

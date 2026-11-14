@@ -1010,7 +1010,8 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
             self._film_schedule(),
             native_creator_approval=approval or (lambda *_:False),
             render_png=renderer or (lambda **_:None),
-            cancelled=cancelled,progress=progress)
+            cancelled=cancelled,progress=progress,
+            require_protected_worker=renderer is not None)
 
     def _native_film_export_root(self):
         from pathlib import Path
@@ -1095,7 +1096,7 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                             if (self._p1f_export is not None and
                                 self._p1f_export["ticket"]==ticket):
                                 self._p1f_export["cycles_renderer"]=cycles[0]
-                    return cycles[0].render_png(**kw)
+                    return cycles[0].render_proven_png(**kw)
 
                 writer=self._native_film_reel_batch(
                     approval=lambda scope:self._ask(
@@ -1226,7 +1227,7 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                             if (self._p1f_export is not None and
                                 self._p1f_export["ticket"]==ticket):
                                 self._p1f_export["cycles_renderer"]=cycles_renderer[0]
-                    result=cycles_renderer[0].render_png(**kwargs)
+                    result=cycles_renderer[0].render_proven_png(**kwargs)
                     with self._lock:
                         progress["stage"]="RENDERING_ORIGINAL_CYCLES"
                         progress["picture_frames"]+=1
@@ -1242,7 +1243,8 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                         "Finite frames: "+str(scope["frames"])+"\n"+
                         "Requires a new confirmation for every later chunk. "+
                         "No source changes, film master or production install authority."),
-                    render_png=cycles_frame,cancelled=cancel.is_set)
+                    render_png=cycles_frame,cancelled=cancel.is_set,
+                    require_protected_worker=True)
                 with self._lock:
                     progress["stage"]="AWAITING_CREATOR_OR_RENDER"
                 return exporter.export_chunk(

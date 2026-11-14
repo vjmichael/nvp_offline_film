@@ -181,7 +181,20 @@ class NativeCyclesOriginalRenderer:
             job=self._active
         return self.supervisor.cancel(job) if job is not None else False
 
-    def render_png(self, *, scope, tick, camera_path, source_snapshot):
+    def render_proven_png(self, *, scope, tick, camera_path, source_snapshot):
+        """Return genuine source-bound native worker receipt, not only PNG bytes."""
+        return self.render_png(scope=scope,tick=tick,camera_path=camera_path,
+                               source_snapshot=source_snapshot,
+                               with_worker_evidence=True)
+
+    def render_png(self, *, scope, tick, camera_path, source_snapshot,
+                   with_worker_evidence=False):
+        if type(with_worker_evidence) is not bool:
+            raise TypeError("Finite worker provenance mode is host-owned")
+        if with_worker_evidence and (
+                type(scope) is not dict or
+                scope.get("operation")!="nvp.p1f.authorize_original_finite_chunk.v1"):
+            raise PermissionError("Only source-bound finite P1-F chunks receive native worker evidence")
         if (type(scope) is not dict or
             scope.get("project_id")!=self.project_id or
             scope.get("operation") not in (
@@ -277,7 +290,7 @@ class NativeCyclesOriginalRenderer:
             outputs={"frame.png":"png","audit.json":"json_audit"},
             arguments={"--plan":"plan.json","--output":"frame.png","--audit":"audit.json"},
             timeout_seconds=600,memory_limit_mb=8192,
-            require_linux_cgroup_v2=True)
+            require_linux_cgroup_v2=True,require_private_isolation=True)
         with self._lock:
             self._active=job
         try:
@@ -286,7 +299,7 @@ class NativeCyclesOriginalRenderer:
                 verify_efs_inputs(jobdir)
             if result.get("state")!="SUCCEEDED":
                 raise RuntimeError("Protected native Cycles render has no verified success")
-            self.supervisor.verify_completed(job)
+            completed=self.supervisor.verify_completed(job)
             audit=json.loads((jobdir/"audit.json").read_text("utf8"))
             encoded=(jobdir/"frame.png").read_bytes()
             if (audit.get("passed") is not True or
@@ -310,7 +323,32 @@ class NativeCyclesOriginalRenderer:
                 audit.get("authored_lights_verified") is not True or
                 _png_header(encoded)!=(WIDTH,HEIGHT)):
                 raise RuntimeError("Independent Cycles source/output contract failed")
-            return encoded
+            if not with_worker_evidence:
+                return encoded
+            spec_sha=result.get("spec_sha256")
+            if (type(spec_sha) is not str or len(spec_sha)!=64 or
+                    any(c not in "0123456789abcdef" for c in spec_sha) or
+                    not completed):
+                raise RuntimeError("Original private Blender job lacks durable verified receipt")
+            receipt={
+                "format":"nvp.int02.real_native_cycles_frame_receipt.v1",
+                "project_id":self.project_id,
+                "chunk_id":scope["chunk_id"],
+                "approved_plan_sha256":scope["approved_plan_sha256"],
+                "source_take_sha256":take_sha,
+                "source_shot_sha256":shot_sha,
+                "source_tick":str(tick),
+                "camera_path":camera_path,
+                "job_id":job,
+                "job_spec_sha256":spec_sha,
+                "png_sha256":sha256(encoded).hexdigest(),
+                "audit_sha256":sha_file(jobdir/"audit.json"),
+                "native_cycles_render_verified":True,
+                "private_worker_required":True,
+                "independent_blend_reopen_verified":False,
+                "film_master_approved":False,
+            }
+            return {"png_bytes":encoded,"native_worker_receipt":receipt}
         finally:
             with self._lock:
                 self._active=None

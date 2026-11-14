@@ -26,7 +26,10 @@ def _sha(value):
 
 class NativeFilmReelBatch:
     def __init__(self,planner:NativeLongformFilmPlan,*,native_creator_approval,
-                 render_png,cancelled=lambda:False,progress=lambda **_:None):
+                 render_png,cancelled=lambda:False,progress=lambda **_:None,
+                 require_protected_worker=False):
+        if type(require_protected_worker) is not bool:
+            raise TypeError("Actual protected P2 native worker requirement must be explicit")
         if (not isinstance(planner,NativeLongformFilmPlan) or
             not callable(native_creator_approval) or not callable(render_png)
             or not callable(cancelled) or not callable(progress)):
@@ -36,6 +39,7 @@ class NativeFilmReelBatch:
         self.renderer=render_png
         self.cancelled=cancelled
         self.progress=progress
+        self.require_protected_worker=require_protected_worker
 
     def _prepare(self,project_id,plan_id,revision,*,first_index,limit,
                  output_parent,actor_mix_id,actor_mix_revision):
@@ -127,7 +131,8 @@ class NativeFilmReelBatch:
         writer=NativeSustainedPictureSound(
             self.planner.assembly,self.planner.continuity,
             native_creator_approval=one_use_child,
-            render_png=self.renderer,cancelled=self.cancelled)
+            render_png=self.renderer,cancelled=self.cancelled,
+            require_protected_worker=self.require_protected_worker)
         verified=[]
         reused=[]
         for i,row in enumerate(items):
@@ -156,6 +161,9 @@ class NativeFilmReelBatch:
                     actor_mix_revision=actor_mix_revision)
                 if receipt["plan_sha256"]!=row["intent"]["plan_sha256"]:
                     raise RuntimeError("P1-F output differs from its native parent one-use grant")
+            if self.require_protected_worker and not receipt.get(
+                    "native_worker_receipts_embedded",False):
+                raise RuntimeError("Original reel cannot reuse a source-only unprotected chunk")
             verified.append({"chunk_id":ident,
                              "manifest_sha256":receipt["manifest_sha256"],
                              "frames":chunk["frame_count"]})
@@ -168,5 +176,8 @@ class NativeFilmReelBatch:
                 "source_chunk_intents_sha256":grant["source_chunk_intents_sha256"],
                 "verified_chunks":verified,"reused_verified_chunks":reused,
                 "verified_frame_count":sum(x["frames"] for x in verified),
+                "protected_worker_receipts_recorded":
+                    self.require_protected_worker,
+                "independent_os_custody_still_requires_native_receipt_reopen":True,
                 "all_film_rendered":False,"film_master_approved":False,
                 "original_source_modified":False,"auto_restarted_worker":False}
