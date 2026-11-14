@@ -8,6 +8,8 @@ alter a Take, grant private source access, or create picture/audio/master bytes.
 """
 from __future__ import annotations
 
+import json
+
 from backend.nvp_film_index import FilmIndex,_require_pid,_id
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
 from backend.nvp_p1f_reviewed_pbr_materials import (
@@ -120,9 +122,52 @@ class P1FOriginalShotMaterialBinding:
             {"object_id":scene_id,"revision":scene_revision,"role":"scene"},
             {"object_id":material_set_id,"revision":material_set_revision,"role":"asset"},
         ]
+        def no_same_source_alias(db):
+            # Identity replay must be checked INSIDE FilmIndex's existing
+            # BEGIN IMMEDIATE writer transaction. Checking look_id alone is
+            # insufficient: a second identity could alias an already-approved
+            # source scene/material/environment scope and confuse downstream
+            # frame/worker approval. This does not block a genuinely different
+            # environment path or source revision.
+            matches=db.execute("""SELECT r.document_sha
+                FROM film_object_revisions r
+                JOIN film_objects o
+                  ON o.project_id=r.project_id AND o.object_id=r.object_id
+                JOIN film_dependencies sd
+                  ON sd.project_id=r.project_id
+                  AND sd.source_id=r.object_id AND sd.source_revision=r.revision
+                  AND sd.role='scene'
+                  AND sd.target_id=? AND sd.target_revision=?
+                JOIN film_dependencies md
+                  ON md.project_id=r.project_id
+                  AND md.source_id=r.object_id AND md.source_revision=r.revision
+                  AND md.role='asset'
+                  AND md.target_id=? AND md.target_revision=?
+                WHERE r.project_id=? AND o.kind='presentation'
+                  AND r.object_id!=?
+                ORDER BY r.object_id,r.revision""",
+                (scene_id,scene_revision,
+                 material_set_id,material_set_revision,pid,look_id)).fetchall()
+            for row in matches:
+                # Original immutable revision blobs are SHA checked even for
+                # previously published look aliases. Never trust a copied
+                # JSON preview or infer approval from a dependency edge.
+                recorded=json.loads(self.index.get_blob(pid,row["document_sha"]))
+                if (recorded.get("format")!="nvp.film.revision.v1" or
+                        recorded.get("kind")!="presentation"):
+                    raise RuntimeError("Historical original look provenance malformed")
+                previous=recorded.get("data")
+                if (type(previous) is dict and previous.get("format")==FORMAT and
+                        previous.get("scene_id")==scene_id and
+                        previous.get("scene_revision")==scene_revision and
+                        previous.get("environment_path")==environment_path and
+                        previous.get("material_set_id")==material_set_id and
+                        previous.get("material_set_revision")==material_set_revision):
+                    raise RuntimeError(
+                        "Original scene/material scope already bound under another look ID; alias replay denied")
         return self.index.register_revision(
             pid,look_id,"presentation",doc,expected_revision=0,
-            dependencies=deps)
+            dependencies=deps,precommit_guard=no_same_source_alias)
 
     def open(self,pid,look_id,revision=1):
         _require_pid(pid);_id(look_id,"original shot look")
