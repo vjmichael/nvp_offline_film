@@ -132,6 +132,23 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                         verify_batch_live=lambda scope:False)
                     self.assertTrue(reopened_batch.verify(
                         "public_two_frames")["all_frames_verified"])
+                    from backend.nvp_p1f_picture_audio_delivery import (
+                        P1FVerifiedSegmentDelivery)
+                    deliverer=P1FVerifiedSegmentDelivery(reopened_batch)
+                    segment=deliverer.deliver("public_two_frames")
+                    self.assertEqual(segment["status"],
+                                     "SOURCE_SEGMENT_DELIVERED")
+                    self.assertEqual(segment["frame_count"],2)
+                    self.assertEqual(segment["audio_sample_count_per_channel"],4000)
+                    self.assertFalse(segment["whole_film_delivered"])
+                    self.assertFalse(segment["muxed_movie_created"])
+                    verified_segment=deliverer.verify_delivered("public_two_frames")
+                    self.assertEqual(verified_segment["status"],
+                                     "SOURCE_SEGMENT_REVERIFIED")
+                    self.assertEqual(verified_segment["audio_sha256"],
+                                     segment["audio_sha256"])
+                    with self.assertRaises(RuntimeError):
+                        deliverer.deliver("public_two_frames")
                     with self.assertRaises(RuntimeError):
                         reopened_batch.run_next(
                             "public_two_frames",creator_event="replayed")
