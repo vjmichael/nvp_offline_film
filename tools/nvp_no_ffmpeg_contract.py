@@ -132,7 +132,7 @@ def violations():
     for workflow in sorted(workflows.glob("*.yml")):
         lines=workflow.read_text("utf-8").splitlines()
         for lineno,line in enumerate(lines,1):
-            if re.search(r"\\b(?:apt-get|apt)\\s+install\\b[^#\\n]*\\bblender\\b",line,re.I):
+            if re.search(r"\b(?:apt-get|apt)\s+(?:-\S+\s+)*install\b[^#\n]*\bblender\b",line,re.I):
                 issues.append((workflow.relative_to(ROOT).as_posix(),lineno,
                                "Ubuntu apt Blender brings FFmpeg/libav transitive dependencies"))
     return issues
