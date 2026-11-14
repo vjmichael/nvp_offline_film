@@ -67,6 +67,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'B10 official OCIO working-space regression' }
 
   linux-real-full-120-aces2-sdr:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Real native Blender 120 Float32 frames to 120 ACES2 16bit PNG editorial review
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -78,7 +81,7 @@ jobs:
       - name: Install actual Blender, FFmpeg and virtual X display
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth ffmpeg
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
       - name: Install official pinned ACES2 OCIO Python and OpenEXR
         run: python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
       - name: Actually render original Float32 take and display-view all 120 frames
