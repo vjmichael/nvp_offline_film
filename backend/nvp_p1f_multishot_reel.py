@@ -137,6 +137,40 @@ class P1FDurableShotReels:
                 "SELECT 1 FROM source_batches WHERE batch_id=?",(batch_id,)
             ).fetchone():
                 raise RuntimeError("One-use batch ID already registered; no replay")
+            # An attacker or a racing creator UI could otherwise mint a NEW
+            # batch/job ID for the SAME source frame while the first durable
+            # Job is queued/running/accepted. Check under the exact SQLite
+            # BEGIN IMMEDIATE writer lease, not in an earlier UI preflight.
+            requested={shot["global_frame"] for shot in shots}
+            previous=db.execute("""SELECT b.batch_id,b.manifest_json,
+                  b.manifest_sha,b.plan_sha,f.frame_index,f.job_id,
+                  f.state,f.source_sha
+                  FROM source_batches b JOIN source_frames f
+                    ON f.batch_id=b.batch_id
+                  WHERE b.project_id=? AND b.plan_id=?
+                  ORDER BY b.batch_id,f.frame_index""",(pid,plan_id)).fetchall()
+            for old_id,old_raw,old_digest,old_plan,idx,old_job,state,old_sha in previous:
+                if old_plan!=plan["document_sha256"]:
+                    raise RuntimeError("Previous batch references changed source plan")
+                try:
+                    prior=json.loads(old_raw)
+                    frame=prior["source_frames"][idx]
+                    valid=(_canonical(prior)==old_raw and
+                           _sha(prior)==old_digest and
+                           prior["project_id"]==pid and
+                           prior["plan_id"]==plan_id and
+                           prior["batch_id"]==old_id and
+                           prior["plan_document_sha256"]==old_plan and
+                           frame["job_id"]==old_job and
+                           _sha(frame)==old_sha)
+                except (KeyError,IndexError,TypeError,ValueError) as exc:
+                    raise RuntimeError("Historical source frame ledger is malformed") from exc
+                if not valid:
+                    raise RuntimeError("Historical source frame provenance changed")
+                if frame["global_frame"] in requested and state not in (
+                        "FAILED","CANCELLED","INTERRUPTED"):
+                    raise RuntimeError(
+                        "Original film frame already queued, accepted or untrusted; no overlapping worker admission")
             now=time.time_ns()
             db.execute("""INSERT INTO source_batches VALUES(?,?,?,?,?,?,?, ?,?)""",
                        (batch_id,pid,plan_id,plan["document_sha256"],
