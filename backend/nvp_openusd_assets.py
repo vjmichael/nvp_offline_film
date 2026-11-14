@@ -93,6 +93,22 @@ class OpenUSDAssetRegistry:
         return P1FReviewedPBRMaterials(self.index).publish(
             project_id,material_set_id,**reviewed)
 
+    def review_production_character(self, project_id, package_id, glb_bytes, **reviewed):
+        """Bind a user-supplied rigged GLB to an original USD ActorID.
+
+        Source rights, calibration and the exact joint map require a separate
+        creator approval. This does not grant Blender or film-master rights.
+        """
+        from backend.nvp_p1f_production_character_assets import P1FReviewedProductionCharacters
+        return P1FReviewedProductionCharacters(self.index).publish(
+            project_id, package_id, glb_bytes, **reviewed)
+
+    def cast_production_character(self, project_id, cast_id, **reviewed):
+        """Pin a reviewed GLB package to one original OpenUSD scene/ActorID."""
+        from backend.nvp_p1f_production_character_assets import P1FReviewedProductionCharacters
+        return P1FReviewedProductionCharacters(self.index).cast(
+            project_id, cast_id, **reviewed)
+
     def open(self, project_id, asset_id, revision):
         record = self.index.read_revision(project_id, asset_id, revision)
         doc = record["data"]
