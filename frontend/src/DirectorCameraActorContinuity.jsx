@@ -10,6 +10,8 @@ export default function DirectorCameraActorContinuity({movie}){
   const [sources,setSources]=useState([]);
   const [drafts,setDrafts]=useState([]);
   const [actors,setActors]=useState([]);
+  const [architecture,setArchitecture]=useState(null);
+  const [textures,setTextures]=useState(null);
   const [picked,setPicked]=useState(0);
   const [railId,setRailId]=useState('DirectorRail001');
   const [draft,setDraft]=useState(null);
@@ -66,6 +68,33 @@ export default function DirectorCameraActorContinuity({movie}){
         throw Error('Original NVP source contract is not available');
       setSources(camera.sources);setDrafts(catalog.drafts);setActors(cast.actors);
     }).catch(e=>{if(active)setError(e.message)});
+    return()=>{active=false;};
+  },[pid,movie.encrypted,native]);
+  useEffect(()=>{
+    let active=true;
+    setArchitecture(null);setTextures(null);
+    // Optional native source inventory; no HTTP fallback or PNG export.
+    if(!native||!pid||movie.encrypted||
+       typeof native.film02md_architecture_catalog!=='function'||
+       typeof native.film01c_texture_catalog!=='function')
+      return()=>{active=false;};
+    Promise.all([
+      native.film02md_architecture_catalog(pid),
+      native.film01c_texture_catalog(pid)
+    ]).then(([world,images])=>{
+      if(!active)return;
+      if(world?.format!=='nvp.conv06.original_architecture_source_catalog.v1'||
+         world.project_id!==pid||world.actual_cycles_accepted!==false||
+         world.original_take_or_pcm_modified!==false||
+         !Array.isArray(world.buildings)||!Array.isArray(world.cell_worlds)||
+         images?.format!=='nvp.conv06.original_texture_metadata_catalog.v1'||
+         images.project_id!==pid||
+         images.original_png_bytes_exposed!==false||
+         images.external_texture_paths_allowed!==false||
+         !Array.isArray(images.sources))
+        throw Error('Original source architecture/texture native custody mismatch');
+      setArchitecture(world);setTextures(images);
+    }).catch(e=>{if(active)setError(e.message||'Original source inventory was refused');});
     return()=>{active=false;};
   },[pid,movie.encrypted,native]);
   async function action(work){
@@ -237,5 +266,33 @@ export default function DirectorCameraActorContinuity({movie}){
         </details>
       </div>}
     </section>
+    <details aria-label="Original environment source inventory">
+      <summary>Advanced: original architecture and image sources</summary>
+      <p className="film-muted">This read-only native inventory verifies saved
+        3D source identities and image checksums. It cannot render a film,
+        load private assets in a web browser or approve director changes.</p>
+      {!architecture||!textures?
+        <p className="film-muted">Original environment source inventory is not available
+          from the installed trusted native host.</p>:<>
+        <p>Original 3D buildings: {architecture.buildings.length}
+          {' · '}Saved camera-cell worlds: {architecture.cell_worlds.length}
+          {' · '}Sources with verified PNG images: {textures.sources.length}</p>
+        <ul>
+          {architecture.buildings.map(b=>
+            <li key={b.building_id+':'+b.revision}>
+              {b.building_id} · revision {b.revision} · {b.original_mesh_count} reopened source meshes
+            </li>)}
+          {architecture.cell_worlds.map(c=>
+            <li key={c.cell_world_id+':'+c.revision}>
+              {c.cell_world_id} · {c.cell_ids.length} original cells
+              {' · '}prefetch only, not a filmed Take
+            </li>)}
+          {textures.sources.map(t=>
+            <li key={t.source_kind+':'+t.source_id+':'+t.revision}>
+              {t.source_id} · {t.png_sha256.length} source-verified images
+            </li>)}
+        </ul>
+      </>}
+    </details>
   </details>;
 }
