@@ -67,6 +67,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'B9 full-sequence safety regression' }
 
   linux-real-blender-1080p-and-aces:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Actual 1920x1080 Blender Float32 render and official ACES2 managed frame verified after restart
     runs-on: ubuntu-24.04
     timeout-minutes: 85
@@ -78,7 +81,7 @@ jobs:
       - name: Install actual Blender and virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
       - name: Install pinned official OCIO2/ACES and OpenEXR for real CPU pixels
         run: python -m pip install opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
       - name: Build the original frozen take and native full EXR source, render 1080p and convert actual pixels to ACEScg
