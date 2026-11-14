@@ -9,6 +9,7 @@ from pathlib import Path
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+from backend.nvp_project_access import ProjectAccess
 
 
 class Window:
@@ -71,6 +72,33 @@ class RetiredCameraContract(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.bridge.request_camera_still({})
         self.assertEqual(self.created_hosts, [])
+
+    def test_native_bridge_refuses_protected_movie_data(self):
+        protected=self.index.studio.create_project("Secret film","Hidden scene")
+        lock=ProjectAccess(self.index.studio.db_path)
+        self.assertFalse(lock.any_protected())
+        restricted=TrustedDesktopCameraBridge(
+            self.index,origin="http://127.0.0.1:7777",
+            host_factory=lambda *_: self.fail("Worker cannot run"),
+            project_lock_check=lock.any_protected)
+        restricted._attach_window(self.window)
+        self.addCleanup(restricted._close)
+        self.assertTrue(restricted.camera_render_capabilities()["native_window"])
+        lock.protect(protected["id"],"A long original protected movie passphrase")
+        for action in (
+            lambda:restricted.plan02c_catalog(protected["id"]),
+            lambda:restricted.data_av_catalog(protected["id"]),
+            lambda:restricted.data_av_capture_catalog(protected["id"]),
+            lambda:restricted.data_av_audio_window("guessed",0,10),
+            lambda:restricted.camera_render_capabilities(),
+        ):
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(PermissionError,"protected"):
+                    action()
+        self.assertEqual(restricted.data_av_stop("old")["status"],"STOPPED")
+        denied=restricted.data_av_capture_cancel()
+        self.assertFalse(denied["terminal_verified"])
+        self.assertFalse(denied["source_exposed"])
 
     def test_closed_window_cannot_restart_renderer(self):
         self.bridge._close()

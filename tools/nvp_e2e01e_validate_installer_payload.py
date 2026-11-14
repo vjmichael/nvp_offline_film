@@ -83,6 +83,10 @@ def verify_bundle(folder: Path) -> dict:
     js = list(assets.glob("*.js"))
     if not js or not all(p.stat().st_size > 0 for p in js):
         raise RuntimeError("Missing compiled React JavaScript")
+    native_renderer=base / "tools" / "nvp_int02_cycles_frame_worker.py"
+    if (not native_renderer.is_file() or native_renderer.is_symlink() or
+        native_renderer.stat().st_size<1000):
+        raise RuntimeError("Missing first-party installed Cycles worker source")
     files = [p for p in folder.rglob("*") if p.is_file()]
     if len(files) < MIN_BUNDLE_FILES:
         raise RuntimeError("NVP package does not contain a real runtime")
