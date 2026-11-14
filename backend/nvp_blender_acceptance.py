@@ -10,7 +10,15 @@ from pathlib import Path
 import json
 import shutil
 import subprocess
-from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
+# CONV-03/06: source-defined Blender acceptance remains a historical review
+# contract. Its original direct subprocess launcher is RETIRED. Do not make
+# importing this module depend on that launcher, and do not impersonate
+# native worker success without independent reviewed Blender admission.
+def run_trusted_blender(*_args, **_kwargs):
+    raise PermissionError(
+        "Direct Blender acceptance retired: use a host-authorized "
+        "BlenderWorkerSupervisor with real private OS custody")
+
 
 from backend.nvp_production_scene import ProductionScene, compact
 
@@ -72,7 +80,7 @@ def blender_available(executable='blender') -> dict:
         return {'available':False,'reason':'No real Blender executable is installed or visible on PATH'}
     try:
         result=run_trusted_blender([path, '-b', '--version'],capture_output=True,text=True,timeout=15)
-    except (OSError, subprocess.TimeoutExpired) as error:
+    except (OSError, subprocess.TimeoutExpired, PermissionError) as error:
         return {'available':False,'reason':type(error).__name__ + ': '+str(error)}
     if result.returncode != 0 or not result.stdout.startswith('Blender '):
         return {'available':False,'reason':'Executable did not return an authentic Blender version'}
@@ -85,6 +93,13 @@ def run_acceptance(production: ProductionScene, project_id: str, scene_id: str,
 
     An unavailable Blender is a BLOCKED acceptance, *not* a successful render.
     """
+    # Inspect admission before exporting any original scene, USD or authored
+    # script into an unprotected job directory. A blocked native process is
+    # not a successful Blender acceptance and may not expose source bytes.
+    state=blender_available(executable)
+    if not state["available"]:
+        return {"status":"blocked_no_blender","reason":state["reason"],
+                "source_staged":False,"worker_authorized":False}
     manifest=production.export_manifest(project_id,scene_id)
     out=Path(directory).resolve(); out.mkdir(parents=True,exist_ok=True)
     man=out/'approved_manifest.json'; script=out/'build_scene.py'
@@ -187,6 +202,11 @@ if opts.get('--skip-render') != '1':
 def run_meshpack_acceptance(mesh_assets, project_id: str, scene_id: str,
                              directory: str | Path, executable='blender', timeout=240, render_preview=True) -> dict:
     """Only 'passed_blender' if both Blender construction and reopen audit run."""
+    # Never export protected mesh contents before native worker admission.
+    state=blender_available(executable)
+    if not state["available"]:
+        return {"status":"blocked_no_blender","reason":state["reason"],
+                "source_staged":False,"worker_authorized":False}
     out=Path(directory).resolve()
     result=mesh_assets.export_bundle(project_id,scene_id,out)
     audit_script=out/'verify_meshpack.py'

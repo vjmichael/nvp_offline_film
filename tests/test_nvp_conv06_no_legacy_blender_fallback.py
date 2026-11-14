@@ -29,5 +29,32 @@ class NoLegacyWorkerFallback(unittest.TestCase):
                 self.assertNotIn("subprocess.Popen(",code)
                 self.assertNotIn("shell=True",code)
 
+    def test_original_blender_acceptance_imports_without_legacy_worker_or_staging(self):
+        import sys
+        from tempfile import TemporaryDirectory
+        from backend.nvp_blender_acceptance import (
+            blender_available,run_trusted_blender,run_acceptance,
+            run_meshpack_acceptance)
+        with self.assertRaisesRegex(PermissionError,"retired"):
+            run_trusted_blender([sys.executable,"--version"],capture_output=True)
+        found=blender_available(sys.executable)
+        self.assertFalse(found["available"])
+        self.assertIn("PermissionError",found["reason"])
+        class SourceCannotStage:
+            def export_manifest(self,*_):
+                raise AssertionError("Unapproved source manifest was staged")
+            def export_bundle(self,*_):
+                raise AssertionError("Unapproved source mesh was staged")
+        with TemporaryDirectory() as tmp:
+            project=SourceCannotStage()
+            first=run_acceptance(project,"f"*32,"Scene",tmp,executable=sys.executable)
+            second=run_meshpack_acceptance(project,"f"*32,"Scene",tmp,executable=sys.executable)
+            for response in (first,second):
+                self.assertEqual(response["status"],"blocked_no_blender")
+                self.assertFalse(response["source_staged"])
+                self.assertFalse(response["worker_authorized"])
+            self.assertEqual(list(Path(tmp).iterdir()),[],
+                             "Unapproved Blender acceptance leaked original bytes")
+
 if __name__=="__main__":
     unittest.main()
