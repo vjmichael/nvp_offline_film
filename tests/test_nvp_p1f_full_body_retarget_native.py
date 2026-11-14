@@ -142,6 +142,50 @@ class FullBodyRestAndFootTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Inverse binds"):
             audit_full_body_rest_pose(bytes(wrong), ROLE_MAP)
 
+    def test_original_film_index_package_opt_in_rest_review_and_cold_reopen(self):
+        from backend.nvp_p1f_production_character_assets import (
+            P1FReviewedProductionCharacters,
+        )
+        from test_nvp_p1f_production_character_assets_native import (
+            OriginalProductionCharacterTests, ACTOR, MAPPING, CALIBRATION,
+            RIGHTS, EVIDENCE,
+        )
+        source_fixture = OriginalProductionCharacterTests(
+            "test_reviewed_glb_and_explicit_bone_map_survive_independent_take_reopen")
+        source_fixture.setUp()
+        self.addCleanup(source_fixture.doCleanups)
+        original = full_body_glb()
+        reviewed = P1FReviewedProductionCharacters(source_fixture.index)
+        published = reviewed.publish(
+            source_fixture.pid, "full_body_source_pkg", original,
+            actor_id=ACTOR, actor_asset_id="original_lead_asset",
+            actor_asset_revision=1, joint_map=MAPPING,
+            full_body_role_map=ROLE_MAP, calibration=CALIBRATION,
+            rights=RIGHTS, rights_evidence=EVIDENCE,
+            creator_event="one_full_body_rest_review",
+            approve_import=lambda event,scope: (
+                event=="one_full_body_rest_review" and
+                scope["full_body_rest_axes"]["glb_inverse_bind_rest_verified"]
+                and not scope["full_body_rest_axes"]["usd_rest_pose_equivalence_verified"]))
+        opened = reviewed.open(source_fixture.pid, "full_body_source_pkg")
+        self.assertEqual(opened["document_sha256"], published["document_sha256"])
+        self.assertTrue(opened["data"]["full_body_rest_axes"][
+            "glb_inverse_bind_rest_verified"])
+        self.assertFalse(opened["data"]["bone_axis_retargeting_verified"])
+        reviewed.cast(
+            source_fixture.pid, "full_body_source_cast",
+            package_id="full_body_source_pkg",
+            scene_id="original_actor_scene", scene_revision=1,
+            actor_path="/World/Actor", creator_event="one_cast_review",
+            approve_cast=lambda *_: True)
+        evidence = reviewed.for_frame(
+            source_fixture.pid, "full_body_source_cast",
+            "rigged_reel_plan", 0, 0)
+        self.assertEqual(evidence["glb_full_body_rest_axes"][
+            "glb_sha256"], opened["data"]["glb_sha256"])
+        self.assertFalse(evidence["retargeted_body_motion_verified"])
+        self.assertFalse(evidence["worker_authorized"])
+
     def test_original_frame_sole_ground_slope_and_stance_validation(self):
         samples = [
             measured_frame(10, True, False),
