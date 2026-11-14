@@ -5,6 +5,8 @@ on:
     paths:
       - 'backend/nvp_p1f_full_body_retarget.py'
       - 'backend/nvp_p1f_bone_axis_motion.py'
+      - 'backend/nvp_p1f_production_scene_performance.py'
+      - 'tests/test_nvp_p1f_production_scene_performance_native.py'
       - 'tests/test_nvp_p1f_bone_axis_motion_native.py'
       - 'backend/nvp_p1f_production_character_assets.py'
       - 'backend/nvp_p1f_actor_dialogue_evidence.py'
@@ -49,10 +51,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall -q backend/nvp_p1f_full_body_retarget.py backend/nvp_p1f_bone_axis_motion.py backend/nvp_p1f_actor_dialogue_evidence.py tests/test_nvp_p1f_full_body_retarget_native.py tests/test_nvp_p1f_bone_axis_motion_native.py tests/test_nvp_p1f_actor_dialogue_evidence_native.py
+          python -m compileall -q backend/nvp_p1f_full_body_retarget.py backend/nvp_p1f_bone_axis_motion.py backend/nvp_p1f_actor_dialogue_evidence.py backend/nvp_p1f_production_scene_performance.py tests/test_nvp_p1f_full_body_retarget_native.py tests/test_nvp_p1f_bone_axis_motion_native.py tests/test_nvp_p1f_actor_dialogue_evidence_native.py tests/test_nvp_p1f_production_scene_performance_native.py
           python -m unittest discover -s tests -p 'test_nvp_p1f_full_body_retarget_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_bone_axis_motion_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_actor_dialogue_evidence_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_production_scene_performance_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_production_character_assets_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_imported_actor_native.py' -v
 
