@@ -343,6 +343,19 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             self.assertFalse(result["soundtrack_mixed"])
             self.assertEqual(supervisor.verify_completed(job)["state"],"SUCCEEDED")
             self.assertEqual(supervisor.verify_completed(job+"_reopen")["state"],"SUCCEEDED")
+            # Recreate the trusted host to independently reopen the original
+            # immutable worker journal, Cycles pixels, .blend and source PCM.
+            fresh=BlenderWorkerSupervisor(
+                supervisor.root,blender_executable=binary,
+                blender_sha256=sha_file(binary),blender_version=version)
+            reread=ReviewedNineCameraCyclesHost(
+                self.index,fresh,verify_director_action=lambda *_:False
+            ).verify_selected_frame(
+                self.pid,"OriginalThreeViewTechnicalCut",frame,job)
+            self.assertEqual(reread["status"],
+                "ORIGINAL_NATIVE_CAMERA_PICTURE_PCM_COLD_REOPEN_VERIFIED")
+            self.assertTrue(reread["read_only_no_rerender"])
+            self.assertFalse(reread["film_master_approved"])
             directory=supervisor.root/job
             self.assertEqual(sha_file(directory/"frame.png"),
                              result["rendered_png_sha256"])
