@@ -18,6 +18,16 @@ class ZeroFFmpegContractTests(unittest.TestCase):
                     self.assertTrue(any("forbidden imported codec" in issue[2]
                                         for issue in audit.violations()))
 
+    def test_forbidden_from_import_symbols(self):
+        for source in ("from . import av", "from ..shared import ffmpeg",
+                       "from safe import libavcodec", "from av import codec"):
+            with self.subTest(source=source):
+                tree = ast.parse(source)
+                with patch.object(audit, "reached_runtime",
+                                  return_value=iter([("backend/scenes/shot.py", tree)])):
+                    self.assertTrue(any("forbidden imported codec" in issue[2]
+                                        for issue in audit.violations()))
+
     def test_relative_import_resolution(self):
         tree = ast.parse("from . import local_codec\nfrom ..shared import audio\n")
         self.assertIn("backend.scenes.local_codec",
