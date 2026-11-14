@@ -12,6 +12,7 @@ on:
       - 'tests/test_nvp_p1f_shot_material_binding_native.py'
       - 'tests/test_nvp_p1f_shot_material_real_cycles_win.py'
       - 'backend/nvp_p1f_sustained_reel_queue.py'
+      - 'backend/nvp_p1f_picture_audio_prefix.py'
       - 'backend/nvp_p1f_cycles_source_admission.py'
       - 'backend/nvp_p1f_cycles_picture_sound.py'
       - 'backend/nvp_p1f_multishot_reel.py'
@@ -68,7 +69,7 @@ jobs:
       - name: Genuine Win Job / Blender Cycles rigged-face picture and actor PCM
         shell: pwsh
         run: |
-          python -m compileall -q backend/nvp_p1f_imported_actor.py backend/nvp_p1f_cycles_picture_sound.py backend/nvp_p1f_multishot_reel.py backend/nvp_p1f_picture_audio_delivery.py backend/nvp_p1f_p2_verified_coverage.py backend/nvp_worker_private_sandbox.py tools/nvp_p1f_cycles_actor_worker.py
+          python -m compileall -q backend/nvp_p1f_imported_actor.py backend/nvp_p1f_cycles_picture_sound.py backend/nvp_p1f_multishot_reel.py backend/nvp_p1f_picture_audio_prefix.py backend/nvp_p1f_picture_audio_delivery.py backend/nvp_p1f_p2_verified_coverage.py backend/nvp_worker_private_sandbox.py tools/nvp_p1f_cycles_actor_worker.py
           python -m unittest discover -s tests -p 'test_nvp_p1f_private_sandbox_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_cycles_real_native.py' -v
           if ($LASTEXITCODE -ne 0) { throw "Actual Blender native picture/audio verification failed" }
