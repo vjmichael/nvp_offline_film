@@ -133,6 +133,11 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
         self.assertEqual(binding["usd_schema"],"UsdMediaSpatialAudio")
         self.assertEqual(binding["source_document_sha256"],
                          self.audio["document_sha256"])
+        # The transient USD overlay must refer to the original indexed event,
+        # exact source revision, and immutable content hash—not an export.
+        self.assertEqual(binding["event_id"], "actor_speaks")
+        self.assertEqual(binding["source_id"], "mic_signal")
+        self.assertEqual(binding["source_revision"], 1)
         self.assertFalse(binding["revised_frozen_layer"])
         self.assertEqual(self.index.read_revision(
             self.pid,"spatial_world",1)["document_sha256"],before)
