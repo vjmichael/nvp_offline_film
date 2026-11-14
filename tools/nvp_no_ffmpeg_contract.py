@@ -89,6 +89,15 @@ def reached_runtime():
         if path in seen:
             continue
         seen.add(path)
+        # Importing backend.scenes.shot also executes backend/__init__.py
+        # and backend/scenes/__init__.py. Audit those before treating the
+        # leaf module as a complete representation of the runtime graph.
+        parts=Path(path).parts[:-1]
+        for depth in range(1,len(parts)+1):
+            initializer=Path(*parts[:depth])/"__init__.py"
+            rel=initializer.as_posix()
+            if (ROOT/initializer).is_file() and rel not in seen:
+                frontier.append(rel)
         absolute=ROOT/path
         if not absolute.is_file():
             raise RuntimeError("Missing packaged native source: "+path)
