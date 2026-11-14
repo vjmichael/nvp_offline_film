@@ -41,6 +41,19 @@ class ZeroFFmpegContractTests(unittest.TestCase):
         tree = ast.parse("from ....outside import codec\n")
         self.assertEqual([], audit.imports(tree, "backend/scenes/shot.py"))
 
+    def test_forbidden_executable_library_dispatch(self):
+        # A command dispatch to a libav library must not bypass the audit
+        # merely because its name is not ffmpeg or ffprobe.
+        for library in ("libavcodec", "libavformat", "libavutil",
+                        "libavfilter", "libavdevice", "libswscale",
+                        "libswresample"):
+            with self.subTest(library=library):
+                tree = ast.parse("import subprocess\nsubprocess.run(['" + library + "'])")
+                with patch.object(audit, "reached_runtime",
+                                  return_value=iter([("backend/fixture.py", tree)])):
+                    self.assertTrue(any("forbidden executable codec dispatch" in issue[2]
+                                        for issue in audit.violations()))
+
     def test_clean_native_import(self):
         tree = ast.parse("import wave\nimport pathlib\n")
         with patch.object(audit, "reached_runtime",
