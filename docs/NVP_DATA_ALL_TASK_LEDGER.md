@@ -26,6 +26,10 @@ The same group adds a 30-second native nine-camera editorial cut referencing the
 
 **Do not claim native gate passed from source edits.** CONV-12 must gather an unchanged SHA's original Windows/Linux suites and report failures; genuine Blender/Cycles, root-owned Linux cgroup and namespaces, independent SCM/Job/WFP, physical Windows device/EFS/install and independent creator film-master review remain separate non-bypassable gates. No additional branch or PR.
 
+
+### 2026-11-14 CONV-12 single-SHA grouped acceptance harness
+Extended the existing `.github/workflows/nvp-conv06-film03-camfx-original-native.yml` as a pull-request-triggered **single grouped** Windows 2025/Linux 24.04 original-source matrix; it executes original SHOT-01, original P1-F one-use recovery, P1-D/E/F/P2 source/48kHz tests, rig-motion and newly added nine-camera/30-minute clock regressions, plus compileall and the active no-FFmpeg audit. Retains the original Film03/CAM-FX test matrix unchanged. A skipped genuine Blender/Cycles test must NOT count toward real Blender, SCM/Windows physical EFS, Linux kernel cgroup or independent film master signoff. Grouped workflow results must be inspected at one actual HEAD and failures repaired before claiming CONV-12. No manual dispatch, new development branch or new PR requested.
+
 ---
 
 **Sole active task tracker:** `docs/NVP_DATA_ALL_TASK_LEDGER.md`. This file is the only authoritative NVP backlog, execution queue, task-state record, and acceptance journal. Its older entries and all separate progress/plan/job-journal files are **historical technical evidence**, not parallel task lists. When an engineer finds a newly required task, branch, bug, security gate, license restriction, or test outcome, update this ledger **in the same work increment**. Never open another active NVP backlog/ledger/journal.
