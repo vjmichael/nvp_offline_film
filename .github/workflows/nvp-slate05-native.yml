@@ -73,7 +73,11 @@ jobs:
         run: |
           python -m pip install --only-binary=:all: "usd-core==26.11"
           sudo apt-get update -qq
-          sudo apt-get install -y blender
+          # Blender's real Workbench/EGL image engine requires the OS GL
+          # loader; hosted Ubuntu does not always include libEGL.so.1.
+          # Install it rather than skipping native picture verification.
+          sudo apt-get install -y blender libegl1
+          ldconfig -p | grep 'libEGL.so.1'
           /usr/bin/blender -b --version
       - name: Execute real contained Blender blocking preview through approved native dispatch
         shell: bash
