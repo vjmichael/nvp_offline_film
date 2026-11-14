@@ -160,6 +160,53 @@ class BlenderWorkerTests(unittest.TestCase):
         self.assertIn("passed=true",status["error"])
         self.assertIsNone(status["outputs"])
 
+    def test_glb_header_custody_and_finite_audit_only_arguments(self):
+        # GLB header is a *preflight* only; genuine original skin/mesh
+        # geometry requires the separate independently reopened source test.
+        valid=b"glTF"+(2).to_bytes(4,"little")+(24).to_bytes(4,"little")+b"public_fixture"
+        self.assertEqual(len(valid),26)
+        valid=b"glTF"+(2).to_bytes(4,"little")+(26).to_bytes(4,"little")+b"public_fixture"
+        op=self.job("glb_source_good")
+        op=BlenderOperation(**{**op.__dict__,
+            "outputs":{"original.glb":"glb"},
+            "arguments":{"--out":"original.glb"}})
+        def produced(cmd,**kwargs):
+            (Path(kwargs["cwd"])/"original.glb").write_bytes(valid)
+            return MockProc()
+        with patch.object(self.sup,"probe",return_value={}),patch(
+            "backend.nvp_blender_worker.launch_contained",side_effect=produced):
+            accepted=self.sup.run(op)
+        self.assertEqual(accepted["state"],"SUCCEEDED")
+        self.assertEqual(self.make_supervisor().verify_completed(op.job_id)["state"],
+                         "SUCCEEDED")
+        with self.assertRaisesRegex(RuntimeError,"already registered"):
+            self.sup.run(op)
+        (self.root/op.job_id/"original.glb").write_bytes(
+            b"glTF"+(2).to_bytes(4,"little")+(99).to_bytes(4,"little")+b"public_fixture")
+        with self.assertRaisesRegex(RuntimeError,"media magic"):
+            self.make_supervisor().verify_completed(op.job_id)
+
+        bad=self.job("glb_source_wrong_version")
+        bad=BlenderOperation(**{**bad.__dict__,
+            "outputs":{"original.glb":"glb"},
+            "arguments":{"--out":"original.glb"}})
+        def wrong_version(cmd,**kwargs):
+            (Path(kwargs["cwd"])/"original.glb").write_bytes(
+                b"glTF"+(1).to_bytes(4,"little")+(26).to_bytes(4,"little")+b"public_fixture")
+            return MockProc()
+        with patch.object(self.sup,"probe",return_value={}),patch(
+            "backend.nvp_blender_worker.launch_contained",side_effect=wrong_version):
+            denied=self.sup.run(bad)
+        self.assertEqual(denied["state"],"FAILED")
+        self.assertIn("media magic",denied["error"])
+        self.assertIsNone(denied["outputs"])
+
+        invalid=self.job("unsafe_audit_mode")
+        invalid=BlenderOperation(**{**invalid.__dict__,
+            "arguments":{"--skip-render":"../../unapproved"}})
+        with self.assertRaisesRegex(ValueError,"audit-only"):
+            self.sup.run(invalid)
+
     def test_containment_cleanup_failure_never_commits_success(self):
         op=self.job("failed_guardian_cleanup")
         class FailedClose(MockProc):
