@@ -58,13 +58,31 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                 assert self.approve(director_event, scope)
                 observed.append((pid,rid))
                 return {"document_sha256": "d"*64, "revision": 1}
+        request = {"project_id": "movie001", "rail_id": "Rail001",
+                   "rail_spec": {}, "expected_revision": 0,
+                   "preview_sha256": "e"*64}
         with patch("backend.nvp_cam_fx01_camera_rails.OriginalCameraRails", Rail):
-            result = bridge.camfx02_publish({
-                "project_id": "movie001", "rail_id": "Rail001",
-                "rail_spec": {}, "expected_revision": 0,
-                "preview_sha256": "e"*64})
+            with self.assertRaisesRegex(PermissionError, "Direct browser"):
+                bridge.camfx02_publish(request)
+            with patch(
+                "backend.nvp_cam_fx03_04_desktop_mixin.CameraRailDirectorMixin.camfx03_draft_publish",
+                autospec=True,
+                side_effect=lambda self, ignored: self.camfx02_publish(request)):
+                result = bridge.camfx03_draft_publish({"project_id":"movie001"})
+            with self.assertRaisesRegex(PermissionError, "Direct browser"):
+                bridge.camfx02_publish(request)
         self.assertEqual(result["revision"], 1)
         self.assertEqual(observed, [("movie001","Rail001")])
+
+    def test_failed_draft_publication_does_not_leave_browser_grant(self):
+        bridge = fake_bridge()
+        with patch(
+            "backend.nvp_cam_fx03_04_desktop_mixin.CameraRailDirectorMixin.camfx03_draft_publish",
+            autospec=True, side_effect=RuntimeError("cancelled")):
+            with self.assertRaisesRegex(RuntimeError, "cancelled"):
+                bridge.camfx03_draft_publish({"project_id":"movie001"})
+        with self.assertRaisesRegex(PermissionError, "Direct browser"):
+            bridge.camfx02_publish({"project_id":"movie001"})
 
     def test_actor_profile_approval_is_host_only_and_exact(self):
         bridge = fake_bridge()

@@ -7,10 +7,14 @@ starts Blender, treats local model advice as approval, or modifies source Takes.
 from __future__ import annotations
 
 from pathlib import Path
+from contextvars import ContextVar
 import os
 
 from backend.nvp_cam_fx03_04_desktop_mixin import CameraRailDirectorMixin
 from backend.nvp_film_index import _require_pid
+
+
+_DURABLE_RAIL_PUBLICATION = ContextVar("nvp_conv06_durable_rail_publication", default=False)
 
 
 class ConvergedDirectorDesktopActions(CameraRailDirectorMixin):
@@ -96,8 +100,22 @@ class ConvergedDirectorDesktopActions(CameraRailDirectorMixin):
             "actor_take_pcm_modified": False
         }
 
+    def camfx03_draft_publish(self, request):
+        """A verified durable camera draft is the only path to publication."""
+        self._native_window()
+        if _DURABLE_RAIL_PUBLICATION.get():
+            raise PermissionError("Nested camera draft publication is prohibited")
+        token = _DURABLE_RAIL_PUBLICATION.set(True)
+        try:
+            return super().camfx03_draft_publish(request)
+        finally:
+            _DURABLE_RAIL_PUBLICATION.reset(token)
+
     def camfx02_publish(self, request):
-        """Called only by the recovered durable-draft publish transaction."""
+        """Reject direct JS calls, even if they carry valid source SHAs."""
+        self._native_window()
+        if not _DURABLE_RAIL_PUBLICATION.get():
+            raise PermissionError("Direct browser rail publication is forbidden")
         if type(request) is not dict or set(request) != {
             "project_id", "rail_id", "rail_spec",
             "expected_revision", "preview_sha256"

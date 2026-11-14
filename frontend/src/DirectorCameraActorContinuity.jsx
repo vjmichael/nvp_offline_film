@@ -5,7 +5,8 @@ import React,{useEffect,useState} from 'react';
 const goodId=value=>/^[A-Za-z][A-Za-z0-9_-]{2,63}$/.test(value);
 const goodSha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 export default function DirectorCameraActorContinuity({movie}){
-  const native=typeof window==='undefined'?null:window.pywebview?.api;
+  const [native,setNative]=useState(()=>typeof window==='undefined'?
+    null:window.pywebview?.api||null);
   const [sources,setSources]=useState([]);
   const [drafts,setDrafts]=useState([]);
   const [actors,setActors]=useState([]);
@@ -20,6 +21,13 @@ export default function DirectorCameraActorContinuity({movie}){
   const [notice,setNotice]=useState('');
   const [busy,setBusy]=useState(false);
   const pid=movie?.id;
+  useEffect(()=>{
+    if(typeof window==='undefined')return;
+    const ready=()=>setNative(window.pywebview?.api||null);
+    window.addEventListener('pywebviewready',ready);
+    ready();
+    return()=>window.removeEventListener('pywebviewready',ready);
+  },[]);
   async function refresh(){
     if(!native||!pid)return;
     const [camera,catalog,cast]=await Promise.all([

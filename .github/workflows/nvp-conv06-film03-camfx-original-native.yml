@@ -49,6 +49,7 @@ jobs:
             test_nvp_conv06_private_cycles_source_contract.py
             test_nvp_conv06_no_legacy_blender_fallback.py
             test_nvp_conv06_trusted_director_desktop.py
+            test_nvp_conv06_film03_worker_source_contract.py
           )
           for f in "${files[@]}"; do
             python -m unittest discover -s tests -p "$f" -v
