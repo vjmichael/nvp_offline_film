@@ -110,7 +110,8 @@ class P1FOriginalPictureSound:
         return admission,path,actor_id,facial,flattened
 
     def render_frame(self,pid,plan_id,reel_index,frame_offset,job_id, *,
-                     creator_event,width=320,height=180,samples=12):
+                     creator_event,width=320,height=180,samples=12,
+                     reviewed_look_id=None):
         _require_pid(pid)
         _id(plan_id,"original film source reel")
         _id(job_id,"non-replayable Blender job ID")
@@ -137,6 +138,19 @@ class P1FOriginalPictureSound:
         if sha256(pcm).hexdigest()!=mix["pcm_sha256"]:
             raise RuntimeError("Source-based audio bytes mismatch verified PCM digest")
         wav=_wav_pcm(pcm)
+        # Optional ORIGINAL authored scene look, never a free-form shader/path.
+        # The existing actor-only worker contract remains intact when absent.
+        look_proof=None
+        if reviewed_look_id is not None:
+            _id(reviewed_look_id,"reviewed original material look")
+            from backend.nvp_p1f_shot_material_binding import P1FOriginalShotMaterialBinding
+            look_proof=P1FOriginalShotMaterialBinding(self.index).for_frame(
+                pid,reviewed_look_id,plan_id,reel_index,frame_offset)
+            if (look_proof["scene_document_sha256"]!=
+                    original["scene_document_sha256"] or
+                    look_proof["take_document_sha256"]!=
+                    original["take_document_sha256"]):
+                raise RuntimeError("Reviewed PBR look differs from original frozen shot")
         spec={
             "format":FORMAT,
             "scene_sha256":original["scene_document_sha256"],
@@ -148,6 +162,17 @@ class P1FOriginalPictureSound:
             "expected_face_weights":facial,
             "width":width,"height":height,"samples":samples,
         }
+        if look_proof is not None:
+            spec["reviewed_material"]={
+                "look_id":reviewed_look_id,
+                "look_document_sha256":look_proof["look_document_sha256"],
+                "material_set_id":look_proof["material_set_id"],
+                "material_set_document_sha256":
+                    look_proof["material_set_document_sha256"],
+                "composed_material_path":look_proof["composed_material_path"],
+                "bound_mesh_paths":look_proof["bound_mesh_paths"],
+                "texture_sources":look_proof["texture_sources"],
+            }
         approved_scope={
             "operation":"nvp.p1f.render_original_cycles_frame.v1",
             "project_id":pid,"plan_id":plan_id,
@@ -157,6 +182,12 @@ class P1FOriginalPictureSound:
             "pcm_sha256":mix["pcm_sha256"],
             "job_id":job_id,
         }
+        if look_proof is not None:
+            approved_scope["reviewed_look_id"]=reviewed_look_id
+            approved_scope["reviewed_look_document_sha256"] = (
+                look_proof["look_document_sha256"])
+            approved_scope["reviewed_material_set_document_sha256"] = (
+                look_proof["material_set_document_sha256"])
         if self.approve(creator_event,dict(approved_scope)) is not True:
             raise PermissionError("Creator did not authorize exact source-bound Cycles frame")
         # Windows Job/delegated Linux cgroup controls resource/process custody,
@@ -192,6 +223,18 @@ class P1FOriginalPictureSound:
         _add_file(jobdir/"original.usda",usda)
         _add_file(jobdir/"original_pcm.wav",wav)
         _add_file(jobdir/"frame_spec.json",_canonical(spec))
+        reviewed_inputs={}
+        if look_proof is not None:
+            from backend.nvp_p1f_reviewed_pbr_materials import P1FReviewedPBRMaterials
+            library=P1FReviewedPBRMaterials(self.index)
+            for slot,meta in sorted(look_proof["texture_sources"].items()):
+                name="reviewed_"+slot+".png"
+                raw=library.original_texture_bytes(
+                    pid,look_proof["material_set_id"],slot)
+                if sha256(raw).hexdigest()!=meta["sha256"]:
+                    raise RuntimeError("Original reviewed PBR map changed before source staging")
+                _add_file(jobdir/name,raw)
+                reviewed_inputs[name]=meta["sha256"]
         op=BlenderOperation(
             job_id=job_id,script="fixed_cycles.py",
             script_sha256=sha256(source_script).hexdigest(),
@@ -199,6 +242,7 @@ class P1FOriginalPictureSound:
                 "original.usda":sha256(usda).hexdigest(),
                 "original_pcm.wav":sha256(wav).hexdigest(),
                 "frame_spec.json":sha_file(jobdir/"frame_spec.json"),
+                **reviewed_inputs,
             },
             outputs={"original_frame.png":"png","cycles_audit.json":"json_audit"},
             arguments={
