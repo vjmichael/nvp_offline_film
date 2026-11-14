@@ -10,7 +10,10 @@ on:
       - "tools/nvp_desktop_alpha.py"
       - "frontend/src/FilmCameraSourcePanel.jsx"
       - "frontend/src/CameraLensWorkbench.jsx"
-      - "frontend/src/FilmCameraNativeBridge.test.jsx"
+      - "frontend/src/FilmCameraNativeBridge.test.jsx src/DirectorCameraActorContinuity.test.jsx"
+      - "frontend/src/DirectorCameraActorContinuity.jsx"
+      - "frontend/src/DirectorCameraActorContinuity.test.jsx"
+      - "backend/nvp_conv06_trusted_director_desktop.py"
       - "tests/test_nvp_slate08b_native_camera_ipc.py"
       - ".github/workflows/nvp-slate08b-desktop-camera.yml"
   workflow_dispatch:
