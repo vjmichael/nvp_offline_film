@@ -1,0 +1,49 @@
+name: NVP P1-F Native Windows Independent Creator Signoff Negative Gate
+
+on:
+  pull_request:
+    paths:
+      - 'tools/nvp_p1f_windows_creator_signature.hpp'
+      - 'tools/nvp_p1f_windows_creator_signoff.cpp'
+      - 'tools/nvp_p1f_windows_scm_blender_broker.cpp'
+      - '.github/workflows/nvp-p1f-windows-creator-signoff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  win-native-creator-ui-signature-admission:
+    runs-on: windows-2025
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the reviewed desktop one-use native signature/dialog module
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'Actual MSVC Windows SDK compiler unavailable' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $file='tools\nvp_p1f_windows_creator_signoff.cpp'
+          $build='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_p1f_windows_creator_signoff.exe "'+$file+'" /link user32.lib advapi32.lib crypt32.lib'
+          cmd.exe /d /s /c $build
+          if ($LASTEXITCODE -ne 0) { throw 'Independent creator signer compilation failed' }
+      - name: Require signed release policy; refuse a model --yes switch or absent operator grant
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          # CI must NEVER show or click an actual human confirmation dialog.
+          # Only rejection is tested here; positive owner action requires
+          # separately authorized physical Windows acceptance.
+          & .\nvp_p1f_windows_creator_signoff.exe --yes
+          if ($LASTEXITCODE -ne 91) {
+            throw 'Creator signoff accepted untrusted command-line automation'
+          }
+          & .\nvp_p1f_windows_creator_signoff.exe
+          if ($LASTEXITCODE -ne 91) {
+            throw 'Creator signoff silently authorized without installed policy'
+          }
+          Write-Host 'NVP_P1F_CREATOR_UI_UNATTENDED_SIGNOFF_DENIED_NATIVE'
+          exit 0
