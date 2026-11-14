@@ -4,6 +4,7 @@ Public fixture inputs only. A seven-joint structural GLB remains a fixture,
 not a professional performer or a proven retargeted Blender result.
 """
 from pathlib import Path
+import struct
 import unittest
 
 from backend.nvp_film_index import FilmIndex
@@ -21,6 +22,24 @@ RIGHTS = {
 EVIDENCE = (b"Original creator-owned rigged GLB character bytes and mesh. "
             b"This authored test ownership statement is evidence custody only; "
             b"rights have not been independently verified or cleared for release.\n")
+def mutate_mesh_bytes(source, failure):
+    # The review must decode the GLB binary. Container metadata and counts
+    # are intentionally unchanged; no legacy structural inspection catches
+    # the following invalid original vertex/skin payload.
+    raw = bytearray(source)
+    json_size = struct.unpack_from("<I", raw, 12)[0]
+    binary = 12 + 8 + json_size + 8
+    if failure == "nan_position":
+        struct.pack_into("<f", raw, binary, float("nan"))
+    elif failure == "invalid_joint":
+        raw[binary + 36] = 255
+    elif failure == "bad_weights":
+        struct.pack_into("<f", raw, binary + 36 + 12, 0.2)
+    else:
+        raise AssertionError("Unknown bounded original GLB corruption fixture")
+    return bytes(raw)
+
+
 MAPPING = {"Body": "hips", "Body/Head": "head"}
 CALIBRATION = {
     "meters_per_source_unit": 1.0, "root_height_m": 0.0,
@@ -78,6 +97,11 @@ class OriginalProductionCharacterTests(unittest.TestCase):
         package = self.assets.open(self.pid, "original_reviewed_lead")
         self.assertEqual(package["document_sha256"], published["document_sha256"])
         self.assertEqual(package["data"]["joint_map"], MAPPING)
+        self.assertEqual(package["data"]["decoded_geometry"]["decoded_skinned_vertices"], 3)
+        self.assertEqual(package["data"]["decoded_geometry"]["decoded_triangles"], 1)
+        self.assertEqual(package["data"]["decoded_geometry"]["original_joint_count"], 7)
+        self.assertEqual(package["data"]["decoded_geometry"]["weight_max_sum_error"], 0.0)
+        self.assertFalse(package["data"]["decoded_geometry"]["actual_mesh_deformation_verified"])
         self.assertFalse(package["data"]["license_independently_verified"])
         self.assertFalse(package["data"]["contact_and_deformation_verified"])
         self.assertFalse(package["data"]["private_worker_authorized"])
@@ -115,6 +139,12 @@ class OriginalProductionCharacterTests(unittest.TestCase):
             {"package_id": "missing_evidence", "evidence":b"none"},
             {"package_id": "external_images",
              "source": synthetic_glb(external_image=True)},
+            {"package_id": "nan_original_vertices",
+             "source": mutate_mesh_bytes(synthetic_glb(), "nan_position")},
+            {"package_id": "bad_original_skin_joint",
+             "source": mutate_mesh_bytes(synthetic_glb(), "invalid_joint")},
+            {"package_id": "unnormalized_original_skin",
+             "source": mutate_mesh_bytes(synthetic_glb(), "bad_weights")},
             {"package_id": "unreviewed_scale",
              "calibration": {**CALIBRATION,"meters_per_source_unit": 0}},
         ]
