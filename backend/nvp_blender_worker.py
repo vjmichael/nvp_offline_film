@@ -21,6 +21,7 @@ import re
 import signal
 import sqlite3
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import sys
 import threading
 import time
@@ -224,7 +225,7 @@ class BlenderWorkerSupervisor:
             first=stdout.splitlines()[0].strip() if stdout.splitlines() else ""
         else:
             try:
-                result=subprocess.run([str(self.binary),"-b","--version"],
+                result=run_owned_subprocess([str(self.binary),"-b","--version"],
                                       capture_output=True,text=True,timeout=15,check=False)
             except (subprocess.TimeoutExpired,OSError) as exc:
                 raise RuntimeError("Pinned Blender binary failed version probe") from exc
