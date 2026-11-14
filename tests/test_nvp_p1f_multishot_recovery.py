@@ -175,6 +175,39 @@ class DurableOriginalShotTests(unittest.TestCase):
                 reel_index=0,first_frame_offset=0,frame_count=2,
                 creator_event="approved_batch")
 
+    def test_sustained_queue_reviews_next_original_window_without_dispatch(self):
+        from backend.nvp_p1f_sustained_reel_queue import P1FReviewedReelQueue
+        queue=P1FReviewedReelQueue(self.journal)
+        offered=queue.review_next(
+            self.fixture.pid,"rigged_reel_plan",max_frames=2)
+        self.assertEqual(offered["status"],"REVIEW_REQUIRED_NOT_AUTHORIZED")
+        self.assertEqual(offered["reel_index"],0)
+        self.assertEqual(offered["first_frame_offset"],0)
+        self.assertEqual(offered["frame_count"],2)
+        self.assertFalse(offered["worker_authorized"])
+        self.assertFalse(offered["film_master_created"])
+        with self.assertRaisesRegex(RuntimeError,"fresh human review"):
+            queue.reserve_next(
+                self.fixture.pid,"rigged_reel_plan","unreviewed_window",
+                expected_review_sha256="0"*64,
+                creator_event="approved_batch",max_frames=2)
+        with self.assertRaises(PermissionError):
+            queue.reserve_next(
+                self.fixture.pid,"rigged_reel_plan","declined_window",
+                expected_review_sha256=offered["review_sha256"],
+                creator_event="refused",max_frames=2)
+        granted=queue.reserve_next(
+            self.fixture.pid,"rigged_reel_plan","original_next_batch",
+            expected_review_sha256=offered["review_sha256"],
+            creator_event="approved_batch",max_frames=2)
+        self.assertEqual(granted["status"],"BOUNDED_SOURCE_BATCH_PLANNED_ONLY")
+        self.assertFalse(granted["ready_to_auto_render"])
+        with self.assertRaisesRegex(RuntimeError,"overlapping"):
+            queue.reserve_next(
+                self.fixture.pid,"rigged_reel_plan","racing_next_batch",
+                expected_review_sha256=offered["review_sha256"],
+                creator_event="approved_batch",max_frames=2)
+
     def test_unverified_private_worker_is_refused_before_staging_any_bytes(self):
         from backend.nvp_p1f_cycles_picture_sound import P1FOriginalPictureSound
         trusted=P1FOriginalPictureSound(
