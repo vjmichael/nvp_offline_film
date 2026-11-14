@@ -1,5 +1,7 @@
 """DA-00 regression: native runtime must refuse FFmpeg family imports."""
 import ast
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -53,6 +55,31 @@ class ZeroFFmpegContractTests(unittest.TestCase):
                                   return_value=iter([("backend/fixture.py", tree)])):
                     self.assertTrue(any("forbidden executable codec dispatch" in issue[2]
                                         for issue in audit.violations()))
+
+    def test_package_initializers_are_audited(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "backend" / "scenes").mkdir(parents=True)
+            (root / "backend" / "__init__.py").write_text("import av\n")
+            (root / "backend" / "scenes" / "__init__.py").write_text("import libavcodec\n")
+            (root / "backend" / "scenes" / "shot.py").write_text("import wave\n")
+            with patch.object(audit, "ROOT", root), patch.object(
+                audit, "ENTRYPOINTS", ("backend/scenes/shot.py",)
+            ):
+                reached = dict(audit.reached_runtime())
+                self.assertIn("backend/__init__.py", reached)
+                self.assertIn("backend/scenes/__init__.py", reached)
+                self.assertTrue(any("forbidden imported codec" in reason
+                                    for _, _, reason in audit.violations()))
+
+    def test_package_module_resolves_initializer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "backend" / "scenes").mkdir(parents=True)
+            (root / "backend" / "scenes" / "__init__.py").write_text("")
+            with patch.object(audit, "ROOT", root):
+                self.assertEqual(root / "backend" / "scenes" / "__init__.py",
+                                 audit.source_path("backend.scenes"))
 
     def test_clean_native_import(self):
         tree = ast.parse("import wave\nimport pathlib\n")
