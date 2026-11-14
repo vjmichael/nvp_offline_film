@@ -221,9 +221,12 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
         allowed={"project_id","actor_id","source_route","profile_revision"}
         if type(request) is not dict or set(request)!=allowed:
             raise PermissionError("Only original Director ActorID voice preview fields")
-        from backend.nvp_film03_actor_identity_core import ActorIdentityCore
+        from backend.nvp_film03_actor_identity_core import (
+            ActorIdentityCore,HEX_ACTOR)
         pid=_require_pid(request["project_id"])
-        actor=_id(request["actor_id"],"canonical StoryBible ActorID")
+        actor=request["actor_id"]
+        if type(actor) is not str or not HEX_ACTOR.fullmatch(actor):
+            raise PermissionError("Invalid canonical StoryBible ActorID")
         route=request["source_route"]
         revision=request["profile_revision"]
         if (type(route) is not dict or route.get("actor_id")!=actor or
