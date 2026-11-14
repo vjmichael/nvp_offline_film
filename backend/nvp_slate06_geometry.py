@@ -380,6 +380,12 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 scene=bpy.context.scene
 scene.render.engine="CYCLES"
 scene.cycles.device="CPU"
+# Native distro Blender can be built without OpenImageDenoiser. A missing
+# optional denoiser must not turn authentic Cycles geometry into a false
+# worker failure. This disables only post-render image denoising, never
+# changes the camera/mesh, compositor or source-authenticated pixels.
+if hasattr(bpy.context.view_layer,"cycles") and hasattr(bpy.context.view_layer.cycles,"use_denoising"):
+    bpy.context.view_layer.cycles.use_denoising=False
 scene.cycles.samples=int({"thumbnail":8,"interactive":16,
                           "inspection":24}[src["quality"]])
 scene.render.resolution_x=src["width"]
