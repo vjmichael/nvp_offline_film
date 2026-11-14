@@ -100,6 +100,12 @@ class NativeKCrashIO(unittest.TestCase):
                     env=os.environ.copy()
                     env["NVP_AUDIO01K_FAULT_TEST"]="enabled"
                     env["NVP_AUDIO01K_CRASH_AFTER"]=point
+                    # Child executes this test by absolute file path, making
+                    # Python's initial sys.path the tests/ folder rather than
+                    # the checked-out source root. Pin only this reviewed
+                    # repository's imports; do not change the crash boundary.
+                    source_root=str(Path(__file__).resolve().parents[1])
+                    env["PYTHONPATH"]=source_root+os.pathsep+env.get("PYTHONPATH","")
                     child=subprocess.run([sys.executable,
                         str(Path(__file__).resolve()),"--child",str(root),"host"],
                         cwd=Path(__file__).resolve().parents[1],
@@ -166,6 +172,12 @@ class NativeKCrashIO(unittest.TestCase):
                         env.pop(k,None)
                     env["NVP_AUDIO01K_FAULT_TEST"]="enabled"
                     env["NVP_AUDIO01K_CRASH_AFTER"]=point
+                    # Child executes this test by absolute file path, making
+                    # Python's initial sys.path the tests/ folder rather than
+                    # the checked-out source root. Pin only this reviewed
+                    # repository's imports; do not change the crash boundary.
+                    source_root=str(Path(__file__).resolve().parents[1])
+                    env["PYTHONPATH"]=source_root+os.pathsep+env.get("PYTHONPATH","")
                     worker=subprocess.run([sys.executable,
                         str(Path(__file__).resolve()),"--child",str(root)],
                         cwd=Path(__file__).resolve().parents[1],
