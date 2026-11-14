@@ -192,6 +192,25 @@ def audit_full_body_rest_pose(payload, mapping, *, meters_per_source_unit=1.):
         return world[i]
     for idx in range(len(nodes)):
         resolve(idx)
+    scenes = doc.get("scenes", [])
+    scene_index = doc.get("scene", 0)
+    if (type(scene_index) is not int or not isinstance(scenes, list) or
+            not 0 <= scene_index < len(scenes) or
+            type(scenes[scene_index].get("nodes")) is not list):
+        raise ValueError("Original character lacks a declared glTF scene")
+    reachable = set()
+    def visit(index):
+        if index in reachable:
+            return
+        reachable.add(index)
+        for child in nodes[index].get("children", []):
+            visit(child)
+    for root in scenes[scene_index]["nodes"]:
+        if type(root) is not int or not 0 <= root < len(nodes) or root in parent:
+            raise ValueError("glTF scene root is absent or still parented")
+        visit(root)
+    if any(by_name[mapping[r]] not in reachable for r in ROLES):
+        raise ValueError("Reviewed full-body joints are detached from original scene")
     # The hierarchy alone is not enough: independently decode the actual
     # inverse-bind floats and prove rest-pose skin matrices reconstruct the
     # authored mesh bind frame. This is more stringent than structural glTF.
