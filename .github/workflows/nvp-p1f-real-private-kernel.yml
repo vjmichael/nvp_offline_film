@@ -104,7 +104,7 @@ jobs:
               -p "WorkingDirectory=$PWD" \
               env PATH="$PATH" PYTHONPATH="$PWD" \
                 NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
-              bash -ec 'set -euo pipefail; test -f tests/test_nvp_p1f_private_kernel_real.py; python -m unittest discover -s tests -t . -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -t . -p test_nvp_p1f_private_kernel_real.py -v' \
+              bash -ec 'set -euo pipefail; test -f tests/test_nvp_p1f_private_kernel_real.py; python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v' \
               2>&1 | tee -a kernel-actual-output.txt
             echo 'REAL_ROOT_OWNED_SYSTEMD_SERVICE_KERNEL_PROVED; UNPRIVILEGED_SCOPE_UNVERIFIED' | tee -a kernel-actual-output.txt
           fi
