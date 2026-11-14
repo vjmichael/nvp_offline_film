@@ -36,6 +36,97 @@ def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _reviewed_material(plan,root):
+    """Translate ONLY the exact source-scene-bound reviewed maps, no resolver."""
+    review=plan.get("reviewed_material")
+    if review is None:
+        return None
+    required={
+        "look_id","look_document_sha256","material_set_id",
+        "material_set_document_sha256","composed_material_path",
+        "bound_mesh_paths","texture_sources",
+    }
+    if (type(review) is not dict or set(review)!=required or
+            type(review["composed_material_path"]) is not str or
+            not review["composed_material_path"].startswith("/World/") or
+            type(review["bound_mesh_paths"]) is not list or
+            not 1<=len(review["bound_mesh_paths"])<=64 or
+            len(set(review["bound_mesh_paths"]))!=len(review["bound_mesh_paths"]) or
+            type(review["texture_sources"]) is not dict or
+            "baseColor" not in review["texture_sources"] or
+            not 1<=len(review["texture_sources"])<=4 or
+            set(review["texture_sources"])-{
+                "baseColor","roughness","metallic","normal"}):
+        raise RuntimeError("Reviewed original scene PBR scope invalid")
+    imported=[]
+    for path in review["bound_mesh_paths"]:
+        if (type(path) is not str or not path.startswith("/World/") or
+                not path.endswith(tuple("/"+x for x in
+                    ("Wall","Floor","Hallway","Ceiling","Door")) + ("/Geometry",))
+                and "/Geometry/" not in path):
+            raise RuntimeError("Unrecognized original imported PBR mesh identity")
+        name=path.rsplit("/",1)[-1]
+        matches=[o for o in bpy.data.objects if o.type=="MESH" and o.name==name]
+        if len(matches)!=1 or not matches[0].data.uv_layers:
+            raise RuntimeError("Original scene reviewed UV mesh unavailable after USD import")
+        imported.append(matches[0])
+    if not imported:
+        raise RuntimeError("No authored UV mesh to carry reviewed original PBR material")
+    material=bpy.data.materials.new("NVP_SourceBoundOriginalPBR")
+    material.use_nodes=True
+    nodes=material.node_tree.nodes
+    nodes.clear()
+    links=material.node_tree.links
+    output=nodes.new("ShaderNodeOutputMaterial")
+    principled=nodes.new("ShaderNodeBsdfPrincipled")
+    links.new(principled.outputs["BSDF"],output.inputs["Surface"])
+    seen={}
+    for slot,meta in sorted(review["texture_sources"].items()):
+        if (type(meta) is not dict or
+                set(meta)!={"sha256","width","height","mode",
+                            "media_type","size_bytes"} or
+                type(meta["sha256"]) is not str or len(meta["sha256"])!=64):
+            raise RuntimeError("Original material image channel manifest malformed")
+        image_path=root/("reviewed_"+slot+".png")
+        if (image_path.is_symlink() or not image_path.is_file() or
+                image_path.parent!=root or
+                image_path.stat().st_size!=meta["size_bytes"] or
+                _sha(image_path)!=meta["sha256"] or
+                meta["media_type"]!="image/png"):
+            raise RuntimeError("SHA-pinned original PBR texture bytes changed in worker")
+        img=bpy.data.images.load(str(image_path),check_existing=False)
+        if list(img.size)!=[meta["width"],meta["height"]]:
+            raise RuntimeError("Actual image pixels differ from approved PBR texture")
+        tex=nodes.new("ShaderNodeTexImage")
+        tex.image=img
+        if slot!="baseColor":
+            img.colorspace_settings.name="Non-Color"
+        if slot=="baseColor":
+            links.new(tex.outputs["Color"],principled.inputs["Base Color"])
+        elif slot=="roughness":
+            links.new(tex.outputs["Color"],principled.inputs["Roughness"])
+        elif slot=="metallic":
+            links.new(tex.outputs["Color"],principled.inputs["Metallic"])
+        else:
+            normal=nodes.new("ShaderNodeNormalMap")
+            links.new(tex.outputs["Color"],normal.inputs["Color"])
+            links.new(normal.outputs["Normal"],principled.inputs["Normal"])
+        seen[slot]={"sha256":meta["sha256"],"width":img.size[0],
+                    "height":img.size[1],"actual_image_name":img.name}
+    for mesh in imported:
+        mesh.data.materials.clear()
+        mesh.data.materials.append(material)
+    return {
+        "look_id":review["look_id"],
+        "look_document_sha256":review["look_document_sha256"],
+        "material_set_document_sha256":review["material_set_document_sha256"],
+        "composed_material_path":review["composed_material_path"],
+        "bound_mesh_paths":review["bound_mesh_paths"],
+        "imported_uv_meshes":sorted(o.name for o in imported),
+        "textures":seen,
+    }
+
+
 def main():
     plan_path,usd_path,png_path,audit_path=_args()
     if png_path.exists() or audit_path.exists():
@@ -43,10 +134,14 @@ def main():
     if plan_path.stat().st_size>8192 or usd_path.stat().st_size>8*1024*1024:
         raise RuntimeError("Actor input exceeds finite worker resource contract")
     plan=json.loads(plan_path.read_text("utf8"))
-    if (type(plan) is not dict or
-            set(plan)!={"format","scene_sha256","usd_sha256","camera",
-                        "actor_id","actor_path","source_tick",
-                        "expected_face_weights","width","height","samples"} or
+    expected={"format","scene_sha256","usd_sha256","camera",
+              "actor_id","actor_path","source_tick",
+              "expected_face_weights","width","height","samples"}
+    if type(plan) is not dict or (
+            set(plan)!=expected and
+            set(plan)!=expected|{"reviewed_material"}):
+        raise RuntimeError("Worker original source contract has unexpected fields")
+    if (
             plan["format"]!=FORMAT or
             not 128<=plan["width"]<=1920 or
             not 72<=plan["height"]<=1080 or
@@ -127,6 +222,10 @@ def main():
     for name,value in zip(SHAPES,expected):
         keys.key_blocks[name].value=value
     bpy.context.view_layer.update()
+    # Original UV/PBR set metadata is separately bound to THIS exact
+    # frozen scene/Take by the host. Read only named, SHA-verified local
+    # material files; no external resolver, arbitrary script or URL.
+    reviewed_material=_reviewed_material(plan,plan_path.parent)
     actual=[float(keys.key_blocks[name].value) for name in SHAPES]
     if any(abs(a-b)>1e-5 for a,b in zip(actual,expected)):
         raise RuntimeError("Exact original USD facial weights did not transfer into Blender")
@@ -170,6 +269,8 @@ def main():
         "samples":scene.cycles.samples,
         "png_sha256":_sha(png_path),
     }
+    if reviewed_material is not None:
+        audit["reviewed_material"]=reviewed_material
     audit_path.write_text(json.dumps(audit,sort_keys=True,separators=(",",":")),
                           encoding="utf8")
 
