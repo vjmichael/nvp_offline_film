@@ -149,6 +149,19 @@ class P1FRealCyclesJobTests(unittest.TestCase):
                                      "SOURCE_SEGMENT_REVERIFIED")
                     self.assertEqual(verified_segment["audio_sha256"],
                                      segment["audio_sha256"])
+                    from backend.nvp_p1f_p2_verified_coverage import (
+                        P1FVerifiedFilmCoverage)
+                    coverage=P1FVerifiedFilmCoverage(deliverer)
+                    coverage.register(
+                        fixture.pid,"rigged_reel_plan","public_two_frames")
+                    partial=coverage.verify_coverage(
+                        fixture.pid,"rigged_reel_plan")
+                    self.assertEqual(partial["verified_frames"],2)
+                    self.assertFalse(partial["all_source_frames_verified"])
+                    self.assertFalse(partial["portable_film_created"])
+                    with self.assertRaises(RuntimeError):
+                        coverage.register(
+                            fixture.pid,"rigged_reel_plan","public_two_frames")
                     with self.assertRaises(RuntimeError):
                         deliverer.deliver("public_two_frames")
                     with self.assertRaises(RuntimeError):
