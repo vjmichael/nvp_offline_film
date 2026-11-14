@@ -110,6 +110,80 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
         self.assertTrue(result["native_director_identity_approved"])
         self.assertFalse(result["voice_or_animation_generated"])
 
+    def test_original_actor_district_shot_binding_requires_exact_one_use_native_consent(self):
+        # Real source composition and original actor/PCM identity are covered
+        # by the unchanged 01E/02M-H native source test. This case protects
+        # the newer exact-origin desktop handoff and its one-use OS authority.
+        bridge=fake_bridge()
+        digest="a"*64
+        request={
+            "project_id":"movie001","binding_id":"ApprovedDistrictShot001",
+            "district_id":"OriginalDistrict001","district_revision":1,
+            "world_take_id":"OriginalWorldTake001","film_tick":7056000000}
+        observed=[]
+        class Original:
+            def __init__(self,index,*,confirm):
+                self.confirm=confirm
+            def preview(self,pid,district_id,district_revision,world_take_id,film_tick):
+                observed.append(("preview",pid,district_id,world_take_id,film_tick))
+                return {"binding_preview_sha256":digest}
+            def publish(self,pid,binding_id,*,district_id,district_revision,
+                        world_take_id,film_tick,creator_event,expected_preview_sha256):
+                scope={
+                    "operation":"nvp.film02m_h.approve_original_district_shot_binding.v1",
+                    "project_id":pid,"binding_id":binding_id,
+                    "district_id":district_id,"district_revision":district_revision,
+                    "district_document_sha256":"b"*64,
+                    "district_usd_root_sha256":"c"*64,
+                    "world_take_id":world_take_id,"world_take_sha256":"d"*64,
+                    "original_camera_shot_sha256":"e"*64,
+                    "source_preview_sha256":digest,
+                    "film_tick":film_tick,"actor_count":1}
+                assert expected_preview_sha256==digest
+                assert not self.confirm("browser_claim",scope)
+                assert not self.confirm(creator_event,{**scope,"film_tick":-1})
+                assert not self.confirm(creator_event,{
+                    **scope,"operation":"unreviewed_renderer"})
+                allowed=self.confirm(creator_event,scope)
+                assert not self.confirm(creator_event,scope)
+                if not allowed:
+                    raise PermissionError("Director refused original source binding")
+                observed.append(("publish",pid,binding_id))
+                return {"revision":1,"document_sha256":"f"*64}
+            def reopen(self,pid,binding_id):
+                observed.append(("reopen",pid,binding_id))
+                return {"binding_id":binding_id,"native_source_reopened":True}
+        with patch("backend.nvp_usd_film02m_h_actor_camera_binding.OriginalDistrictShotBinding",Original):
+            preview=bridge.film02mh_preview_shot(request)
+            self.assertEqual(preview["binding_preview_sha256"],digest)
+            with self.assertRaisesRegex(PermissionError,"Exact native-approved"):
+                bridge.film02mh_commit_shot_binding({
+                    **request,"source_preview_sha256":digest,
+                    "creator_approved":True})
+            with self.assertRaisesRegex(PermissionError,"preview SHA"):
+                bridge.film02mh_commit_shot_binding({
+                    **request,"source_preview_sha256":"not-a-digest"})
+            bridge.window.create_confirmation_dialog=lambda *_:False
+            with self.assertRaisesRegex(PermissionError,"refused"):
+                bridge.film02mh_commit_shot_binding({
+                    **request,"source_preview_sha256":digest})
+            bridge.window.create_confirmation_dialog=lambda *_:True
+            result=bridge.film02mh_commit_shot_binding({
+                **request,"source_preview_sha256":digest})
+            self.assertEqual(result["revision"],1)
+            reopened=bridge.film02mh_reopen_shot_binding({
+                "project_id":"movie001","binding_id":request["binding_id"]})
+            self.assertTrue(reopened["native_source_reopened"])
+            self.assertEqual(observed[-2:],[
+                ("publish","movie001",request["binding_id"]),
+                ("reopen","movie001",request["binding_id"])])
+            bridge.window.get_current_url=lambda:"https://hostile.example/"
+            with self.assertRaisesRegex(PermissionError,"origin"):
+                bridge.film02mh_preview_shot(request)
+            with self.assertRaisesRegex(PermissionError,"origin"):
+                bridge.film02mh_commit_shot_binding({
+                    **request,"source_preview_sha256":digest})
+
     def test_original_architecture_and_texture_catalog_require_native_origin(self):
         locked = fake_bridge(locked=True)
         foreign = fake_bridge(url="http://127.0.0.1:19992/")
