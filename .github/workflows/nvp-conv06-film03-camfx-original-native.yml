@@ -42,7 +42,9 @@ jobs:
         run: |
           python -m compileall -q backend tools
           files=(
+            test_nvp_film03_dialogue_manager.py
             test_nvp_film03_actor_identity_core.py
+            test_nvp_film03_actor_native_workers.py
             test_nvp_film03_expressive_voice_direction.py
             test_nvp_film03_voice_performance_lab.py
             test_nvp_film03_voice_conversion_intent.py
