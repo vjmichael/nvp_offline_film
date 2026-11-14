@@ -52,6 +52,9 @@ jobs:
       - run: python -m unittest discover -s tests -p test_blender_resource_admission.py -v
 
   linux-real-approved-blender:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Real Blender approved source, memory denial, re-admission and output audit
     runs-on: ubuntu-24.04
     timeout-minutes: 28
@@ -63,7 +66,7 @@ jobs:
       - name: Install actual Blender
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
       - name: Real approved worker source-to-output test
         run: |
           xvfb-run -a python -m tools.nvp_stack02c3b2_approved_blender_fixture \
