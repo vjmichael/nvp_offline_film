@@ -371,7 +371,12 @@ class NativeSustainedPictureSound:
                 "manifest_sha256":_file_sha256(manifest_file),
                 "audio_sha256":manifest["audio_sha256"],
                 "source_edit_sha256":plan["edit_document_sha256"],
+                "source_take_id":plan["source_take_id"],
                 "source_take_sha256":plan["source_take_sha256"],
+                "source_shot_id":plan["source_shot_id"],
+                "source_shot_sha256":plan["source_shot_sha256"],
+                "source_start_tick":plan["source_start_tick"],
+                "audio_samples":manifest["audio_samples"],
                 "file_path":str(root.resolve()),
                 "original_source_modified":False,
                 "full_film_master_approved":False}

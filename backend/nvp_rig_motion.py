@@ -11,8 +11,9 @@ import json
 import math
 import re
 from pathlib import Path
-import subprocess
-from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
+import shutil
+
+from backend.nvp_blender_worker import BlenderWorkerSupervisor, BlenderOperation, sha_file
 
 from backend.nvp_studio import Studio
 from backend.nvp_production_scene import compact, digest
@@ -379,7 +380,7 @@ from mathutils import Euler
 from pathlib import Path
 args=sys.argv[sys.argv.index('--')+1:]
 opts=dict(zip(args[::2],args[1::2]))
-payload=json.loads(Path(opts['--motion']).read_text('utf8'))
+payload=json.loads(Path(opts['--plan']).read_text('utf8'))
 sc=bpy.context.scene
 checks=[]
 def check(name,ok,detail):checks.append({'check':name,'passed':bool(ok),'evidence':detail})
@@ -407,7 +408,7 @@ report={'format':'nvp.motion.blender.audit.v1','passed':all(x['passed'] for x in
         'checks':checks,'blender':bpy.app.version_string}
 Path(opts['--audit']).write_text(json.dumps(report,indent=2,sort_keys=True),'utf8')
 if not report['passed']:raise RuntimeError('Motion rig native audit failed')
-if opts.get('--skip-render')!='1':
+if '--preview' in opts:
     sc.frame_set(max(1,int(sc.frame_end/2)))
     sc.render.engine='BLENDER_WORKBENCH'
     sc.render.filepath=opts['--preview']
@@ -417,35 +418,108 @@ if opts.get('--skip-render')!='1':
 '''
 
 
-def run_motion_acceptance(service,pid,sid,directory,*,executable='blender',render_preview=True,timeout=180):
-    root=Path(directory).resolve();root.mkdir(parents=True,exist_ok=True)
+def run_motion_acceptance(service,pid,sid,directory,*,executable='blender',
+                          render_preview=True,timeout=180,supervisor=None,
+                          verify_creator_action=None,creator_event=None):
+    """Original PROD-06 acceptance exclusively through the pinned native host.
+
+    The previous W1-G direct Blender launcher is deliberately retired: both
+    jobs are typed, single-use BlenderOperation records, their script/source
+    SHA and output files are reverified, and strict private OS custody is
+    mandatory. No privileged process starts without a trusted host and
+    separately verified creator authorization. Source-only scene/Take
+    approval is not worker-execution authorization.
+    """
+    root=Path(directory)
+    if root.is_symlink():
+        raise RuntimeError('Original motion derivative root is linked')
+    root.mkdir(parents=True,exist_ok=True)
+    root=root.resolve()
     pkg=service.export(pid,sid)
+    script=service.blender_script(pid,sid)
+    motion=compact(pkg['motion'])
+    audit_script=MOTION_AUDIT_SCRIPT
     paths={'script':root/'build_motion.py','motion':root/'motion.json',
-           'audit_script':root/'audit_motion.py','blend':root/'motion.blend',
-           'audit':root/'motion_audit.json','preview':root/'motion_preview.png'}
-    paths['script'].write_text(service.blender_script(pid,sid),'utf8')
-    paths['motion'].write_text(compact(pkg['motion']),'utf8')
-    paths['audit_script'].write_text(MOTION_AUDIT_SCRIPT,'utf8')
-    probe=blender_available(executable)
-    if not probe['available']:
-        return {'status':'blocked_no_blender','reason':probe['reason'],'script':str(paths['script'])}
-    cmds=[
-        [probe['path'],'-b','--factory-startup','-t','2','--python',str(paths['script']),'--','--output',str(paths['blend'])],
-        [probe['path'],'-b',str(paths['blend']),'-t','2','--python',str(paths['audit_script']),'--',
-         '--motion',str(paths['motion']),'--audit',str(paths['audit']),'--preview',str(paths['preview'])]
-    ]
-    if not render_preview:cmds[1].extend(['--skip-render','1'])
-    logs=[]
-    for cmd in cmds:
-        try:p=run_trusted_blender(cmd,capture_output=True,text=True,cwd=root,timeout=timeout)
-        except subprocess.TimeoutExpired:return {'status':'failed','reason':'Blender timed out','step':len(logs)+1}
-        logs.append({'exit_code':p.returncode,'stdout_tail':p.stdout[-1500:],'stderr_tail':p.stderr[-2000:]})
-        if p.returncode:return {'status':'failed','reason':'Native Blender build/audit failed','steps':logs}
-    if not paths['blend'].is_file() or not paths['audit'].is_file() or (render_preview and not paths['preview'].is_file()):
-        return {'status':'failed','reason':'Native Blender output missing','steps':logs}
-    report=json.loads(paths['audit'].read_text('utf8'))
-    if not report['passed']:return {'status':'failed','reason':'Rig/bone audit disagreed','report':report}
+           'audit_script':root/'audit_motion.py'}
+    for name,payload in (('script',script),('motion',motion),
+                         ('audit_script',audit_script)):
+        with paths[name].open('x',encoding='utf8') as fd:
+            fd.write(payload)
+    if supervisor is None:
+        probe=blender_available(executable)
+        if not probe['available']:
+            return {'status':'blocked_no_blender','reason':probe['reason'],
+                    'script':str(paths['script'])}
+        return {'status':'blocked_protected_host_required',
+                'reason':'Original Blender motion needs a trusted OS-owned worker host',
+                'script':str(paths['script'])}
+    if (not isinstance(supervisor,BlenderWorkerSupervisor) or
+        not callable(verify_creator_action) or
+        type(timeout) is not int or not 1<=timeout<=600 or
+        type(render_preview) is not bool):
+        raise PermissionError('Protected worker and explicit director authority required')
+    build_hash=hashlib.sha256(script.encode('utf8')).hexdigest()
+    motion_hash=hashlib.sha256(motion.encode('utf8')).hexdigest()
+    audit_hash=hashlib.sha256(audit_script.encode('utf8')).hexdigest()
+    source_hash=digest({'project_id':pid,'scene_id':sid,'motion_sha256':motion_hash,
+                        'build_script_sha256':build_hash,'audit_sha256':audit_hash})
+    build_id='motion_'+source_hash[:24]+'_build'
+    audit_id='motion_'+source_hash[:24]+'_audit'
+    scope={'operation':'nvp.motion.authorize_strict_native_audit.v1',
+           'project_id':pid,'scene_id':sid,'source_sha256':source_hash,
+           'build_script_sha256':build_hash,'audit_script_sha256':audit_hash,
+           'original_motion_sha256':motion_hash,'job_ids':[build_id,audit_id],
+           'render_preview':render_preview,'film_master_approved':False}
+    if verify_creator_action(creator_event,dict(scope)) is not True:
+        raise PermissionError('Creator did not independently authorize Blender motion worker')
+    if (service.export(pid,sid)!=pkg or
+        service.blender_script(pid,sid)!=script):
+        raise RuntimeError('Approved motion source changed before worker admission')
+    build_dir=supervisor.root/build_id
+    audit_dir=supervisor.root/audit_id
+    for target in (build_dir,audit_dir):
+        if target.exists() or target.is_symlink():
+            raise RuntimeError('Motion worker identity already staged; never replay')
+    build_dir.mkdir()
+    for name,payload in (('build_motion.py',script),):
+        (build_dir/name).write_text(payload,'utf8')
+    build=BlenderOperation(
+        job_id=build_id,script='build_motion.py',script_sha256=build_hash,
+        inputs={},outputs={'motion.blend':'blend'},
+        arguments={'--output':'motion.blend'},timeout_seconds=timeout,
+        require_linux_cgroup_v2=True,require_private_isolation=True)
+    built=supervisor.run(build)
+    if built['state']!='SUCCEEDED':
+        return {'status':'failed','stage':'build','receipt':built}
+    supervisor.verify_completed(build_id)
+    audit_dir.mkdir()
+    shutil.copyfile(build_dir/'motion.blend',audit_dir/'motion.blend')
+    (audit_dir/'motion.json').write_text(motion,'utf8')
+    (audit_dir/'audit_motion.py').write_text(audit_script,'utf8')
+    outputs={'motion_audit.json':'json_audit'}
+    arguments={'--plan':'motion.json','--audit':'motion_audit.json'}
+    if render_preview:
+        outputs['motion_preview.png']='png'
+        arguments['--preview']='motion_preview.png'
+    audit=BlenderOperation(
+        job_id=audit_id,script='audit_motion.py',script_sha256=audit_hash,
+        scene='motion.blend',
+        inputs={'motion.blend':sha_file(audit_dir/'motion.blend'),
+                'motion.json':motion_hash},
+        outputs=outputs,arguments=arguments,timeout_seconds=timeout,
+        require_linux_cgroup_v2=True,require_private_isolation=True)
+    audited=supervisor.run(audit)
+    if audited['state']!='SUCCEEDED':
+        return {'status':'failed','stage':'audit','receipt':audited}
+    supervisor.verify_completed(audit_id)
+    supervisor.verify_completed(build_id)
+    report=json.loads((audit_dir/'motion_audit.json').read_text('utf8'))
+    if report.get('passed') is not True:
+        raise RuntimeError('Native supervisor did not verify motion audit')
     return {'status':'passed_blender' if render_preview else 'passed_blender_audit_only',
-            'checks':len(report['checks']),'blend':str(paths['blend']),
-            'preview':str(paths['preview']) if render_preview else None,'audit':str(paths['audit']),
-            'version':probe['version']}
+            'checks':len(report['checks']),'blend':str(build_dir/'motion.blend'),
+            'preview':str(audit_dir/'motion_preview.png') if render_preview else None,
+            'audit':str(audit_dir/'motion_audit.json'),
+            'version':supervisor.blender_version,
+            'build_job_id':build_id,'audit_job_id':audit_id,
+            'native_supervisor_verified':True,'film_master_approved':False}

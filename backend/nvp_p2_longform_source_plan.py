@@ -224,7 +224,12 @@ class NativeLongformFilmPlan:
             expected={
                 "first_frame":entry["first_frame"],
                 "frame_count":entry["frame_count"],
-                "source_take_sha256":entry["source_take_sha256"]}
+                "source_take_id":entry["source_take_id"],
+                "source_take_sha256":entry["source_take_sha256"],
+                "source_shot_id":entry["source_shot_id"],
+                "source_shot_sha256":entry["source_shot_sha256"],
+                "source_start_tick":entry["source_start_tick"],
+                "audio_samples":entry["frame_count"] * 2000}
             if any(proof.get(k)!=v for k,v in expected.items()):
                 raise RuntimeError("Longform completed chunk cannot be attributed to this source reel")
             # The original P1-F plan must also belong to THIS exact
@@ -239,8 +244,11 @@ class NativeLongformFilmPlan:
                 plan["source_start_tick"]!=entry["source_start_tick"]):
                 raise RuntimeError("Completed chunk belongs to another source film or optical setup")
             verified.append({"chunk_id":entry["chunk_id"],
+                             "first_frame":entry["first_frame"],
                              "manifest_sha256":proof["manifest_sha256"],
-                             "frames":entry["frame_count"]})
+                             "audio_sha256":proof["audio_sha256"],
+                             "frames":entry["frame_count"],
+                             "audio_samples":proof["audio_samples"]})
         return {"format":FORMAT,"plan_sha256":page["plan_sha256"],
                 "page_start_index":first_index,
                 "verified_chunks":verified,"missing_chunks":missing,
@@ -252,6 +260,7 @@ class NativeLongformFilmPlan:
         doc=self.open(project_id,plan_id,revision)["data"]
         count=0
         frames=0
+        samples=0
         digest=hashlib.sha256()
         for start in range(0,doc["total_chunks"],MAX_PAGE):
             result=self.reconcile_page(
@@ -265,13 +274,21 @@ class NativeLongformFilmPlan:
                         "master_approved":False}
             for row in result["verified_chunks"]:
                 digest.update(_canon(row)+b"\n")
+                if (row["first_frame"] != frames or
+                    row["audio_samples"] != row["frames"] * 2000):
+                    raise RuntimeError("Original reel picture/audio clock has a gap or overlap")
                 count+=1
                 frames+=row["frames"]
-        if count!=doc["total_chunks"] or frames!=doc["total_frames"]:
+                samples+=row["audio_samples"]
+        if (count!=doc["total_chunks"] or frames!=doc["total_frames"] or
+            samples!=doc["total_frames"]*2000):
             raise RuntimeError("A longform film cannot pass without every original source frame")
         return {"format":FORMAT,
                 "status":"ALL_TECHNICAL_PICTURE_PCM_DERIVATIVES_VERIFIED_NOT_MASTER",
                 "verified_chunks":count,"verified_frames":frames,
+                "verified_audio_samples_48khz":samples,
+                "verified_30_minute_original_film":(
+                    frames >= LONGFORM_FRAMES and doc["is_thirty_minute_longform"]),
                 "completed_manifest_chain_sha256":digest.hexdigest(),
                 "original_source_mutated":False,"master_approved":False,
                 "feature_artistry_accepted":False,

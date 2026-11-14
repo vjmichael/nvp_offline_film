@@ -251,6 +251,141 @@ class OriginalNineCameraFilmSet:
                 "native_render_frames_produced":False}
 
 
+CUT_FORMAT = "nvp.usd_film01i.original_nine_camera_editorial_cut.v1"
+MAX_ORIGINAL_CUTS = 240
+
+
+def _checked_original_camera_cuts(rig, segments):
+    """Pure fail-closed 0..720 frame source-shot selection (exclusive stops)."""
+    if (type(rig) is not dict or type(segments) is not list or
+        not 1 <= len(segments) <= MAX_ORIGINAL_CUTS):
+        raise ValueError("Bounded original nine-camera edit required")
+    cameras = rig.get("cameras")
+    if (type(cameras) is not list or len(cameras) != 9 or
+        len({c["camera_shot_id"] for c in cameras}) != 9):
+        raise ValueError("Only nine distinct original camera shots may be edited")
+    source = {x["camera_shot_id"]: x for x in cameras}
+    cursor = 0
+    result = []
+    for segment in segments:
+        if type(segment) is not dict or set(segment) != {
+            "start_frame", "stop_frame", "camera_shot_id",
+            "camera_shot_sha256"
+        }:
+            raise ValueError("Editorial cut needs exact source-shot reference")
+        start, stop = segment["start_frame"], segment["stop_frame"]
+        if (type(start) is not int or type(stop) is not int or
+            start != cursor or not start < stop <= FRAMES_PER_CAMERA):
+            raise ValueError("Nine-camera film has a gap, overlap or invalid frame cut")
+        shot = source.get(segment["camera_shot_id"])
+        if (shot is None or
+            segment["camera_shot_sha256"] != shot["camera_shot_sha256"]):
+            raise PermissionError("Selected camera does not match original frozen shot")
+        result.append(dict(segment))
+        cursor = stop
+    if cursor != FRAMES_PER_CAMERA:
+        raise ValueError("Original 30-second performance must have all 720 frames")
+    return result
+
+
+class OriginalNineCameraEditorialCut:
+    """One immutable 30-second edit of nine views, not nine performance Takes."""
+
+    def __init__(self, index: FilmIndex, *, verify_director_action):
+        if not isinstance(index, FilmIndex) or not callable(verify_director_action):
+            raise TypeError("Original FilmIndex and independent director authority required")
+        self.index = index
+        self.approve = verify_director_action
+
+    def _prepare(self, pid, rig_id, segments):
+        _require_pid(pid)
+        _id(rig_id, "source nine-camera rig")
+        source = OriginalNineCameraFilmSet(
+            self.index, verify_creator_action=lambda *_: False).verify(pid, rig_id)
+        stored = self.index.read_revision(pid, rig_id, 1)
+        rig = stored["data"]
+        checked = _checked_original_camera_cuts(rig, segments)
+        return {
+            "format": CUT_FORMAT, "source_rig_id": rig_id,
+            "source_rig_sha256": source["rig_sha256"],
+            "world_take_id": rig["world_take_id"],
+            "world_take_sha256": rig["world_take_sha256"],
+            "original_world_sha256": rig["original_world_sha256"],
+            "source_performance_sha256": rig["source_performance_sha256"],
+            "original_scene_take_sha256": rig["source_scene_take_sha256"],
+            "source_actor_take_count": 1, "fps": FPS,
+            "total_frames": FRAMES_PER_CAMERA,
+            "segments": checked, "cut_sha256": _digest(checked),
+            "original_audio_not_triplicated": True,
+            "source_performance_modified": False,
+            "frames_rendered": 0, "film_master_approved": False,
+        }
+
+    def publish(self, pid, cut_id, *, rig_id, segments, director_event):
+        _id(cut_id, "immutable original nine-camera cut")
+        doc = self._prepare(pid, rig_id, segments)
+        scope = {"operation": "nvp.usd_film01i.commit_original_camera_cut.v1",
+                 "project_id": pid, "cut_id": cut_id,
+                 "source_rig_sha256": doc["source_rig_sha256"],
+                 "source_performance_sha256": doc["source_performance_sha256"],
+                 "cut_sha256": doc["cut_sha256"],
+                 "film_master_approved": False}
+        if self.approve(director_event, dict(scope)) is not True:
+            raise PermissionError("Director did not authorize exact source camera cuts")
+        if self._prepare(pid, rig_id, segments) != doc:
+            raise RuntimeError("Original nine-camera source changed during approval")
+        cameras = {c["camera_shot_id"]: c for c in self.index.read_revision(
+            pid, rig_id, 1)["data"]["cameras"]}
+        deps = [{"object_id": rig_id, "revision": 1, "role": "presentation"}]
+        for shot_id in dict.fromkeys(x["camera_shot_id"] for x in doc["segments"]):
+            item = cameras[shot_id]
+            deps.append({"object_id": shot_id, "revision": item["camera_shot_revision"],
+                         "role": "camera"})
+        return self.index.register_revision(
+            pid, cut_id, "presentation", doc,
+            expected_revision=0, dependencies=deps)
+
+    def verify(self, pid, cut_id):
+        _require_pid(pid)
+        _id(cut_id, "immutable nine-camera edit")
+        stored = self.index.read_revision(pid, cut_id, 1)
+        doc = stored["data"]
+        if (stored["kind"] != "presentation" or
+            doc.get("format") != CUT_FORMAT or
+            doc.get("film_master_approved") is not False or
+            doc.get("frames_rendered") != 0):
+            raise PermissionError("Not an original source-only nine-camera cut")
+        rebuilt = self._prepare(pid, doc["source_rig_id"], doc["segments"])
+        if doc != rebuilt:
+            raise RuntimeError("Original camera/source editorial selection changed")
+        return doc
+
+    def at_frame(self, pid, cut_id, frame):
+        if type(frame) is not int or not 0 <= frame < FRAMES_PER_CAMERA:
+            raise ValueError("Original camera cut frame outside source performance")
+        doc = self.verify(pid, cut_id)
+        source = self.index.read_revision(pid, doc["source_rig_id"], 1)["data"]
+        camera_by_id = {c["camera_shot_id"]: c for c in source["cameras"]}
+        for cut in doc["segments"]:
+            if cut["start_frame"] <= frame < cut["stop_frame"]:
+                camera = camera_by_id[cut["camera_shot_id"]]
+                return {
+                    "source_rig_id": doc["source_rig_id"],
+                    "source_performance_sha256": doc["source_performance_sha256"],
+                    "world_take_sha256": doc["world_take_sha256"],
+                    "source_scene_take_sha256": doc["original_scene_take_sha256"],
+                    "selected_camera_shot_id": camera["camera_shot_id"],
+                    "selected_camera_shot_sha256": camera["camera_shot_sha256"],
+                    "selected_native_camera_path": camera["native_composed_camera_path"],
+                    "original_film_frame": frame,
+                    "original_film_tick": frame * T // FPS,
+                    "source_actors_unchanged": True,
+                    "source_audio_unchanged": True,
+                    "rendered": False,
+                }
+        raise RuntimeError("Verified camera cut has an uncovered source frame")
+
+
 class OriginalFilmPerformanceSampler:
     """Evaluate one source actor state per tick; reuse across nine cameras."""
     def __init__(self,index:FilmIndex,pid,rig_id):
@@ -337,3 +472,30 @@ class OriginalFilmPerformanceSampler:
                 "source_actor_world_positions_m":actor_positions,
                 "nine_synchronized_original_camera_views":cameras,
                 "original_source_evaluated_not_rendered":True}
+
+    def selected_frame(self, cut_id, index):
+        """Actual sampled original actor state, with one director-selected view."""
+        if self.world is None:
+            raise RuntimeError("Native original world is not open")
+        cut = OriginalNineCameraEditorialCut(
+            self.index, verify_director_action=lambda *_: False
+        ).at_frame(self.pid, cut_id, index)
+        if cut["source_rig_id"] != self.rig_id:
+            raise PermissionError("Selected cut belongs to another original camera rig")
+        source = self.frame(index)
+        views = [c for c in source["nine_synchronized_original_camera_views"]
+                 if (c["camera_shot_sha256"] ==
+                     cut["selected_camera_shot_sha256"] and
+                     c["camera_path"] == cut["selected_native_camera_path"])]
+        if len(views) != 1:
+            raise RuntimeError("Selected source camera is not in sampled original USD")
+        if (views[0]["original_performance_sha256"] !=
+            cut["source_performance_sha256"] or
+            views[0]["original_film_tick"] != cut["original_film_tick"]):
+            raise RuntimeError("Selected shot differs from original actor performance")
+        return {"selection": cut, "source_actor_state_sha256":
+                source["source_actor_state_sha256"],
+                "original_actor_world_positions_m":
+                source["source_actor_world_positions_m"],
+                "selected_source_camera": views[0],
+                "rendered": False, "film_master_approved": False}
