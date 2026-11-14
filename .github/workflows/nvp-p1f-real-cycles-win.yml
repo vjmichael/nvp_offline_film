@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'backend/nvp_p1f_imported_actor.py'
+      - 'backend/nvp_p1f_production_character_assets.py'
+      - 'backend/nvp_p1f_glb_mesh_audit.py'
+      - 'tests/test_nvp_p1f_production_character_real_glb_native.py'
       - 'backend/nvp_p1f_reviewed_pbr_materials.py'
       - 'tests/test_nvp_p1f_reviewed_pbr_materials_native.py'
       - 'tests/test_nvp_p1f_pbr_real_cycles_win.py'
@@ -81,3 +84,5 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Native original film shot UV/PBR source binding failed" }
           python -m unittest discover -s tests -p 'test_nvp_p1f_shot_material_real_cycles_win.py' -v
           if ($LASTEXITCODE -ne 0) { throw "Genuine combined actor+PBR two-shot Cycles/PCM delivery failed" }
+          python -m unittest discover -s tests -p 'test_nvp_p1f_production_character_real_glb_native.py' -v
+          if ($LASTEXITCODE -ne 0) { throw "Actual Blender-exported GLB to original OpenUSD ActorID/Take native source bridge failed" }
