@@ -1,0 +1,195 @@
+name: NVP INT-02C / W1-G exact-head native Cycles and worker matrix
+# CONV-03/04 mainline reconciliation: original native matrix retained as a
+# MANUAL batch gate on the EXISTING convergence branch. No per-fix CI triggers.
+# Dispatch on nvp/mainline-convergence-20261113 and verify exact source SHA.
+# An unprovisioned kernel or missing OS custody is NOT acceptance.
+# Isolated integration branch only. No release, merge, or physical-human approval.
+on:
+  workflow_dispatch:
+# Preserve only the latest candidate acceptance run per branch/workflow.
+# Superseded source heads must not monopolize finite native runners.
+concurrency:
+  group: nvp-w1g-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-python-contracts-linux:
+    name: Linux exact-head W1-G and INT-02C contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install tested native source dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install --only-binary=:all: -r requirements-w1g-release-review.txt
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+      - name: Exact-head compile and native refusal/transaction tests
+        run: |
+          python -m compileall -q backend tools tests
+          python -m unittest discover -s tests -p 'test_nvp_int02_edited_film.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_int02_playable_preview.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1bc_actor_dialogue_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1bc_glb_scene_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1def_p2_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_int02_shot_composition.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_native_package.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_protected_upgrade.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_first_party_result_verifier.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_native_link_audit.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_webview_ipc_surface.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_release_build_marker.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1f_reel_audit.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_supply_candidate.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_owned_subprocess.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_launch_surface_audit.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_legacy_blender_launch.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_filming_windows_release.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1a_original_capture_worker_bridge.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_plan02b_native_capture.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_filming_worker_custody.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_release_gate.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_production_authority.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_encrypted_review.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_signed_wheelhouse.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_reconcile_compiled_release.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_physical_efs_review.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_supply_chain_hardening.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_w1g_release_safety.py' -v
+          python -m unittest discover -s tests -p 'test_blender_worker.py' -v
+
+  native-python-contracts-windows:
+    name: Windows exact-head W1-G and INT-02C contracts
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install tested native source dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx pywin32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: -r requirements-w1g-release-review.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile and run Windows native matrix
+        shell: pwsh
+        run: |
+          python -m compileall -q backend tools tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files=@('test_nvp_int02_edited_film.py','test_nvp_int02_playable_preview.py','test_nvp_p1bc_actor_dialogue_native.py','test_nvp_p1bc_glb_scene_native.py','test_nvp_p1def_p2_native.py','test_nvp_int02_shot_composition.py',
+            'test_nvp_w1g_native_package.py','test_nvp_w1g_protected_upgrade.py',
+            'test_nvp_w1g_first_party_result_verifier.py',
+            'test_nvp_w1g_native_link_audit.py',
+            'test_nvp_w1g_release_safety.py','test_nvp_w1g_release_build_marker.py',
+            'test_nvp_w1g_release_gate.py','test_nvp_w1g_owned_subprocess.py',
+            'test_nvp_w1g_launch_surface_audit.py',
+            'test_nvp_w1g_legacy_blender_launch.py','test_nvp_filming_windows_release.py',
+            'test_nvp_p1a_original_capture_worker_bridge.py',
+            'test_nvp_plan02b_native_capture.py',
+            'test_nvp_filming_worker_custody.py','test_nvp_w1f_reel_audit.py',
+            'test_nvp_w1g_supply_candidate.py','test_nvp_w1g_production_authority.py',
+            'test_nvp_w1g_encrypted_review.py','test_nvp_w1g_signed_wheelhouse.py',
+            'test_nvp_w1g_reconcile_compiled_release.py',
+            'test_nvp_w1g_physical_efs_review.py',
+            'test_nvp_w1g_supply_chain_hardening.py',
+            'test_nvp_webview_ipc_surface.py','test_blender_worker.py')
+          foreach ($f in $files) {
+            python -m unittest discover -s tests -p $f -v
+            if ($LASTEXITCODE -ne 0) { throw "Native matrix failed: $f" }
+          }
+
+  real-cycles-linux:
+    name: Genuine OpenUSD-to-Blender-Cycles actor/camera/light/frame and SHA
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install genuine Blender, display, and native USD
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          # The original Linux runner got HTTP 403 on the old Blender 5.2.3
+          # URL. Only accept current official 5.2 LTS artifacts and their SHA.
+          version=5.2.4
+          archive="blender-${version}-linux-x64.tar.xz"
+          for name in "$archive" "blender-${version}.sha256"; do
+            if [[ "$name" == *.sha256 ]]; then target=blender.sha256
+            else target="$name"; fi
+            fetched=0
+            for base in https://download.blender.org/release/Blender5.2 https://mirror.blender.org/release/Blender5.2; do
+              if curl --fail --location --retry 2 --retry-delay 3 "$base/$name" -o "$target"; then
+                fetched=1
+                break
+              fi
+            done
+            test "$fetched" = 1 || { echo "Official Blender artifact missing: $name"; exit 1; }
+          done
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p /tmp/nvp-int02c-blender
+          tar -xJf "$archive" -C /tmp/nvp-int02c-blender --strip-components=1
+          echo "/tmp/nvp-int02c-blender" >> "$GITHUB_PATH"
+          /tmp/nvp-int02c-blender/blender -b --version | head -n 2
+      - name: Launch a real SHA-pinned native Cycles worker
+        run: |
+          mkdir -p acceptance_artifacts
+          xvfb-run -a python -m tools.nvp_int02_real_cycles_matrix --out acceptance_artifacts/int02c-linux-real-cycles --blender "$(command -v blender)"
+      - name: Persist genuine renderer and worker journal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-int02c-real-linux-cycles
+          path: acceptance_artifacts/int02c-linux-real-cycles/
+          retention-days: 7
+          if-no-files-found: warn
+
+  real-cycles-windows:
+    name: Genuine Windows Blender Cycles inside suspended native Job Object
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install genuine Windows Blender and native USD
+        shell: pwsh
+        run: |
+          choco install blender -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Genuine Blender provisioning failed' }
+          python -m pip install -r requirements-foundation.txt httpx pywin32
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Launch actual Windows Job-contained Cycles renderer
+        shell: pwsh
+        run: |
+          $blender=(Get-ChildItem "$env:ProgramFiles\Blender Foundation" -Recurse -Filter blender.exe -ErrorAction Stop | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $blender) { throw 'No genuine Windows Blender binary found' }
+          New-Item -ItemType Directory -Path acceptance_artifacts -Force | Out-Null
+          python -m tools.nvp_int02_real_cycles_matrix --out acceptance_artifacts/int02c-windows-real-cycles --blender "$blender"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native Blender/Cycles/USD/Job worker failed' }
+      - name: Persist real Windows Cycles and kernel-supervision evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-int02c-real-windows-cycles
+          path: acceptance_artifacts/int02c-windows-real-cycles/
+          retention-days: 7
+          if-no-files-found: warn

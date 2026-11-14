@@ -1,0 +1,30 @@
+name: NVP P1-A device-producer source checks
+# CONV-03/04 mainline reconciliation: original native matrix retained as a
+# MANUAL batch gate on the EXISTING convergence branch. No per-fix CI triggers.
+# Dispatch on nvp/mainline-convergence-20261113 and verify exact source SHA.
+# An unprovisioned kernel or missing OS custody is NOT acceptance.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  source-unit:
+    name: Source + mocked producer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest
+      - name: Compile changed Python source
+        run: python -m py_compile backend/nvp_device_producer_custody.py backend/nvp_native_live_take.py backend/nvp_native_independent_take.py tools/nvp_native_device_producer_worker.py tests/test_nvp_p1a_device_producer.py tools/nvp_p1a_physical_device_preflight.py tests/test_nvp_p1a_physical_device_preflight.py tools/nvp_p1b_physical_device_acceptance.py tests/test_nvp_p1b_physical_contract.py tools/nvp_desktop_alpha.py
+      - name: Read-only physical-device contract tests (NO hardware claimed)
+        run: python -m unittest discover -s tests -p test_nvp_p1a_physical_device_preflight.py -v
+      - name: Isolated no-hardware producer tests
+        run: python -m pytest -q tests/test_nvp_p1a_device_producer.py tests/test_nvp_p1b_physical_contract.py

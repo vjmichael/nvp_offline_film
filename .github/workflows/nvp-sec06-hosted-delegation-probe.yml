@@ -1,0 +1,45 @@
+name: NVP SEC-06 genuine hosted systemd delegated-cgroup probe
+# CONV-03/04 mainline reconciliation: original native matrix retained as a
+# MANUAL batch gate on the EXISTING convergence branch. No per-fix CI triggers.
+# Dispatch on nvp/mainline-convergence-20261113 and verify exact source SHA.
+# An unprovisioned kernel or missing OS custody is NOT acceptance.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hosted-kernel-delegation-probe:
+    name: Real Ubuntu systemd delegated scope and cgroup ancestor migration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile actual native security probe
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          python -m compileall -q backend/nvp_worker_linux_cgroup.py backend/nvp_worker_linux_launcher.py backend/nvp_worker_cgroup_guardian.py tests/test_nvp_sec06_linux_ancestor_migration.py
+      - name: Require actual cgroup-v2 and systemd
+        run: |
+          set -euo pipefail
+          cat /proc/self/cgroup
+          cat /sys/fs/cgroup/cgroup.controllers
+          test -f /sys/fs/cgroup/cgroup.controllers
+          test "$(ps -p 1 -o comm=)" = systemd
+          sudo systemctl is-system-running || true
+      - name: Native systemd Delegate=yes and ancestor migration rejection
+        run: |
+          set -euo pipefail
+          # Scope is intentionally ephemeral: NEVER mutate the agent's
+          # ordinary cgroup tree; systemd provisions the temporary scope.
+          sudo systemd-run --wait --collect --pipe --same-dir \
+            --unit=nvp-sec06-native-delegation \
+            --property=Type=exec \
+            --property=Delegate=yes \
+            --property=DelegateSubgroup=host \
+            /usr/bin/env NVP_REQUIRE_DELEGATED_CGROUP=1 \
+            PYTHONPATH="$GITHUB_WORKSPACE" python3 -m unittest discover \
+            -s tests -p test_nvp_sec06_linux_ancestor_migration.py -v

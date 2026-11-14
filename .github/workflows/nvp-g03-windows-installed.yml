@@ -1,0 +1,278 @@
+name: G03 Director Film Home Installed Windows NSIS Acceptance
+# CONV-03/04 mainline reconciliation: original native matrix retained as a
+# MANUAL batch gate on the EXISTING convergence branch. No per-fix CI triggers.
+# Dispatch on nvp/mainline-convergence-20261113 and verify exact source SHA.
+# An unprovisioned kernel or missing OS custody is NOT acceptance.
+# Isolated G03 acceptance workflow; does not modify canonical DATA-AV PR #74.
+on:
+  workflow_dispatch:
+concurrency:
+  group: g03-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+jobs:
+  native-installer:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax-check owner-operated Windows acceptance handoff (do not fabricate results)
+        shell: pwsh
+        run: |
+          $tokens=$null
+          $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'tools/nvp_g03_physical_windows_acceptance.ps1').Path,
+            [ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.ToString() }
+            throw 'Physical Windows handoff script has syntax errors'
+          }
+          Write-Host 'G03_PHYSICAL_HANDOFF_SCRIPT_SYNTAX_PASS_NOT_EXECUTED'
+      - name: Verify NVP packaging guard rejects fake Windows payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v
+      - name: Build offline React application
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          npm install --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          if (-not (Test-Path frontend/dist/index.html)) { throw 'No bundled UI' }
+          if (-not (Test-Path frontend/dist/postproduction.html)) { throw 'Missing separate film editor' }
+          if (-not (Test-Path frontend/dist/assets -PathType Container)) { throw 'Missing offline assets' }
+      - name: Install native desktop and packaging dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # SLATE-08B's bundled native scene readers must have real OpenUSD.
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19' 'cryptography>=43,<49' 'sounddevice>=0.5.0,<0.6'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile actual desktop entry and build one-directory native EXE
+        shell: pwsh
+        run: |
+          python -m compileall -q tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all sounddevice --collect-submodules backend tools/nvp_desktop_alpha.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
+          python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS payload failed architecture and bundled-UI audit' }
+          & 'dist/NVP/NVP.exe' --smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Uninstalled native alpha smoke failed' }
+      - name: Create NSIS single-click installer
+        shell: pwsh
+        run: |
+          $candidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'),
+            (Join-Path $env:ProgramFiles 'NSIS/makensis.exe'),
+            (Join-Path $env:ChocolateyInstall 'bin/makensis.exe')
+          )
+          $nsis = $candidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $nsis) { throw 'Pinned installed NSIS makensis.exe not found' }
+          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS failed' }
+          if (-not (Test-Path 'dist/NVP-Alpha-Setup.exe')) { throw 'Missing NSIS installer' }
+      - name: Silent install and execute installed native alpha
+        shell: pwsh
+        run: |
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-g03-installed-smoke-stages.txt'
+          function Run-Checked([string]$exe,[string]$argument,[int]$seconds,[string]$label) {
+            Add-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH -Value ("WIN_CI_BEGIN "+$label)
+            $p=Start-Process -FilePath $exe -ArgumentList $argument -PassThru
+            if (-not $p.WaitForExit($seconds*1000)) {
+              & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
+              Get-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH
+              throw "Installed native process timed out: $label ($seconds seconds)"
+            }
+            Add-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH -Value ("WIN_CI_EXIT "+$label+" "+$p.ExitCode)
+            if ($p.ExitCode -ne 0) {
+              Get-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH
+              throw "Installed native process failed: $label with code $($p.ExitCode)"
+            }
+          }
+          $setup=(Resolve-Path 'dist/NVP-Alpha-Setup.exe').Path
+          Run-Checked $setup '/S' 180 'nsis_silent_install'
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          if (-not (Test-Path $installed)) { throw 'Installed NVP.exe missing' }
+          $builtHash=(Get-FileHash 'dist/NVP/NVP.exe' -Algorithm SHA256).Hash
+          $installedHash=(Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
+          if ($installedHash -ne $builtHash) { throw 'Installed NVP.exe does not match verified build payload' }
+          $env:NVP_HOME=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
+          # GITHUB_ENV carries the exact owned path into subsequent isolated
+          # PowerShell steps; never depend on the previous step's process env.
+          "NVP_HOME=$env:NVP_HOME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Run-Checked $installed '--smoke-vault' 110 'installed_windows_dpapi_source_archive'
+          Run-Checked $installed '--smoke-create' 110 'installed_project_create'
+          Run-Checked $installed '--smoke-reopen' 110 'installed_project_reopen'
+          Run-Checked $installed '--smoke-live-create' 110 'encrypted_live_film_creation_and_disk_inspection'
+          Run-Checked $installed '--smoke-live-reopen' 110 'encrypted_live_reopen_source_and_relock'
+          Run-Checked $installed '--smoke-live-worker' 110 'native_job_object_opensud_three_camera_staging_encrypted'
+          Run-Checked $installed '--smoke-legacy-migration' 110 'legacy_sql_filmindex_encrypted_candidate_without_cutover'
+          $expectedReadback='g03_legacy_independent_native_original_byte_reopen_pass'
+          if (-not (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) -or
+              -not ((Get-Content -Raw -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH).Contains($expectedReadback))) {
+            throw 'G03 independent installed NVP.exe recovery process did not authenticate known original-film bytes'
+          }
+          if (-not ((Get-Content -Raw -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH).Contains(
+               'g03_legacy_independent_full_sqlite_filmindex_pcm_usd_recovery_pass'))) {
+            throw 'G03 full original-film SQL/FilmIndex/USD/PCM reconstruction lacks independent installed receipt'
+          }
+          Run-Checked $installed '--smoke-capture-denied' 110 'physical_microphone_consent_refusal_no_pcm_no_worker'
+          if (-not (Test-Path (Join-Path $env:NVP_HOME 'nvp_studio.sqlite3'))) {
+            throw 'No persistent original film project database'
+          }
+          Get-Content -Path $env:NVP_SMOKE_DIAGNOSTIC_PATH
+      - name: Verify real installed WebView2 project navigation and Windows UIAutomation
+        shell: pwsh
+        run: |
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-g03-installed-smoke-stages.txt'
+          $env:NVP_G03_UIA_WELCOME_HOLD_SECONDS='18'
+          $env:NVP_G03_UIA_HOLD_SECONDS='30'
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe'
+          $process=Start-Process -FilePath $installed -ArgumentList '--smoke-g03-window' -PassThru
+          function Wait-Marker([string]$marker,[int]$seconds) {
+            $until=(Get-Date).AddSeconds($seconds)
+            while((Get-Date) -lt $until) {
+              if($process.HasExited) {throw "Native WebView exited before $marker (code $($process.ExitCode))"}
+              if((Test-Path $env:NVP_SMOKE_DIAGNOSTIC_PATH) -and
+                 ((Get-Content -Raw $env:NVP_SMOKE_DIAGNOSTIC_PATH).Contains($marker))) {return}
+              Start-Sleep -Milliseconds 400
+            }
+            throw "Native WebView did not reach $marker"
+          }
+          try {
+            Wait-Marker 'g03_native_welcome_observed' 60
+            & 'tools/nvp_g03_uia_probe.ps1' -Phase welcome -ReceiptPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-welcome.json')
+            if(-not (Test-Path (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-welcome.json'))) {
+              throw 'Installed welcome UIAutomation evidence missing'
+            }
+            Wait-Marker 'g03_native_ui_observed' 75
+            & 'tools/nvp_g03_uia_probe.ps1' -Phase editor -ReceiptPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-editor.json')
+            if(-not (Test-Path (Join-Path $env:RUNNER_TEMP 'nvp-g03-uia-editor.json'))) {
+              throw 'Installed editor UIAutomation evidence missing'
+            }
+            if(-not $process.WaitForExit(80000)) {throw 'G03 native WebView did not exit after UIA'}
+            if($process.ExitCode -ne 0) {throw 'G03 native director/resume/editor WebView smoke failed'}
+            Get-Content $env:NVP_SMOKE_DIAGNOSTIC_PATH
+          } finally {
+            if(-not $process.HasExited) {
+              & taskkill.exe /PID $process.Id /T /F 2>$null | Out-Null
+            }
+          }
+      - name: Uninstall without deleting creator project data
+        shell: pwsh
+        run: |
+          $uninstaller=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
+          if (-not (Test-Path $uninstaller)) { throw 'Uninstaller missing' }
+          # Reconstruct the deterministic user-owned film path independently,
+          # and reject a missing/stale or divergent inherited environment.
+          $owned=Join-Path $env:RUNNER_TEMP 'nvp-original-installed-projects'
+          if (-not $env:NVP_HOME -or $env:NVP_HOME -ne $owned) {
+            throw 'Installed film home environment was not preserved across workflow steps'
+          }
+          if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) {
+            throw 'Missing creator SQLite film database before uninstall'
+          }
+          # Independent, byte-for-byte file evidence, including a synthetic
+          # original OpenUSD layer and source PCM file under the user's
+          # project home. Use private test content only, not a real film.
+          $originals=Join-Path $owned 'original-test-media'
+          New-Item -ItemType Directory -Force -Path $originals | Out-Null
+          [IO.File]::WriteAllBytes((Join-Path $originals 'native-source.pcm'), [byte[]](0..255))
+          [IO.File]::WriteAllText((Join-Path $originals 'scene.usda'), '#usda 1.0' + [Environment]::NewLine)
+          $before=Get-ChildItem -LiteralPath $owned -Recurse -File |
+            Where-Object { $_.Name -notlike '*-wal' -and $_.Name -notlike '*-shm' } |
+            ForEach-Object {
+              [pscustomobject]@{relative=$_.FullName.Substring($owned.Length+1);sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash;length=$_.Length}
+            } | Sort-Object relative
+          if ($before.Count -lt 3) { throw 'Insufficient independently checked original film files' }
+          $before | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-originals-before.json') -Encoding utf8
+          $result=Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
+          if (-not $result.WaitForExit(120000)) {
+            & taskkill.exe /PID $result.Id /T /F 2>$null | Out-Null
+            throw 'Native NVP NSIS uninstall timed out'
+          }
+          if ($result.ExitCode -ne 0) { throw 'Uninstall failed' }
+          Start-Sleep -Seconds 2
+          if (-not (Test-Path (Join-Path $owned 'nvp_studio.sqlite3'))) { throw 'Uninstall deleted saved film' }
+          if (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs/NVP/NVP.exe')) { throw 'Uninstall left executable' }
+          $after=Get-ChildItem -LiteralPath $owned -Recurse -File |
+            Where-Object { $_.Name -notlike '*-wal' -and $_.Name -notlike '*-shm' } |
+            ForEach-Object {
+              [pscustomobject]@{relative=$_.FullName.Substring($owned.Length+1);sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash;length=$_.Length}
+            } | Sort-Object relative
+          if (($before | ConvertTo-Json -Compress) -ne ($after | ConvertTo-Json -Compress)) {
+            throw 'Installer removed or modified original film data'
+          }
+          $after | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'nvp-g03-originals-after.json') -Encoding utf8
+          # Independently reopen the surviving SQLite via another process and
+          # verify original project count, locked movie credentials and schemas.
+          $env:G03_VERIFY_DB=Join-Path $owned 'nvp_studio.sqlite3'
+          @'
+          import os, sqlite3
+          db=sqlite3.connect(os.environ["G03_VERIFY_DB"])
+          try:
+              assert db.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
+              assert db.execute("SELECT COUNT(*) FROM projects").fetchone()[0]>=2
+              assert db.execute("SELECT COUNT(*) FROM project_access_locks").fetchone()[0]>=1
+              assert db.execute("SELECT COUNT(*) FROM projects WHERE length(screenplay)>0").fetchone()[0]>=2
+          finally:
+              db.close()
+          print("G03_INDEPENDENT_UNINSTALL_SQLITE_REOPEN_PASS")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Independent SQLite reopen after uninstall failed' }
+          Write-Host 'G03_UNINSTALL_ORIGINALS_SHA256_UNCHANGED_PASS'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-g03-uninstall-independent-evidence
+          path: |
+            ${{ runner.temp }}/nvp-g03-originals-before.json
+            ${{ runner.temp }}/nvp-g03-originals-after.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-g03-windows-uia-evidence
+          path: |
+            ${{ runner.temp }}/nvp-g03-uia-welcome.json
+            ${{ runner.temp }}/nvp-g03-uia-editor.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-g03-windows-installed-smoke-stage-logs
+          path: ${{ runner.temp }}/nvp-g03-installed-smoke-stages.txt
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-g03-windows-bundle-audit
+          path: ${{ runner.temp }}/nvp-alpha-bundle-audit.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-g03-windows-nsis-candidate
+          path: dist/NVP-Alpha-Setup.exe
+          if-no-files-found: warn
+          retention-days: 7
+
