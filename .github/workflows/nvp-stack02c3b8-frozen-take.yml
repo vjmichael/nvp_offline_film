@@ -61,6 +61,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native worker baseline failed' }
 
   linux-real-timed-native-blender:
+    # DA-00: FFmpeg-bearing Blender runtime quarantined; render unverified.
+    if: ${{ false }}
     name: Real Blender frozen moving actor/timed cuts and independent audit
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -72,7 +74,7 @@ jobs:
       - name: Install actual native Blender with virtual X display
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg prohibited"; exit 1
       - name: Actual frozen world/performance source to Blender scene and second-process actor/camera audit
         run: |
           xvfb-run -a python -m tools.nvp_stack02c3b8_real_frozen_take \
