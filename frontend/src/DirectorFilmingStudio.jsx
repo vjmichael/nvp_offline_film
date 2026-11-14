@@ -248,7 +248,7 @@ function TimeLine({duration,events,audio=[],position,onChange,playing,onPlay}){
       {events.map(e=><div className="director-film-event-mark"
         key={e.id} style={{left:(e.start_seconds/duration*100)+'%',
           width:Math.max(1.8,(e.end_seconds-e.start_seconds)/duration*100)+'%'}}
-        title={e.kind+' at '+e.start_seconds+' seconds}/>)}
+        title={e.kind+' at '+e.start_seconds+' seconds'}/>)}
       {audio.map((clip,index)=><div className="director-film-audio-mark"
         key={clip.clip_id||index}
         style={{left:(clip.start_seconds/duration*100)+'%',
