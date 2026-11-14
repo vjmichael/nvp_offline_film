@@ -8,6 +8,10 @@ on:
       - 'tests/test_nvp_p1f_reviewed_pbr_materials_native.py'
       - 'tests/test_nvp_p1f_pbr_real_cycles_win.py'
       - 'tools/nvp_p1f_pbr_environment_worker.py'
+      - 'backend/nvp_p1f_shot_material_binding.py'
+      - 'tests/test_nvp_p1f_shot_material_binding_native.py'
+      - 'tests/test_nvp_p1f_shot_material_real_cycles_win.py'
+      - 'backend/nvp_p1f_sustained_reel_queue.py'
       - 'backend/nvp_p1f_cycles_source_admission.py'
       - 'backend/nvp_p1f_cycles_picture_sound.py'
       - 'backend/nvp_p1f_multishot_reel.py'
@@ -72,3 +76,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Native original UV/PBR source and rights acceptance failed" }
           python -m unittest discover -s tests -p 'test_nvp_p1f_pbr_real_cycles_win.py' -v
           if ($LASTEXITCODE -ne 0) { throw "Real original-UV/Cycles PBR material preview failed" }
+          python -m unittest discover -s tests -p 'test_nvp_p1f_shot_material_binding_native.py' -v
+          if ($LASTEXITCODE -ne 0) { throw "Native original film shot UV/PBR source binding failed" }
+          python -m unittest discover -s tests -p 'test_nvp_p1f_shot_material_real_cycles_win.py' -v
+          if ($LASTEXITCODE -ne 0) { throw "Genuine combined actor+PBR two-shot Cycles/PCM delivery failed" }
