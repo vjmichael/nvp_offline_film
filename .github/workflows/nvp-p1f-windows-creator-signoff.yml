@@ -5,6 +5,7 @@ on:
     paths:
       - 'tools/nvp_p1f_windows_creator_signature.hpp'
       - 'tools/nvp_p1f_windows_creator_signoff.cpp'
+      - 'tools/nvp_p1f_windows_creator_signature_native_test.cpp'
       - 'tools/nvp_p1f_windows_scm_blender_broker.cpp'
       - '.github/workflows/nvp-p1f-windows-creator-signoff.yml'
   workflow_dispatch:
@@ -30,6 +31,51 @@ jobs:
           $build='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_p1f_windows_creator_signoff.exe "'+$file+'" /link user32.lib advapi32.lib crypt32.lib'
           cmd.exe /d /s /c $build
           if ($LASTEXITCODE -ne 0) { throw 'Independent creator signer compilation failed' }
+      - name: Independently verify original PKCS7 signature, exact source scope, expiry and pinned issuer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $file='tools\nvp_p1f_windows_creator_signature_native_test.cpp'
+          $build='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_p1f_windows_creator_signature_native_test.exe "'+$file+'" /link advapi32.lib crypt32.lib'
+          cmd.exe /d /s /c $build
+          if ($LASTEXITCODE -ne 0) { throw 'Native creator signature verifier compilation failed' }
+          Add-Type -AssemblyName System.Security.Cryptography.Pkcs
+          $cert=New-SelfSignedCertificate -Subject 'CN=NVP P1F Synthetic Signature Test Only' -CertStoreLocation 'Cert:\CurrentUser\My' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyExportPolicy NonExportable
+          if (-not $cert) { throw 'No distinct user-owned Windows signing key for public signature fixture' }
+          try {
+            $expiry=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()+300
+            $lines=@(
+              'nvp.p1f.original.creator_signoff.v1',
+              'operation=nvp.p1f.render_original_cycles_frame.v1',
+              'ticket=0123456789abcdef0123456789abcdef',
+              'project_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              'job_id=test_signed_frame',
+              ('plan_sha256='+('b'*64)),
+              ('blender_sha256='+('c'*64)),
+              ('script_sha256='+('d'*64)),
+              ('original_usd_sha256='+('e'*64)),
+              ('original_pcm_sha256='+('f'*64)),
+              ('frame_spec_sha256='+('0'*64)),
+              ("expires_utc_epoch_seconds=$expiry")
+            )
+            $message=[Text.Encoding]::ASCII.GetBytes(($lines -join [char]10)+[char]10)
+            $content=[System.Security.Cryptography.Pkcs.ContentInfo]::new($message)
+            $signed=[System.Security.Cryptography.Pkcs.SignedCms]::new($content,$true)
+            $signer=[System.Security.Cryptography.Pkcs.CmsSigner]::new($cert)
+            $signer.IncludeOption=[System.Security.Cryptography.X509Certificates.X509IncludeOption]::EndCertOnly
+            $signed.ComputeSignature($signer,$true)
+            [IO.File]::WriteAllBytes((Join-Path (Get-Location) 'public_creator_signature.p7s'),$signed.Encode())
+            $issuer=[Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($cert.RawData)).ToLowerInvariant()
+            & .\nvp_p1f_windows_creator_signature_native_test.exe .\public_creator_signature.p7s $issuer "$expiry"
+            if ($LASTEXITCODE -ne 0) { throw 'Original signed creator scope not independently verified' }
+          }
+          finally {
+            Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction SilentlyContinue
+            Remove-Item .\public_creator_signature.p7s -ErrorAction SilentlyContinue
+          }
       - name: Require signed release policy; refuse a model --yes switch or absent operator grant
         shell: pwsh
         run: |
