@@ -124,6 +124,17 @@ def violations():
                 issues.append((manifest,lineno,"installer pulls FFmpeg"))
         if "collect-submodules backend" in text or "collect-all backend" in text:
             issues.append((manifest,0,"installer indiscriminately bundles historical codecs"))
+    # DA-00 also forbids FFmpeg brought in transitively by Ubuntu's Blender
+    # package.  An executable-only audit misses apt's libav dependency chain.
+    # Flag the provisioning explicitly rather than calling its render PASS
+    # compliant or silently installing FFmpeg-bearing dependencies.
+    workflows=ROOT/".github"/"workflows"
+    for workflow in sorted(workflows.glob("*.yml")):
+        lines=workflow.read_text("utf-8").splitlines()
+        for lineno,line in enumerate(lines,1):
+            if re.search(r"\\b(?:apt-get|apt)\\s+install\\b[^#\\n]*\\bblender\\b",line,re.I):
+                issues.append((workflow.relative_to(ROOT).as_posix(),lineno,
+                               "Ubuntu apt Blender brings FFmpeg/libav transitive dependencies"))
     return issues
 
 
