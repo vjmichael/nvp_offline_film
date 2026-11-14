@@ -27,7 +27,8 @@ def stage():
         raise PermissionError("Native source-only SCM fixture cannot run for private film")
     if len(sys.argv)!=2:
         raise SystemExit("Usage: python -m tools.nvp_p1f_scm_public_fixture <blender.exe>")
-    from tests.test_nvp_p1f_imported_actor_native import RealImportedActorTests
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tests"))
+    from test_nvp_p1f_imported_actor_native import RealImportedActorTests
 
     binary=Path(sys.argv[1]).resolve(strict=True)
     program=Path(os.environ["ProgramData"])
