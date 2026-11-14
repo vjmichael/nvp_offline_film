@@ -139,6 +139,42 @@ class DurableOriginalShotTests(unittest.TestCase):
                  WHERE batch_id='first_batch' AND state='RUNNING'"""
             ).fetchone()[0],0)
 
+    def test_distinct_batch_ids_cannot_double_dispatch_same_original_frames(self):
+        self.create()
+        # A different one-use ID is not permission to dispatch a second
+        # native Blender Job against already-queued source-frame instants.
+        with self.assertRaisesRegex(RuntimeError,"overlapping"):
+            self.journal.create_batch(
+                self.fixture.pid,"rigged_reel_plan","overlap_attack",
+                reel_index=0,first_frame_offset=1,frame_count=2,
+                creator_event="approved_batch")
+        # Independent non-overlapping source interval remains available.
+        second=self.journal.create_batch(
+            self.fixture.pid,"rigged_reel_plan","next_original_segment",
+            reel_index=0,first_frame_offset=2,frame_count=2,
+            creator_event="approved_batch")
+        self.assertEqual(second["frames"],2)
+        with self.journal._connect() as db:
+            self.assertEqual(db.execute(
+                "SELECT COUNT(*) FROM source_batches").fetchone()[0],2)
+
+    def test_already_accepted_frame_cannot_be_dispatched_in_replacement_batch(self):
+        self.create()
+        # An interrupted batch may contain one genuine earlier accepted
+        # frame. Neither a new ID nor a newer creator event may replay it.
+        with self.journal._connect() as db:
+            db.execute("UPDATE source_frames SET state='ACCEPTED' "
+                       "WHERE batch_id='first_batch' AND frame_index=0")
+            db.execute("UPDATE source_frames SET state='FAILED' "
+                       "WHERE batch_id='first_batch' AND frame_index=1")
+            db.execute("UPDATE source_batches SET state='BLOCKED' "
+                       "WHERE batch_id='first_batch'")
+        with self.assertRaisesRegex(RuntimeError,"overlapping"):
+            self.journal.create_batch(
+                self.fixture.pid,"rigged_reel_plan","untrusted_retry",
+                reel_index=0,first_frame_offset=0,frame_count=2,
+                creator_event="approved_batch")
+
     def test_unverified_private_worker_is_refused_before_staging_any_bytes(self):
         from backend.nvp_p1f_cycles_picture_sound import P1FOriginalPictureSound
         trusted=P1FOriginalPictureSound(
