@@ -62,10 +62,24 @@ def main(argv=None):
         expected="/"+target.relative_to(Path("/sys/fs/cgroup")).as_posix()
         if _membership()!=expected:
             raise RuntimeError("Kernel did not confirm worker cgroup admission")
+        # SEC-06: mandatory inherited write isolation happens BEFORE the
+        # worker-ready signal and exec. A cgroup alone does not confine
+        # same-UID descendants from the writable host subgroup.
+        index+=4
+        from nvp_worker_linux_landlock import (
+            restrict_native_producer_writes,restrict_strict_worker_writes)
+        if index<len(argv) and argv[index]=="--landlock-spool":
+            if index+2>=len(argv):
+                raise SystemExit("Missing original source spool or executable")
+            spool=Path(argv[index+1]).resolve(strict=True)
+            if spool!=Path.cwd().resolve(strict=True):
+                raise PermissionError("Device spool differs from original worker cwd")
+            restrict_native_producer_writes(spool)
+            index+=2
+        else:
+            restrict_strict_worker_writes(Path.cwd())
         os.write(ready_fd,b"1")
         os.close(ready_fd)
-        index+=4
-
     if memory_mb:
         cap=memory_mb*1024*1024
         resource.setrlimit(resource.RLIMIT_AS,(cap,cap))
