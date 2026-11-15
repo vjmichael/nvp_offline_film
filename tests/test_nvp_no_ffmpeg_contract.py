@@ -1,0 +1,101 @@
+"""DA-00 regression: native runtime must refuse FFmpeg family imports."""
+import ast
+import tempfile
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+
+from tools import nvp_no_ffmpeg_contract as audit
+
+
+class ZeroFFmpegContractTests(unittest.TestCase):
+    def test_forbidden_imports(self):
+        for module in ("av", "av.codec", "libavfilter", "libavdevice",
+                       "libswscale", "libswresample", "imageio_ffmpeg",
+                       "ffmpeg", "ffprobe"):
+            with self.subTest(module=module):
+                tree = ast.parse("import " + module)
+                with patch.object(audit, "reached_runtime",
+                                  return_value=iter([("backend/fixture.py", tree)])):
+                    self.assertTrue(any("forbidden imported codec" in issue[2]
+                                        for issue in audit.violations()))
+
+    def test_forbidden_from_import_symbols(self):
+        for source in ("from . import av", "from ..shared import ffmpeg",
+                       "from safe import libavcodec", "from av import codec"):
+            with self.subTest(source=source):
+                tree = ast.parse(source)
+                with patch.object(audit, "reached_runtime",
+                                  return_value=iter([("backend/scenes/shot.py", tree)])):
+                    self.assertTrue(any("forbidden imported codec" in issue[2]
+                                        for issue in audit.violations()))
+
+    def test_relative_import_resolution(self):
+        tree = ast.parse("from . import local_codec\nfrom ..shared import audio\n")
+        self.assertIn("backend.scenes.local_codec",
+                      audit.imports(tree, "backend/scenes/shot.py"))
+        self.assertIn("backend.shared.audio",
+                      audit.imports(tree, "backend/scenes/shot.py"))
+        self.assertNotIn("backend.scenes.local_codec",
+                         audit.imports(tree, "backend/scenes/shot.py")[:1])
+
+    def test_relative_import_does_not_escape_package(self):
+        tree = ast.parse("from ....outside import codec\n")
+        self.assertEqual([], audit.imports(tree, "backend/scenes/shot.py"))
+
+    def test_forbidden_executable_library_dispatch(self):
+        # A command dispatch to a libav library must not bypass the audit
+        # merely because its name is not ffmpeg or ffprobe.
+        for library in ("libavcodec", "libavformat", "libavutil",
+                        "libavfilter", "libavdevice", "libswscale",
+                        "libswresample"):
+            with self.subTest(library=library):
+                tree = ast.parse("import subprocess\nsubprocess.run(['" + library + "'])")
+                with patch.object(audit, "reached_runtime",
+                                  return_value=iter([("backend/fixture.py", tree)])):
+                    self.assertTrue(any("forbidden executable codec dispatch" in issue[2]
+                                        for issue in audit.violations()))
+
+    def test_package_initializers_are_audited(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "backend" / "scenes").mkdir(parents=True)
+            (root / "backend" / "__init__.py").write_text("import av\n")
+            (root / "backend" / "scenes" / "__init__.py").write_text("import libavcodec\n")
+            (root / "backend" / "scenes" / "shot.py").write_text("import wave\n")
+            with patch.object(audit, "ROOT", root), patch.object(
+                audit, "ENTRYPOINTS", ("backend/scenes/shot.py",)
+            ):
+                reached = dict(audit.reached_runtime())
+                self.assertIn("backend/__init__.py", reached)
+                self.assertIn("backend/scenes/__init__.py", reached)
+                self.assertTrue(any("forbidden imported codec" in reason
+                                    for _, _, reason in audit.violations()))
+
+    def test_package_module_resolves_initializer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "backend" / "scenes").mkdir(parents=True)
+            (root / "backend" / "scenes" / "__init__.py").write_text("")
+            with patch.object(audit, "ROOT", root):
+                self.assertEqual(root / "backend" / "scenes" / "__init__.py",
+                                 audit.source_path("backend.scenes"))
+
+    def test_internal_data_av_source_is_not_false_positive_pyav(self):
+        # PyAV's external top-level 'av' is prohibited. Our native
+        # backend.nvp_data_av_scene is a first-party source, not PyAV.
+        self.assertFalse(audit.BAN.search("backend.nvp_data_av_scene"))
+        self.assertTrue(audit.BAN.search("av"))
+        self.assertTrue(audit.BAN.search("av.codec"))
+        self.assertTrue(audit.BAN.search("backend.scenes.av"))
+
+    def test_clean_native_import(self):
+        tree = ast.parse("import wave\nimport pathlib\n")
+        with patch.object(audit, "reached_runtime",
+                          return_value=iter([("backend/fixture.py", tree)])):
+            self.assertFalse(any("forbidden imported codec" in issue[2]
+                                 for issue in audit.violations()))
+
+
+if __name__ == "__main__":
+    unittest.main()
