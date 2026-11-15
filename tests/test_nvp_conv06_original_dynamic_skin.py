@@ -27,13 +27,16 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
         self.index=FilmIndex(studio)
         self.scenes=OpenUSDSceneBridge(self.index)
 
-    def _publish(self,*,with_skin=True):
+    def _publish(self,*,with_skin=True,with_material=False):
         skin={
             "points":[[0.,0.,0.],[1.,0.,0.],[1.,1.,0.],[0.,1.,0.]],
             "faces":[[0,1,2],[0,2,3]],
             "joint_indices":[[0],[0],[0],[0]],
             "joint_weights":[[1.],[1.],[1.],[1.]],
             "display_color":[.25,.50,.75]}
+        if with_material:
+            # Artist-authored original USD PBR input, not renderer fallback.
+            skin["roughness"]=.42
         rig={
             "path":"/World/Actor",
             "joints":["Root"],
@@ -100,7 +103,7 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
         from backend.nvp_openusd_take import OpenUSDTakeCapture
         from backend.nvp_temporal_ledger import TemporalLedger
         from backend.nvp_int02_cycles_renderer import static_composed_usd
-        scene=self._publish()
+        scene=self._publish(with_material=True)
         timeline=TemporalLedger(self.index).publish(
             self.pid,"OriginalSkinEvents",[
                 {"event_id":"OriginalActorMoves","event_kind":"action",
@@ -128,6 +131,13 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
                 camera_path="/World/Camera")
             self.assertGreater(len(layer_bytes),100)
             self.assertEqual(round(params["camera_focal_length_mm"]),50)
+            self.assertEqual(materials,[{
+                "prim_path":"/World/Actor/Rig/CharacterMesh",
+                "material_path":"/World/Actor/Rig/OriginalArtistMaterial",
+                "shader_path":"/World/Actor/Rig/OriginalArtistMaterial/PreviewSurface",
+                "linear_diffuse_rgb":[.25,.50,.75],
+                "roughness":.42,
+            }])
             flat=Sdf.Layer.CreateAnonymous("real_original_skin_source.usda")
             self.assertTrue(flat.ImportFromString(layer_bytes.decode("utf8")))
             stage=Usd.Stage.Open(flat)
@@ -145,6 +155,32 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
             static_composed_usd(
                 self.index,self.pid,"OriginalSkinTake","f"*64,0,
                 camera_path="/World/Camera")
+
+    def test_unbound_original_artist_skin_still_refuses_invented_cycles_material(self):
+        # A source display-color preview is NOT a native shaded material.
+        self._publish()
+        _,stage=self.scenes.open(self.pid,"OriginalUsdActor",1)
+        from backend.nvp_int02_usd_materials import source_preview_materials
+        with self.assertRaisesRegex(
+                RuntimeError,"cannot invent an unbound source material"):
+            source_preview_materials(stage,0)
+
+    def test_invalid_artist_roughness_is_refused_before_usd_authoring(self):
+        from backend.nvp_openusd_skinning import normalize_skin
+        original={
+            "points":[[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]],
+            "faces":[[0,1,2]],
+            "joint_indices":[[0],[0],[0]],
+            "joint_weights":[[1.],[1.],[1.]],
+            "display_color":[.25,.50,.75],
+        }
+        for invalid in (None,True,"0.42",float("nan"),-0.1,1.1):
+            with self.subTest(roughness=invalid):
+                with self.assertRaises(ValueError):
+                    normalize_skin({**original,"roughness":invalid},1)
+        # GLB provenance still requires an independently authored roughness.
+        with self.assertRaises(ValueError):
+            normalize_skin({**original,"source_glb_sha256":"a"*64},1)
 
     def test_forged_original_scene_or_implicit_skin_authority_is_refused(self):
         record=self._publish()

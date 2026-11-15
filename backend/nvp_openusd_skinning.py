@@ -80,16 +80,20 @@ def normalize_skin(skin,joint_count):
         raise ValueError("Material preview color out of RGB domain")
     out={"points":pts,"faces":polygons,"joint_indices":joints,
          "joint_weights":normalized_weights,"display_color":rgb}
+    # Original artist-authored USD skins may have an explicit source material
+    # without impersonating an imported GLB. Display color alone remains
+    # a geometry preview, NOT authority to synthesize a Cycles shader.
+    if "roughness" in skin:
+        rough=skin["roughness"]
+        if type(rough) not in (int,float) or not math.isfinite(rough) or not 0<=rough<=1:
+            raise ValueError("Original skin roughness must be a finite source-authored scalar")
+        out["roughness"]=float(rough)
     if "source_glb_sha256" in skin:
         from backend.nvp_film_index import _sha
         _sha(skin["source_glb_sha256"])
-        rough=skin.get("roughness")
-        if type(rough) not in (int,float) or not math.isfinite(rough) or not 0<=rough<=1:
+        if "roughness" not in out:
             raise ValueError("Imported GLB PBR roughness must be original authored source")
-        out.update(source_glb_sha256=skin["source_glb_sha256"],
-                   roughness=float(rough))
-    elif "roughness" in skin:
-        raise ValueError("Authored skin roughness requires imported original PBR source")
+        out["source_glb_sha256"]=skin["source_glb_sha256"]
     if "blend_shapes" in skin:
         # Historical Film03 artist-authored USD morphs remain separate from
         # GLB-imported facial_targets; never claim they are imported GLB.
@@ -214,28 +218,36 @@ def author_skin_mesh(stage,actor_path,skeleton_path,skin,joint_count):
         if (not binding.CreateBlendShapesAttr().Set(Vt.TokenArray(names)) or
             not binding.CreateBlendShapeTargetsRel().SetTargets(paths)):
             raise RuntimeError("Original GLB facial morphs not bound to native USD skin")
-    if "source_glb_sha256" in bound:
-        # Native Cycles reads this true source PBR via UsdShade; it must NOT
-        # silently substitute a white material for a skinned actor.
+    if "roughness" in bound:
+        # Author ONLY the artist-supplied color AND roughness in the original
+        # immutable skeleton layer. Native Cycles itself has no fallback
+        # permission to invent material looks for an unbound source mesh.
+        # The existing imported GLB material identity remains unchanged.
         from pxr import UsdShade
-        material=UsdShade.Material.Define(
-            stage,actor_path+"/Rig/OriginalGLBMaterial")
-        shader=UsdShade.Shader.Define(
-            stage,actor_path+"/Rig/OriginalGLBMaterial/PreviewSurface")
+        imported="source_glb_sha256" in bound
+        name="OriginalGLBMaterial" if imported else "OriginalArtistMaterial"
+        path=actor_path+"/Rig/"+name
+        material=UsdShade.Material.Define(stage,path)
+        shader=UsdShade.Shader.Define(stage,path+"/PreviewSurface")
         shader.CreateIdAttr("UsdPreviewSurface")
-        shader.CreateInput("diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
-            Gf.Vec3f(*bound["display_color"]))
-        shader.CreateInput("roughness",Sdf.ValueTypeNames.Float).Set(
-            bound["roughness"])
-        shader.CreateInput("metallic",Sdf.ValueTypeNames.Float).Set(0.0)
+        if (not shader.CreateInput(
+                "diffuseColor",Sdf.ValueTypeNames.Color3f).Set(
+                    Gf.Vec3f(*bound["display_color"])) or
+            not shader.CreateInput(
+                "roughness",Sdf.ValueTypeNames.Float).Set(bound["roughness"])):
+            raise RuntimeError("Original USD skin material source could not be authored")
+        if imported:
+            # Preserve the previously authored GLB material source contract.
+            shader.CreateInput("metallic",Sdf.ValueTypeNames.Float).Set(0.0)
         if not material.CreateSurfaceOutput().ConnectToSource(
                 shader.ConnectableAPI(),"surface"):
-            raise RuntimeError("Imported original PBR material USD binding failed")
+            raise RuntimeError("Original skinned USD source material cannot bind shader")
         if not UsdShade.MaterialBindingAPI.Apply(mesh.GetPrim()).Bind(material):
-            raise RuntimeError("Imported skinned mesh lacks original USD material binding")
-        mesh.GetPrim().CreateAttribute(
-            "nvp:sourceGLBSHA256",Sdf.ValueTypeNames.String).Set(
-                bound["source_glb_sha256"])
+            raise RuntimeError("Skinned USD mesh lacks approved source material binding")
+        if imported:
+            mesh.GetPrim().CreateAttribute(
+                "nvp:sourceGLBSHA256",Sdf.ValueTypeNames.String).Set(
+                    bound["source_glb_sha256"])
     return {
         "mesh_path":actor_path+SKIN_MESH_SUFFIX,
         "source_vertex_count":len(bound["points"]),
