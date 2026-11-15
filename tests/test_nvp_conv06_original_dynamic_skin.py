@@ -8,6 +8,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from struct import pack, unpack
 
 from backend.nvp_studio import Studio
 from backend.nvp_film_index import FilmIndex
@@ -136,7 +137,9 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
                 "material_path":"/World/Actor/Rig/OriginalArtistMaterial",
                 "shader_path":"/World/Actor/Rig/OriginalArtistMaterial/PreviewSurface",
                 "linear_diffuse_rgb":[.25,.50,.75],
-                "roughness":.42,
+                # Exact USD Float (IEEE-754 binary32) roundtrip: preserve
+                # source value and reject any other authored roughness.
+                "roughness":unpack("!f",pack("!f",.42))[0],
             }])
             flat=Sdf.Layer.CreateAnonymous("real_original_skin_source.usda")
             self.assertTrue(flat.ImportFromString(layer_bytes.decode("utf8")))
