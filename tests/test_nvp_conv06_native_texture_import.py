@@ -171,9 +171,13 @@ class OriginalUVTextureNativeImport(unittest.TestCase):
             revised["data"]["preview_material"]["pbr_maps"]["roughness"]["sha256"],
             sha256(original_map).hexdigest())
         from pxr import UsdShade,Usd
-        shader=UsdShade.Shader(Usd.Stage.Open(stage).GetPrimAtPath(
+        # Preserve the original stage owner through the shader readback.
+        # Schema/prim handles alone do not keep a temporary USD stage alive.
+        original_stage=Usd.Stage.Open(stage)
+        shader=UsdShade.Shader(original_stage.GetPrimAtPath(
             "/Asset/Material/MtlxMap_Roughness"))
         self.assertTrue(shader)
+        self.assertTrue(shader.GetPrim().IsValid())
         self.assertEqual(str(shader.GetInput("file").GetAttr().Get().path),
                          "nvp-blob://texture/"+sha256(original_map).hexdigest())
 
@@ -183,6 +187,13 @@ class OriginalUVTextureNativeImport(unittest.TestCase):
         request={"project_id":self.pid,"asset_id":self.name,
                  "source_revision":2,
                  "source_document_sha256":src["document_sha256"]}
+        # Consent denial requires a valid, independently selected grayscale
+        # source: invalid RGB is correctly rejected *before* the dialog.
+        grayscale=BytesIO()
+        Image.new("RGB",(32,16),(90,90,90)).save(grayscale,format="PNG")
+        valid=Path(self.work.name)/"denied-grayscale-roughness.png"
+        valid.write_bytes(grayscale.getvalue())
+        self.window.png_path=valid
         self.window.approved=False
         fake=SimpleNamespace(FileDialog=SimpleNamespace(OPEN="native"))
         with patch.dict(sys.modules,{"webview":fake}):
@@ -204,8 +215,10 @@ class OriginalUVTextureNativeImport(unittest.TestCase):
             with self.assertRaisesRegex(PermissionError,"origin"):
                 self.bridge.data_av_import_original_mesh_roughness(request)
         self.window.url="http://127.0.0.1:19991/"
-        # The base-color RGB image is not an authentic scalar roughness map.
-        # Reject before prompting the director and before new FilmIndex blobs.
+        # The original base-color RGB image is not an authentic scalar
+        # roughness map. Restore its native selection, then reject before
+        # prompting the director and before creating FilmIndex blobs.
+        self.window.png_path=self.selected
         dialogs_before=self.window.dialogs
         with patch.dict(sys.modules,{"webview":fake}):
             with self.assertRaises(ValueError):
