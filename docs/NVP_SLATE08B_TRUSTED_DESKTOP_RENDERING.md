@@ -1,5 +1,7 @@
 # SLATE-08B — Trusted Desktop Rendering Integration
 
+> **DA-06 / PLAN-02-A supersession (2026-11-09 MST):** The historical native still-rendering design below is NOT an active native filming contract. Canonical PR #74 retires the external still request/poll/cancel IPC and uses read-only OpenUSD lens projection pending independent continuous native 3D visual acceptance. Do not revive the legacy worker to satisfy obsolete positive tests. See [PLAN-02 map](NVP_PLAN02_AUTHORITATIVE_INTEGRATION_PATH.md).
+
 **November 6, 2026 — native bridge implemented, acceptance pending.**
 
 Stack: INDEX-TIME original source identities → real immutable OpenUSD scene +

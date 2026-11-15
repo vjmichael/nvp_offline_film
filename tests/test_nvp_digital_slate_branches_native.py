@@ -358,7 +358,7 @@ class SlateBranchNativeTests(unittest.TestCase):
         graph=self.publish(nodes,graph_id="large_slate")
         view=self.slate.view(self.pid,"large_slate",1)
         self.assertEqual(len(view["parallel_groups"]["reaction_beat"]),64)
-        self.assertEqual(graph["data"]["source_take_count"],3)
+        self.assertEqual(self.index.read_revision(self.pid,"large_slate",1)["data"]["source_take_count"],3)
         self.assertEqual(sum(1 for item in
             view["parallel_groups"]["reaction_beat"] if item["selected"]),1)
 

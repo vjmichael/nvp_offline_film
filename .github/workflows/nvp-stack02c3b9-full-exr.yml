@@ -58,6 +58,8 @@ jobs:
           python -m unittest discover -s tests -p test_film_index.py -v
 
   real-blender-full-exr-timeline:
+    # DA-00: FFmpeg-bearing Blender runtime quarantined; render unverified.
+    if: ${{ false }}
     name: Real Blender full 120-frame FLOAT32 EXR with independent decoded pixel audits
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -69,7 +71,7 @@ jobs:
       - name: Install genuine native Blender, OpenEXR and virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg prohibited"; exit 1
       - name: Execute all 120 original 24fps frames, re-read real float pixels and index every frame
         run: |
           xvfb-run -a python -m tools.nvp_stack02c3b9_real_exr \

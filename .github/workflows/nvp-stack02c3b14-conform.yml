@@ -121,6 +121,9 @@ jobs:
           python -m unittest discover -s tests -p test_audio_linux_strict_cgroup.py -v
 
   real-blender-edited-picture-conform:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Real Blender source to two native conformed edits and audited edited ProRes MOV
     runs-on: ubuntu-24.04
     timeout-minutes: 125
@@ -132,7 +135,7 @@ jobs:
       - name: Install genuine Blender FFmpeg and Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender ffmpeg xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
       - name: Install official OTIO, OCIO and OpenEXR dependencies
         run: |
           python -m pip install -r requirements-foundation.txt httpx

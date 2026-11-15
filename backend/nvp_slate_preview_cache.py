@@ -70,7 +70,15 @@ class SlatePreviewCache:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("PRAGMA synchronous=FULL")
             db.execute("PRAGMA busy_timeout=15000")
-            yield db
+            try:
+                yield db
+            except BaseException:
+                if db.in_transaction:
+                    db.rollback()
+                raise
+            else:
+                if db.in_transaction:
+                    db.commit()
         finally:
             db.close()
 
@@ -153,7 +161,7 @@ class SlatePreviewCache:
             raise ValueError("Invalid bounded cache reservation")
         existing=self.lookup(project_id,key)
         if existing:
-            return {"status":"CACHE_HIT",**existing}
+            return {**existing,"status":"CACHE_HIT"}
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             row=db.execute("""SELECT state,job_id FROM slate_preview_cache

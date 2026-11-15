@@ -5,15 +5,16 @@ import ScreenplayReviewPanel from './ScreenplayReviewPanel.jsx';
 import LineNumberedTextarea from './LineNumberedTextarea.jsx';
 import SceneStagePanel from './SceneStagePanel.jsx';
 import ProductionAuthoringPanel from './ProductionAuthoringPanel.jsx';
-import TakeSequencePanel from './TakeSequencePanel.jsx';
+import ExactFilmTimeShotPanel from './ExactFilmTimeShotPanel.jsx';
 import MotionRigPanel from './MotionRigPanel.jsx';
 import SkinningPanel from './SkinningPanel.jsx';
 import CharacterRigPanel from './CharacterRigPanel.jsx';
 import RetargetPanel from './RetargetPanel.jsx';
 import ColorGradingGuide from './ColorGradingGuide.jsx';
-import ColorGradingPanel from './ColorGradingPanel.jsx';
+import NativeColorGradePanel from './NativeColorGradePanel.jsx';
 import ResourceActivityPanel from './ResourceActivityPanel.jsx';
 import FilmCameraSourcePanel from './FilmCameraSourcePanel.jsx';
+import DataFirstAVPanel from './DataFirstAVPanel.jsx';
 
 const STORY_STAGE_ORDER = ['logline', 'synopsis', 'beat_sheet', 'treatment', 'screenplay'];
 
@@ -421,9 +422,11 @@ export default function App() {
           <button className={tab === 'grade' ? 'active' : ''} onClick={() => setTab('grade')}>15 · Grade color</button>
           <button className={tab === 'make' ? 'active' : ''} onClick={() => setTab('make')}>16 · Make the film</button>
           <button className={tab === 'camera' ? 'active' : ''} onClick={() => setTab('camera')}>17 · Virtual camera</button>
+          <button className={tab === 'data-av' ? 'active' : ''} onClick={() => setTab('data-av')}>18 · Native 3D sound</button>
           <button className={tab === 'color-guide' ? 'active' : ''} onClick={() => setTab('color-guide')}>Help · Color grading</button>
         </nav>
         {tab === 'camera' && <FilmCameraSourcePanel projectId={project.id} api={api}/>}
+        {tab === 'data-av' && <DataFirstAVPanel projectId={project.id}/>}
         {tab === 'develop' && <div className="columns">
           <section className="card">
             <h2>Develop your story</h2>
@@ -688,12 +691,12 @@ export default function App() {
         </div>}
         {tab === 'stage' && <SceneStagePanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'direct' && <ProductionAuthoringPanel project={project} api={api} action={action} busy={busy} />}
-        {tab === 'take' && <TakeSequencePanel project={project} api={api} action={action} busy={busy} />}
+        {tab === 'take' && <ExactFilmTimeShotPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'rig' && <MotionRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'skin' && <SkinningPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'character' && <CharacterRigPanel project={project} api={api} action={action} busy={busy} />}
         {tab === 'retarget' && <RetargetPanel project={project} api={api} action={action} busy={busy} />}
-        {tab === 'grade' && <ColorGradingPanel project={project} onHelp={() => setTab('color-guide')} />}
+        {tab === 'grade' && <NativeColorGradePanel project={project} api={api} action={action} busy={busy}/>}
         {tab === 'color-guide' && <ColorGradingGuide />}
         {tab === 'make' && <section className="card make"><div className="kicker">FUTURE MILESTONE</div>
           <h2>Bring your movie to life</h2><p>NVP will eventually build 3D sets, animate characters, film camera shots, edit scenes, mix audio and export the movie. This is not implemented in this foundation build.</p>

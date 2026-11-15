@@ -25,6 +25,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 
+from backend.nvp_plan02c_desktop import NativePlan02CCameraActions
 from backend.nvp_camera_workbench import verified_optics, workbench_preview_key
 from backend.nvp_film_index import FilmIndex, _id, _require_pid, _sha
 from backend.nvp_slate_proxy_recipe import canonical
@@ -112,7 +113,7 @@ def build_desktop_camera_host(index, callback):
     return host
 
 
-class TrustedDesktopCameraBridge:
+class TrustedDesktopCameraBridge(NativePlan02CCameraActions):
     """Per-WebView native authority. No browser can self-sign an approval."""
 
     def __init__(self, index: FilmIndex, *, origin, host_factory=None):
@@ -131,6 +132,8 @@ class TrustedDesktopCameraBridge:
         self._tickets = {}
         self._futures = {}
         self._host = None
+        self._data_av_controller = None
+        self._original_capture_controller = None
         self._closing = False
         self._host_factory = host_factory or (
             lambda callback: build_desktop_camera_host(index, callback))
@@ -186,220 +189,168 @@ class TrustedDesktopCameraBridge:
             return self._host
 
     def camera_render_capabilities(self):
+        # DA-06: external Blender still capture was part of the retired
+        # frame/proxy bridge. NVP now auditions 3D USD directly. Never
+        # discover or start a legacy media worker from the active editor.
         self._native_window()
         return {
             "format":"nvp.camera.desktop_capability.v1",
             "native_window":True,
-            "blender_discovered":discover_blender() is not None,
-            "supports_approved_still":True,
-            "supports_cancel":True,
+            "blender_discovered":False,
+            "supports_approved_still":False,
+            "supports_cancel":False,
+            "native_data_first_scene":True,
+            "legacy_render_retired":True,
             "source_modified":False,
         }
 
     def request_camera_still(self, payload):
-        """Untrusted JSON -> exact FilmIndex identity -> native OS approval."""
+        """DA-06: retired external camera worker cannot be reauthorized."""
         self._native_window()
-        if type(payload) is not dict or set(payload)!={
-                "project_id","source_scene_id","source_scene_revision",
-                "source_scene_document_sha256","source_tick","camera_path",
-                "lens_settings","source_modified","frozen_take_created"}:
-            raise ValueError("Camera request must be a strictly typed source identity")
-        pid=_require_pid(payload["project_id"])
-        scene_id=_id(payload["source_scene_id"],"native camera scene")
-        revision=payload["source_scene_revision"]
-        tick=payload["source_tick"]
-        camera_path=payload["camera_path"]
-        if (type(revision) is not int or not 1<=revision<=1000000
-                or type(tick) is not int or not 0<=tick<=1000000000
-                or payload["source_modified"] is not False
-                or payload["frozen_take_created"] is not False
-                or type(camera_path) is not str
-                or not camera_path.startswith("/World/") or len(camera_path)>240):
-            raise ValueError("Invalid or source-modifying native camera command")
-        source=self.index.read_revision(pid,scene_id,revision)
-        _sha(payload["source_scene_document_sha256"])
-        if (source["kind"]!="scene" or
-                source["document_sha256"]!=payload["source_scene_document_sha256"]
-                or source["data"].get("prim_roles",{}).get(camera_path)!="camera"):
-            raise RuntimeError("Exact authored camera scene has changed or is unavailable")
-        settings=verified_optics(payload["lens_settings"])
-        key=workbench_preview_key(
-            source["document_sha256"],tick,camera_path,settings,"interactive")
-        exact={
-            "operation":"nvp.camera.authorize_pre_take_still.v1",
-            "project_id":pid,"scene_id":scene_id,"scene_revision":revision,
-            "scene_document_sha256":source["document_sha256"],
-            "source_tick":tick,"camera_path":camera_path,
-            "optical_settings_sha256":sha256(canonical(settings)).hexdigest(),
-            "preview_cache_key":key,
-        }
-        # The native user sees the actual source and optics, not generic "Allow".
-        message=(
-            "Render ONE source-backed Blender Cycles still?\n"
-            f"Film: {pid[:8]} · Scene: {scene_id} rev {revision}\n"
-            f"Camera: {camera_path} · Film Time: {tick}\n"
-            f"{settings['focal_length_mm']} mm, f/{settings['f_stop']}, "
-            f"focus {settings['focus_distance_m']} m\n"
-            "CPU-only 640×360 preview · bounded resource admission.\n"
-            "No original scene, Take, or film master will be changed."
-        )
-        # Explicit native confirmation must precede renderer request/worker.
-        if not self._ask(message):
-            return {"status":"DENIED","native_worker_started":False}
-        with self._lock:
-            grant=self._grant(exact)
-            try:
-                host=self._get_host()
-                result=host.request_camera_workbench(
-                    pid,scene_id,revision,source_tick=tick,
-                    camera_path=camera_path,settings=settings,
-                    quality="interactive",creator_event=grant,
-                    ram_mb=2048,timeout_seconds=180)
-            finally:
-                self._grants.pop(grant.token,None)
-            if result["status"] not in ("QUEUED","CACHE_HIT"):
-                raise RuntimeError("Native worker request was not admitted or cache-verified")
-            ticket=secrets.token_urlsafe(24)
-            self._tickets[ticket]={
-                "project_id":pid,"scene_id":scene_id,
-                "revision":revision,"scene_sha":source["document_sha256"],
-                "source_tick":tick,"camera_path":camera_path,
-                "settings":settings,"cache_key":key,
-                "job_id":result.get("job_id"),"status":result["status"],
-                "last_dispatch_at":time.monotonic(),
-            }
-            if len(self._tickets)>64:
-                # Discard only in-memory GUI tokens; never a native job or source.
-                oldest=next(iter(self._tickets))
-                self._tickets.pop(oldest,None)
-            if result["status"]=="QUEUED":
-                self._futures[ticket]=self._executor.submit(host.run_next)
-            return {
-                "format":"nvp.camera.desktop_ticket.v1",
-                "status":result["status"],"ticket_id":ticket,
-                "scene_document_sha256":source["document_sha256"],
-                "source_tick":tick,"camera_path":camera_path,
-                "cache_key":key,"frozen_take_created":False,
-                "source_modified":False,
-            }
+        raise PermissionError(
+            "External camera still/proxy worker retired by DA-06; use native "
+            "OpenUSD scene audition. No legacy ticket can be minted.")
 
     def poll_camera_still(self, ticket_id):
+        """DA-06: historical ticket may not expose a stale native PNG."""
         self._native_window()
-        if type(ticket_id) is not str or len(ticket_id)>128:
-            raise ValueError("Invalid native camera ticket")
-        with self._lock:
-            item=self._tickets.get(ticket_id)
-            if item is None:
-                raise PermissionError("Camera ticket not issued by this desktop session")
-            host=self._get_host()
-            result=host.cache.lookup(item["project_id"],item["cache_key"])
-            if result is None:
-                if item["job_id"] is None:
-                    # A cache hit can be evicted/tampered before the UI reads
-                    # its media; there is no worker to retry via this ticket.
-                    return {"status":"RECOVERY_REQUIRED",
-                            "film_master_approved":False}
-                row=host.cache._job(item["job_id"])
-                if row["state"] in ("FAILED","INTERRUPTED","EVICTED"):
-                    return {"status":"FAILED","film_master_approved":False}
-                if row["state"]=="READY":
-                    # A READY record whose physical PNG is not independently
-                    # re-readable is not a completed picture.
-                    return {"status":"RECOVERY_REQUIRED",
-                            "film_master_approved":False}
-                future=self._futures.get(ticket_id)
-                if future is not None and future.done():
-                    try:
-                        outcome=future.result()
-                    except Exception:
-                        # Unknown OS cleanup/receipt status: never release the
-                        # reserved memory or fabricate a completed still.
-                        return {"status":"RECOVERY_REQUIRED",
-                                "film_master_approved":False}
-                    if outcome is None or (
-                            isinstance(outcome,dict) and (
-                                outcome.get("admitted") is False or
-                                # Multiple ticket futures can dispatch a
-                                # DIFFERENT approved queued job first. The
-                                # current job remains pending, not failed.
-                                outcome.get("id") != item["job_id"])):
-                        # Resource guardian declined this admission. The
-                        # durable QUEUED ticket is preserved; throttle attempts
-                        # rather than spinning workers or discarding consent.
-                        if time.monotonic()-item["last_dispatch_at"]>=5:
-                            item["last_dispatch_at"]=time.monotonic()
-                            self._futures[ticket_id]=self._executor.submit(
-                                host.run_next)
-                        return {"status":"QUEUED",
-                                "waiting_for_resources":True,
-                                "film_master_approved":False}
-                    # A worker returned but a verified derivative is absent.
-                    # No unchecked output may be surfaced as camera picture.
-                    return {"status":"RECOVERY_REQUIRED",
-                            "film_master_approved":False}
-                return {"status":"QUEUED","film_master_approved":False}
-            # The ORIGINAL host independently checks consent, scene SHA,
-            # manifest, cache hash, renderer receipt and physical PNG size.
-            media=host.read_camera_workbench_png(
-                item["project_id"],item["cache_key"])
-            if (media["scene_id"]!=item["scene_id"]
-                    or media["scene_revision"]!=item["revision"]
-                    or media["scene_document_sha256"]!=item["scene_sha"]
-                    or media["source_tick"]!=item["source_tick"]
-                    or media["camera_path"]!=item["camera_path"]
-                    or media["lens_settings"]!=item["settings"]
-                    or media["frozen_take_created"] is not False
-                    or media["film_master_approved"] is not False):
-                raise RuntimeError("Native camera delivery identity mismatch")
-            png=media["png_bytes"]
-            if (type(png) is not bytes or not 33<=len(png)<=MAX_IMAGE_BYTES
-                    or not png.startswith(b"\x89PNG\r\n\x1a\n")
-                    or sha256(png).hexdigest()!=media["image_sha256"]):
-                raise RuntimeError("Native media delivery failed bounded SHA-256 audit")
-            return {
-                "status":"READY","format":"nvp.camera.desktop_delivery.v1",
-                "scene_document_sha256":media["scene_document_sha256"],
-                "source_tick":media["source_tick"],
-                "camera_path":media["camera_path"],
-                "lens_settings":media["lens_settings"],
-                "image_sha256":media["image_sha256"],
-                "image_data_url":"data:image/png;base64,"+
-                    base64.b64encode(png).decode("ascii"),
-                "source_modified":False,
-                "frozen_take_created":False,
-                "film_master_approved":False,
-            }
+        raise PermissionError(
+            "External camera still/proxy worker retired by DA-06; "
+            "historical camera tickets cannot be polled.")
 
     def cancel_camera_still(self, ticket_id):
+        """DA-06: there is no active legacy still worker to cancel."""
         self._native_window()
-        with self._lock:
-            item=self._tickets.get(ticket_id)
-            if item is None:
-                raise PermissionError("Unknown native camera session ticket")
-            job_id=item["job_id"]
-            if not job_id:
-                raise RuntimeError("Cached previews have no active worker to cancel")
-            row=self._get_host().cache._job(job_id)
-            if row["project_id"]!=item["project_id"] or row["cache_key"]!=item["cache_key"]:
-                raise RuntimeError("Native camera cancellation source does not match")
-            if row["state"]!="PENDING":
-                raise RuntimeError("Only unfinished preview workers can be cancelled")
-            if not self._ask(
-                    "Cancel this original-scene Blender preview?\n"
-                    f"Scene: {item['scene_id']} · Job: {job_id}\n"
-                    "No source film data will be erased."):
-                return {"status":"DENIED","native_worker_cancelled":False}
-            grant=self._grant({
-                "operation":"nvp.camera.cancel_pre_take_still.v1",
-                "project_id":item["project_id"],
-                "scene_id":item["scene_id"],
-                "job_id":job_id,"preview_cache_key":item["cache_key"],
-            })
-            try:
-                done=self._get_host().cancel(job_id,creator_event=grant)
-            finally:
-                self._grants.pop(grant.token,None)
-            return {"status":done["state"],"native_worker_cancelled":True}
+        raise PermissionError(
+            "External camera still/proxy worker retired by DA-06; "
+            "no legacy camera cancellation authority remains.")
+
+    # DATA-AV-01: same authenticated native window, wholly distinct from
+    # the optional Blender camera still and conventional video preview.
+    # The browser cannot provide source media paths or grant its own consent.
+    def _data_av(self):
+        if self._data_av_controller is None:
+            from backend.nvp_data_av_desktop import TrustedDataAVController
+            self._data_av_controller=TrustedDataAVController(
+                self.index,native_window=self._native_window,
+                ask_native=self._ask)
+        return self._data_av_controller
+
+    def data_av_import_original_audio(self,project_id,source_id):
+        """Open a REAL native OS picker. The browser supplies IDs, never paths."""
+        self._native_window()
+        from backend.nvp_imported_audio import OriginalAudioImport
+        from webview import FileDialog
+        def selected():
+            window=self._native_window()
+            if not callable(getattr(window,"create_file_dialog",None)):
+                raise PermissionError("No trusted native audio file picker installed")
+            chosen=window.create_file_dialog(
+                FileDialog.OPEN,allow_multiple=False,
+                file_types=("Sound files (*.mp3;*.flac;*.wav;*.ogg)",))
+            if not chosen:
+                return None
+            if len(chosen)!=1:
+                raise PermissionError("Only one original audio file may be imported")
+            return chosen[0]
+        source=OriginalAudioImport(
+            self.index,trusted_native_picker=selected
+        ).register_from_picker(project_id,source_id)
+        data=self.index.read_revision(project_id,source_id,
+                                      source["revision"])["data"]
+        return {"format":"nvp.data_av.native_audio_import.v1",
+                "status":"ORIGINAL_IMPORTED",
+                "source_id":source_id,"source_revision":source["revision"],
+                "source_document_sha256":source["document_sha256"],
+                "original_codec":data["original_codec"],
+                "original_media_sha256":data["source_media_sha256"],
+                "original_modified":False,
+                "soundtrack_flattened":False,"ffmpeg_used":False}
+
+    def data_av_freeze_timed_take(self,request):
+        return self._data_av().freeze_exact_camera_take(request)
+
+    def data_av_catalog(self,project_id):
+        return self._data_av().catalog(project_id)
+
+    def data_av_begin(self,request):
+        return self._data_av().begin(request)
+
+    def data_av_audio_window(self,session_id,first_sample,count):
+        return self._data_av().read_audio(session_id,first_sample,count)
+
+    def data_av_scene_at(self,session_id,tick):
+        return self._data_av().scene_at(session_id,tick)
+
+    def data_av_stop(self,session_id):
+        return self._data_av().stop(session_id)
+
+    # PLAN-02-B: original microphone capture (not retired camera still IPC).
+    def _original_capture(self):
+        if self._original_capture_controller is None:
+            from backend.nvp_native_capture_desktop import TrustedNativeOriginalCapture
+            self._original_capture_controller=TrustedNativeOriginalCapture(
+                self.index,native_window=self._native_window,
+                ask_native=lambda message: (
+                    self._native_window().create_confirmation_dialog(
+                        "NVP — Authorize Original Sound",message) is True))
+        return self._original_capture_controller
+
+    def data_av_capture_catalog(self,project_id):
+        self._native_window()
+        from backend.nvp_exact_time_shots import ExactTimeShotSequence
+        pid=_require_pid(project_id)
+        exact=ExactTimeShotSequence(self.index)
+        timelines=[]
+        for row in self.index.list_objects(pid,kind="temporal")[:128]:
+            try:plan=exact.read(pid,row["object_id"],row["head_revision"])
+            except (KeyError,ValueError,RuntimeError):continue
+            scene=self.index.read_revision(
+                pid,plan["scene_id"],plan["scene_revision"])
+            if scene["document_sha256"]!=plan["scene_document_sha256"]:
+                raise RuntimeError("Original source camera catalog changed")
+            roles=scene["data"].get("prim_roles",{})
+            emitters=sorted(roles,key=lambda p:(
+                roles[p]!="actor",roles[p]=="camera",p))
+            if not emitters:continue
+            timelines.append({
+                "timeline_id":plan["timeline_id"],
+                "revision":plan["revision"],
+                "document_sha256":plan["document_sha256"],
+                "scene_id":plan["scene_id"],
+                "scene_revision":plan["scene_revision"],
+                "scene_document_sha256":plan["scene_document_sha256"],
+                "duration_tick":plan["duration_tick"],
+                "emitter_paths":emitters[:64]})
+            if len(timelines)>=32:break
+        return {"format":"nvp.data_av.original_capture_catalog.v1",
+                "project_id":pid,"timelines":timelines,
+                "source_modified":False,
+                "creator_approval_not_granted":True}
+
+    def data_av_capture_devices(self):
+        self._native_window()
+        return self._original_capture().devices()
+
+    def data_av_capture_begin(self,request):
+        self._native_window()
+        return self._original_capture().begin(request)
+
+    def data_av_capture_status(self):
+        self._native_window()
+        return self._original_capture().status()
+
+    def data_av_capture_finish(self):
+        self._native_window()
+        return self._original_capture().finish()
+
+    def data_av_capture_cancel(self):
+        self._native_window()
+        return self._original_capture().cancel()
+
+    def data_av_capture_interrupted(self,project_id):
+        self._native_window()
+        return self._original_capture().interrupted(project_id)
 
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
@@ -412,6 +363,10 @@ class TrustedDesktopCameraBridge:
             if self._closing:
                 return
             self._closing=True
+            if self._data_av_controller is not None:
+                self._data_av_controller.close()
+            if self._original_capture_controller is not None:
+                self._original_capture_controller.close()
             host=self._host
             tickets=list(self._tickets.values())
         if host is not None:

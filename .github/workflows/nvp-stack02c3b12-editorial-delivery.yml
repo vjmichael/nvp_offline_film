@@ -63,6 +63,9 @@ jobs:
           python -m unittest discover -s tests -p test_film_index.py -v
 
   real-120-otio-prores:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Real Blender 120 Float32 frames to ACES2 SDR16, native OpenTimelineIO and independently decoded ProRes HQ
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -74,7 +77,7 @@ jobs:
       - name: Install actual Blender, FFmpeg/FFprobe and X virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender ffmpeg xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
       - name: Install exact official OTIO, OCIO and OpenEXR film packages
         run: python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
       - name: Execute original frozen take through full ProRes technical delivery

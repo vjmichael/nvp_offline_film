@@ -61,6 +61,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Legacy native Blender supervisor tests failed' }
 
   linux-real-blender-build-reopen:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Linux real native Blender source build + reopened geometry/PNG evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -72,7 +75,7 @@ jobs:
       - name: Install actual native Blender and headless display
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
       - name: Execute actual native NVP scene and second independent Blender process
         run: |
           xvfb-run -a python -m tools.nvp_stack02c3b7_native_approved_scene_fixture \

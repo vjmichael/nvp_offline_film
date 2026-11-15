@@ -1,30 +1,8 @@
 name: NVP SCALE-03C Owned Frame Index and Fast Preview
 
+# DATA-AV-01 migration: legacy imported-video/benchmark workflow is
+# manual-only; it must not gate or relaunch native Digital Take A/V.
 on:
-  push:
-    branches:
-      - nvp/scale03c-nvp-native-frame-index-20261105
-    paths:
-      - "backend/nvp_native_frame_index.py"
-      - "backend/nvp_indexed_preview.py"
-      - "backend/nvp_native_indexed_window.py"
-      - "backend/nvp_source_window_preflight.py"
-      - "backend/nvp_source_window_decode.py"
-      - "backend/nvp_source_window_native_host.py"
-      - "tools/nvp_source_window_worker.py"
-      - "tests/test_nvp_owned_frame_index.py"
-      - ".github/workflows/nvp-scale03c-owned-index.yml"
-  pull_request:
-    paths:
-      - "backend/nvp_native_frame_index.py"
-      - "backend/nvp_indexed_preview.py"
-      - "backend/nvp_native_indexed_window.py"
-      - "backend/nvp_source_window_preflight.py"
-      - "backend/nvp_source_window_decode.py"
-      - "backend/nvp_source_window_native_host.py"
-      - "tools/nvp_source_window_worker.py"
-      - "tests/test_nvp_owned_frame_index.py"
-      - ".github/workflows/nvp-scale03c-owned-index.yml"
   workflow_dispatch:
 
 concurrency:

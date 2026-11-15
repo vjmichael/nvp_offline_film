@@ -370,6 +370,11 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 scene=bpy.context.scene
 scene.render.engine="CYCLES"
 scene.cycles.device="CPU"
+# The approved headless CPU renderer must not require optional OpenImageDenoise.
+# Ubuntu Blender 4.0.2 is built without it; requesting denoise aborts the
+# original native render rather than producing the verified PNG.
+for layer in scene.view_layers:
+    layer.cycles.use_denoising=False
 scene.cycles.samples=int({"thumbnail":8,"interactive":16,
                           "inspection":24}[src["quality"]])
 scene.render.resolution_x=src["width"]

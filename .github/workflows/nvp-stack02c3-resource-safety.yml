@@ -99,6 +99,9 @@ jobs:
         run: npm run build
 
   linux-real-guarded-blender:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Real Blender 4.x CPU queue, memory admission, task phases and source hash audit
     runs-on: ubuntu-24.04
     timeout-minutes: 27
@@ -111,7 +114,7 @@ jobs:
         run: |
           python -m pip install -r requirements-foundation.txt httpx trimesh
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
       - name: Execute real governed Blender without a GPU
         shell: bash
         run: |

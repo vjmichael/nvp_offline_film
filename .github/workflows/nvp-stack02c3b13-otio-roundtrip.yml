@@ -60,6 +60,9 @@ jobs:
           python -m unittest discover -s tests -p test_b12_editorial_delivery.py -v
 
   real-blender-otio-two-revision-roundtrip:
+    # DA-00 quarantine: forbidden FFmpeg/libav transitive apt Blender runtime.
+    # Genuine Blender/render/encode acceptance remains unverified.
+    if: ${{ false }}
     name: Real B12 original 120-frame film to two contained edited OTIO revisions after restart
     runs-on: ubuntu-24.04
     timeout-minutes: 95
@@ -71,7 +74,7 @@ jobs:
       - name: Install genuine Blender, FFmpeg/FFprobe and virtual X display
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender ffmpeg xvfb xauth
+          echo "DA-00 QUARANTINED: apt Blender/FFmpeg runtime prohibited"; exit 1
       - name: Install exact official film editing and scene-color libraries
         run: python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
       - name: Run true frozen Digital Take and native NLE-like edit reimport

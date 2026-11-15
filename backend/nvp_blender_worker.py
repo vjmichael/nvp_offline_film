@@ -290,7 +290,9 @@ class BlenderWorkerSupervisor:
             if value not in op.inputs and value not in op.outputs:
                 if not (flag=="--out" and target.is_relative_to(jobdir)):
                     raise ValueError("Unlisted worker input/output path")
-            argv.extend([flag,str(target)])
+            # SLATE preview scripts require sealed relative file names.
+            # Other approved worker domains retain their validated absolute paths.
+            argv.extend([flag, value if flag in ("--manifest", "--preview") else str(target)])
         return jobdir,script,argv
 
     def _audit_outputs(self, op: BlenderOperation, jobdir: Path):
@@ -487,7 +489,15 @@ class BlenderWorkerSupervisor:
                                      error="Cancellation requested before output acceptance")
                     return self.inspect(op.job_id)
                 if rc:
-                    raise RuntimeError("Blender worker returned nonzero exit code "+str(rc))
+                    # Preserve bounded Blender diagnostics in the durable failure receipt.
+                    # stderr is diagnostic only, never an authorization or output receipt.
+                    try:
+                        detail=err.read_bytes()[-4096:].decode("utf8",errors="replace")
+                        detail=" ".join(detail.split())[-1200:]
+                    except OSError:
+                        detail="stderr unavailable"
+                    raise RuntimeError("Blender worker returned nonzero exit code "+
+                                       str(rc)+"; stderr tail: "+detail)
                 if self.activity is not None:
                     self.activity.update(self._activity_id(op.job_id),"verifying_output",
                         "Rechecking source hashes, output media and native worker cleanup")

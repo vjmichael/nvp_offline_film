@@ -180,6 +180,100 @@ class Slate06NativeTests(unittest.TestCase):
             self.index,self.supervisor,self.activity,self.cache,
             verify_creator_action=approved)
 
+    def test_approval_predicate_diagnostic_on_geometry_enqueue(self):
+        """Pin the first failed native approval predicate without relaxing policy.
+
+        The normal request still passes through the real ApprovedTaskBindings
+        verifier. A test-only wrapper supplies precise evidence if it refuses.
+        """
+        import json
+        import time
+        from backend.nvp_slate_preview_host import (
+            _digest, _adapter_for, SOURCE_FILE, SCRIPT_FILE, OUTPUT_FILE)
+        from backend.nvp_slate_proxy_recipe import sha, canonical
+        from backend.nvp_blender_worker import BlenderOperation
+
+        original=self.host.dispatcher.bindings.approval_check
+
+        def checked(approval_id,digest,document):
+            if original(approval_id,digest,document):
+                return True
+            with self.activity._db() as db:
+                raw=db.execute(
+                    "SELECT * FROM nvp_slate_preview_consents WHERE approval_id=?",
+                    (approval_id,)).fetchone()
+            self.assertIsNotNone(raw,"consent row absent")
+            names=("approval_id","task_id","project_id","edit_id",
+                   "edit_revision","film_tick","quality","cache_key",
+                   "ticket_sha256","source_manifest_sha256","spec_sha256",
+                   "issued_at","expires_at","revoked_at","queued_at",
+                   "presentation","camera_path")
+            row=dict(zip(names,raw))
+            self.assertIsNone(row["revoked_at"],"consent revoked")
+            self.assertLessEqual(row["issued_at"],time.time(),"consent not issued")
+            self.assertGreaterEqual(row["expires_at"],time.time(),"consent expired")
+            self.assertEqual(row["spec_sha256"],digest,"spec digest changed")
+            self.assertEqual(_digest(document),digest,"canonical document changed")
+            self.assertEqual(document.get("kind"),"blender","wrong task kind")
+            self.assertEqual(document.get("task_id"),row["task_id"],"task id changed")
+            adapter=_adapter_for(row["presentation"])
+            op=BlenderOperation(**document["operation"])
+            self.assertEqual(self.supervisor._activity_id(op.job_id),row["task_id"],"worker task id")
+            self.assertEqual(op.script,SCRIPT_FILE,"worker script name")
+            self.assertEqual(op.script_sha256,sha(adapter.BLENDER_SCRIPT.encode("utf8")),"worker script digest")
+            self.assertEqual(op.inputs,{SOURCE_FILE:row["source_manifest_sha256"]},"worker inputs")
+            self.assertEqual(op.outputs,{OUTPUT_FILE:"png"},"worker outputs")
+            self.assertEqual(op.arguments,{"--manifest":SOURCE_FILE,"--preview":OUTPUT_FILE},"worker args")
+            self.assertIsNone(op.scene,"worker scene")
+            self.assertEqual(op.gpu_memory_mb,0,"GPU budget")
+            ticket=self.lazy.select(row["project_id"],row["edit_id"],
+                row["edit_revision"],film_tick=row["film_tick"],quality=row["quality"])
+            key=adapter.preview_cache_key(ticket,row["quality"],camera_path=row["camera_path"])
+            self.assertEqual(sha(canonical(ticket)),row["ticket_sha256"],"source ticket changed")
+            self.assertEqual(key,row["cache_key"],"preview key changed")
+            directory=self.supervisor.root/op.job_id
+            self.assertEqual(sha_file(directory/SCRIPT_FILE),op.script_sha256,"staged script changed")
+            self.assertEqual(sha_file(directory/SOURCE_FILE),row["source_manifest_sha256"],"staged source changed")
+            raw_source=(directory/SOURCE_FILE).read_bytes()
+            self.assertLessEqual(len(raw_source),128*1024,"manifest budget")
+            source=json.loads(raw_source)
+            for name,actual,expected in (
+                ("format",source.get("format"),adapter.FORMAT),
+                ("renderer",source.get("renderer_version"),adapter.RENDERER_VERSION),
+                ("script",source.get("worker_script_sha256"),op.script_sha256),
+                ("source cache",source.get("source_cache_key"),row["cache_key"]),
+                ("take",source.get("source_take_sha256"),ticket["source_take_document_sha256"]),
+                ("shot",source.get("source_shot_sha256"),ticket["source_shot_document_sha256"]),
+                ("source tick",source.get("source_tick"),ticket["source_tick"]),
+                ("edit cache",source.get("cache_key"),ticket["cache_key"]),
+                ("dimensions",(source.get("width"),source.get("height")),adapter.DIMENSIONS[row["quality"]]),
+                ("camera",source.get("camera",{}).get("path"),row["camera_path"]),
+                ("final approval",source.get("final_presentation_approved"),False)):
+                self.assertEqual(actual,expected,"approval predicate: "+name)
+            pending=self.cache._job(op.job_id)
+            self.assertEqual(pending["state"],"PENDING","cache not pending")
+            self.assertEqual(pending["cache_key"],row["cache_key"],"pending cache key")
+            self.assertEqual(pending["recipe_sha256"],row["source_manifest_sha256"],"pending recipe")
+            self.fail("All explicit geometry predicates passed but approval returned False")
+
+        with patch.object(self.host.dispatcher.bindings,"approval_check",side_effect=checked):
+            req=self.request(camera_path="/World/Camera")
+        self.assertEqual(req["status"],"QUEUED")
+
+    def test_preview_cache_reservation_commits_across_connections(self):
+        """Approval reopens SQLite; reservation must survive that boundary."""
+        key="a"*64
+        job="slateprev_durable_reservation"
+        reserved=self.cache.reserve(self.pid,key,job_id=job,
+            source_sha256="b"*64,recipe_sha256="c"*64,
+            width=128,height=128)
+        self.assertEqual(reserved["status"],"PENDING")
+        row=self.cache._job(job)
+        self.assertEqual(row["state"],"PENDING")
+        self.assertEqual(row["recipe_sha256"],"c"*64)
+        self.cache.fail(job,state="INTERRUPTED")
+        self.assertEqual(self.cache._job(job)["state"],"INTERRUPTED")
+
     def ticket(self):
         return self.lazy.select(
             self.pid,"cut",1,film_tick=0,quality="thumbnail")
@@ -366,7 +460,7 @@ class Slate06NativeTests(unittest.TestCase):
             creator_event=self.trusted_event,presentation="geometry",
             camera_path="/World/Camera",ram_mb=4096,timeout_seconds=240)
         result=native_host.run_next()
-        self.assertEqual(result["state"],"SUCCEEDED")
+        self.assertEqual(result["state"],"SUCCEEDED", repr(result))
         image=native_host.read_preview_png(self.pid,req["cache_key"])
         self.assertTrue(image["authored_geometry_preview_only"])
         self.assertEqual((image["width"],image["height"]),(320,180))
