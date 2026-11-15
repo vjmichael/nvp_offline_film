@@ -19,7 +19,7 @@ from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_temporal_ledger import TemporalLedger,TICKS_PER_SECOND
 from backend.nvp_data_av_source import RecordedSoundSources,SAMPLE_RATE
 from backend.nvp_data_av_scene import FrozenSceneAV
-from backend.nvp_data_av_usd import spatial_audio_at
+from backend.nvp_data_av_usd import spatial_audio_at, spatial_audio_at_precise_time
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 
 T=TICKS_PER_SECOND
@@ -171,6 +171,37 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
             with self.subTest(limit=limit), self.assertRaises(ValueError):
                 spatial_audio_at(self.index, self.pid, "spatial_world", 1,
                                  "sound_events", 1, 0, limit=limit)
+
+    def test_structured_precise_film_time_spatial_sound_query(self):
+        # A non-frame-aligned query must preserve the exact original tick.
+        tick = T // 2 + 1
+        address = {"ticks": str(tick), "ticks_per_second": str(T)}
+        result = spatial_audio_at_precise_time(
+            self.index, self.pid, "spatial_world", 1,
+            "sound_events", 1, address)
+        self.assertEqual(result["queried_film_time"], address)
+        self.assertEqual(result["bindings"][0]["event_id"], "actor_speaks")
+        self.assertEqual(result["bindings"][0]["start_tick"], "0")
+        self.assertEqual(self.index.read_revision(
+            self.pid, "spatial_world", 1)["document_sha256"],
+            self.scene.open(self.pid, "spatial_world", 1)[0]["document_sha256"])
+        invalid = [
+            None, 1, {"ticks": tick, "ticks_per_second": str(T)},
+            {"ticks": "01", "ticks_per_second": str(T)},
+            {"ticks": "-1", "ticks_per_second": str(T)},
+            {"ticks": "1.5", "ticks_per_second": str(T)},
+            {"ticks": "1e3", "ticks_per_second": str(T)},
+            {"ticks": "１２", "ticks_per_second": str(T)},
+            {"ticks": "2" * 30, "ticks_per_second": str(T)},
+            {"ticks": "1", "ticks_per_second": T},
+            {"ticks": "1", "ticks_per_second": "24"},
+            {"ticks": "1", "ticks_per_second": str(T), "fps": 24},
+        ]
+        for bad in invalid:
+            with self.subTest(address=bad), self.assertRaises(ValueError):
+                spatial_audio_at_precise_time(
+                    self.index, self.pid, "spatial_world", 1,
+                    "sound_events", 1, bad)
 
     def test_native_creator_permission_seek_and_stop_are_window_scoped(self):
         bridge=TrustedDesktopCameraBridge(
