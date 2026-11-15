@@ -53,7 +53,7 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
 
     def _snapshot(self,original,tick):
         return {
-            "time_tick":str(tick),
+            "time_tick":tick,
             "scene_document_sha256":original["document_sha256"],
             "timeline_document_sha256":"b"*64,
             "objects":[{
