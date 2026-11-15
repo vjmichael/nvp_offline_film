@@ -309,7 +309,10 @@ def _validate(plan,handoff):
             setting.get("daylight") not in ("day","night","dawn","dusk")):
         raise ValueError("Choose valid scene lighting and weather")
     objects=plan.get("objects")
-    if type(objects) is not list or not 1<=len(objects)<=MAX_OBJECTS:
+    # An original scene can be recorded without any visual camera (or even
+    # before its first stage object is placed). Framing is a separate, explicit
+    # presentation choice; do not add a source camera behind the director's back.
+    if type(objects) is not list or len(objects)>MAX_OBJECTS:
         raise ValueError("Scene size exceeds available creative workspace")
     ids=set();actors={c["actor_id"] for c in handoff["cast"]
                      if c["actor_id"]}
@@ -348,8 +351,10 @@ def _validate(plan,handoff):
             raise ValueError("Invalid light")
         if item["role"]=="light" and item["shape"] not in ("sun","lamp"):
             raise ValueError("Invalid lighting fixture")
-    if camera<1 or camera>8:
-        raise ValueError("Scene needs at least one camera")
+    # An optional camera source may be absent. Keep the existing bounded stage
+    # budget; a render/presentation must select an authentic camera separately.
+    if camera>8:
+        raise ValueError("A scene can contain at most eight authored cameras")
     if len(_json(plan).encode("utf8"))>180_000:
         raise ValueError("Scene has too much authored data")
 
@@ -859,9 +864,9 @@ class G05SceneAuthoring:
                         raise ValueError("Only characters can have wardrobe notes")
                     item[field]=details["value"]
                 if operation=="remove":
-                    if item["role"]=="camera" and sum(
-                            o["role"]=="camera" for o in objects)==1:
-                        raise ValueError("A scene needs one camera")
+                    # Removing the final camera (or final scene object) creates
+                    # a NEW scene revision. Old approved source, Takes and
+                    # director camera bank revisions are never rewritten.
                     objects.remove(item)
             elif operation=="weather":
                 if (set(details)!={"weather"} or

@@ -7,6 +7,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from struct import pack, unpack
 import unittest
 
 from pxr import Usd, UsdGeom
@@ -17,6 +18,7 @@ from backend.nvp_story_bible import StoryBible
 from backend.nvp_production_bible_actors import ProductionBibleActors
 from backend.nvp_openusd_assets import OpenUSDAssetRegistry
 from backend.nvp_openusd_scene import OpenUSDSceneBridge
+from backend.nvp_openusd_native_schemas import MM_PER_CAMERA_UNIT
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND as T
 from backend.nvp_data_av_source import RecordedSoundSources
@@ -231,8 +233,13 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             self.pid,"OnePerformanceNineCamBank",1)["data"]
         self.assertEqual(len(data["cameras"]),9)
         self.assertEqual(data["full_camera_coverage_frames"],6480)
+        # The native USD focal attribute stores Float (IEEE-754 binary32).
+        # Assert the EXACT converted source value, not Python's wider literal.
         self.assertEqual([x["focal_length_mm"] for x in data["cameras"][:3]],
-                         [24.0,50.0,85.0])
+                         [round(unpack("!f",pack("!f",
+                              mm/MM_PER_CAMERA_UNIT))[0]*
+                              MM_PER_CAMERA_UNIT,6)
+                          for mm in (24.0,50.0,85.0)])
         self.assertEqual(
             len({tuple(x["rotation_euler_deg"]) for x in data["cameras"]}),3)
         self.assertEqual(
@@ -303,7 +310,10 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
             self.root/"denied_linux_private_world",
             blender_executable=executable,
             blender_sha256=sha_file(executable),
-            blender_version="NOT_BLENDER_SOURCE_ONLY_NEGATIVE_TEST")
+            # Accepted host metadata only; sys.executable is NEVER launched.
+            # The test MUST reach the original Linux EFS refusal, not fail
+            # early at the BlenderWorkerSupervisor version format guard.
+            blender_version="Blender TEST_ONLY_UNEXECUTED_EFS_REFUSAL")
         producer=ReviewedNineCameraCyclesHost(
             self.index,supervisor,verify_director_action=lambda *_:True)
         take_sha=self.index.read_revision(

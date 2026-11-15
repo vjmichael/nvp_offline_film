@@ -82,6 +82,26 @@ def _camera(value):
         "focal_mm":_number(value["focal_mm"],12,180,"lens")}
 
 
+def _presentation_camera(filming,db,pid,take_id,source):
+    """Require a real director camera decision for camera-free source Takes.
+
+    The three legacy suggested views are NOT source-camera authorization.
+    A camera-free original may be captured and reopened without framing;
+    presentation requires a subsequently reviewed camera view revision.
+    Historical Takes with authored scene cameras keep their existing path.
+    """
+    camera=filming._camera(db,pid,take_id)
+    objects=source.get("stage_objects",[])
+    if (not any(x.get("role")=="camera" for x in objects) and
+            camera["revision"]==0):
+        raise PermissionError(
+            "Camera-free original Take needs an explicitly saved camera view "
+            "before it can become a visual presentation clip")
+    if not camera["views"]:
+        raise PermissionError("No director camera framing available")
+    return _camera(camera["views"][0])
+
+
 def _grade(value):
     if type(value) is not dict or set(value)!={"exposure","saturation","warmth","contrast"}:
         raise ValueError("Choose picture color controls")
@@ -372,8 +392,8 @@ class G07Editor:
                     metadata_only=True)
                 if len(clips)>=MAX_EDL_CLIPS:
                     raise ValueError("Film clip limit reached")
-                views=self.filming._camera(db,pid,details["take_id"])["views"]
-                selected=_camera(views[0])
+                selected=_presentation_camera(
+                    self.filming,db,pid,details["take_id"],source)
                 clips.append({
                     "id":uuid.uuid4().hex,"take_id":details["take_id"],
                     "take_sha256":row["take_sha256"],
@@ -413,8 +433,8 @@ class G07Editor:
                     clip["take_sha256"]=newrow["take_sha256"]
                     clip["source_in_tick"]=0
                     clip["source_out_tick"]=newsource["duration_tick"]
-                    clip["camera"]=_camera(
-                        self.filming._camera(db,pid,details["take_id"])["views"][0])
+                    clip["camera"]=_presentation_camera(
+                        self.filming,db,pid,details["take_id"],newsource)
                     clip["audio"]=[{"clip_id":v["clip_id"],"enabled":True,
                         "gain":1.0,"pan":0.,"spatial":True,"offset_tick":0}
                         for v in newaudio]

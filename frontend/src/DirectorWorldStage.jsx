@@ -564,6 +564,12 @@ export default function DirectorWorldStage({movie,scene}) {
       <StageCanvas objects={stage.objects} setting={stage.setting}
         visualStyle={stage.visual_style} selected={selected} onChoose={choose} mode={mode} view={view}
         onTransform={transform} onOpenContext={openContext}/>
+      {!(stage.objects||[]).some(object=>object.role==='camera')&&
+        <p className="film-muted" role="status">
+          This scene has no filmed camera. You can still record its action
+          and sound. Add a camera when you want to frame a visual presentation;
+          the 3D editor orbit view is not a recorded camera.
+        </p>}
       <p className="director-world-help">Drag to orbit · Scroll to zoom · Click
         an object to select it · Drag the handles to place it.</p>
       <div className="director-world-layout">

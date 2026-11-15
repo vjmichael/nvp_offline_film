@@ -11,6 +11,10 @@ on:
       - 'backend/nvp_usd_film01c_texture.py'
       - 'backend/nvp_native_usd_texture.py'
       - 'backend/nvp_openusd_assets.py'
+      - 'backend/nvp_g05_scene_authoring.py'
+      - 'backend/nvp_g07_edit.py'
+      - 'frontend/src/DirectorWorldStage.jsx'
+      - 'tests/test_nvp_conv04_camera_lifecycle.py'
       - 'tests/test_nvp_conv06_native_texture_import.py'
       - 'tests/nvp_conv06_native_texture_test_support.py'
       - 'frontend/src/DirectorCameraActorContinuity.test.jsx'
@@ -100,6 +104,7 @@ jobs:
             test_nvp_film03_facial_rig_compositor.py
             test_nvp_usd_film01_world.py
             test_nvp_usd_film01d_shot_working_set.py
+            test_nvp_conv04_camera_lifecycle.py
             test_nvp_usd_film01e_world_take.py
             test_nvp_usd_film01f_world_render.py
             test_nvp_usd_film02mh_real_shot_render.py
