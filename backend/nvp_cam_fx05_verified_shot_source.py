@@ -161,12 +161,35 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
         opSuffix="NVPFilmTime")
     if not frozen_transform.Set(observed,at):
         raise RuntimeError("Approved native camera transform cannot freeze at snapshot frame")
+    # The native meter-scale rail records USD camera focal length and
+    # filmback in 1/100-mm scene units. The original render handoff's
+    # disposable 24fps camera uses the intended millimetre values. Convert
+    # all three lens/filmback fields together so the field of view stays
+    # unchanged. Validate the source-hashed native optics before export;
+    # never silently substitute the expected value for mismatched evidence.
+    physical_optics={
+        "GetFocalLengthAttr": (position["focal_length_mm"],MM_PER_CAMERA_UNIT),
+        "GetHorizontalApertureAttr": (spec["filmback_mm"][0],MM_PER_CAMERA_UNIT),
+        "GetVerticalApertureAttr": (spec["filmback_mm"][1],MM_PER_CAMERA_UNIT),
+        "GetFocusDistanceAttr": (position["focus_distance_m"],METERS_PER_UNIT),
+        "GetFStopAttr": (position["f_stop"],1.0),
+    }
     for name in ("GetFocalLengthAttr","GetFocusDistanceAttr","GetFStopAttr",
                  "GetHorizontalApertureAttr","GetVerticalApertureAttr",
                  "GetClippingRangeAttr"):
         original_attr=getattr(native_camera,name)()
-        value=original_attr.Get(camera_at)
-        if value is None or not getattr(frozen_source_camera,name)().Set(value,at):
+        native_value=original_attr.Get(camera_at)
+        if native_value is None:
+            raise RuntimeError("Approved native rail optics missing at original Film Time")
+        value=native_value
+        if name in physical_optics:
+            expected,unit_scale=physical_optics[name]
+            if abs(float(native_value)*unit_scale-float(expected))>1e-4:
+                raise RuntimeError("Approved native rail optics disagree with pinned Film Time")
+            if name in ("GetFocalLengthAttr","GetHorizontalApertureAttr",
+                        "GetVerticalApertureAttr"):
+                value=expected
+        if not getattr(frozen_source_camera,name)().Set(value,at):
             raise RuntimeError("Approved native rail optics cannot freeze at snapshot frame")
     overlay_layer=overlay.GetRootLayer()
     session=src.GetSessionLayer()

@@ -140,6 +140,12 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
                     evidence["original_camera_path"]).IsA(UsdGeom.Camera))
                 self.assertEqual(camera.GetFocalLengthAttr().Get(
                     Usd.TimeCode(1.0)),45. if rev==1 else 55.)
+                # 35mm optics must retain the same native source FOV when
+                # handed to the disposable one-frame Blender USD stage.
+                self.assertEqual(camera.GetHorizontalApertureAttr().Get(
+                    Usd.TimeCode(1.0)),36.0)
+                self.assertEqual(camera.GetVerticalApertureAttr().Get(
+                    Usd.TimeCode(1.0)),20.25)
                 self.assertEqual(
                     camera.GetFocalLengthAttr().GetTimeSamples(),[1.0])
                 self.assertEqual(src.GetStartTimeCode(),1.)
