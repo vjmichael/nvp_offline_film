@@ -96,3 +96,33 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
     return {"format":SCHEMA,"bindings":descriptors,
             "scene_document_sha256":record["document_sha256"],
             "original_modified":False}
+
+def spatial_audio_at_precise_time(index: FilmIndex, project_id, scene_id,
+                                  scene_revision, timeline_id,
+                                  timeline_revision, film_time, *, limit=32):
+    """Query original spatial sound using a structured exact Film Time address.
+
+    Decimal tick strings are required across desktop/JSON boundaries so a
+    JavaScript number cannot silently round a subframe address.
+    """
+    if type(film_time) is not dict or set(film_time) != {
+            "ticks", "ticks_per_second"}:
+        raise ValueError("Exact Film Time requires ticks and ticks_per_second")
+    ticks = film_time["ticks"]
+    rate = film_time["ticks_per_second"]
+    if (type(ticks) is not str or not ticks or
+            not ticks.isascii() or not ticks.isdecimal() or
+            (len(ticks) > 1 and ticks[0] == "0")):
+        raise ValueError("Film Time ticks must be canonical decimal text")
+    if rate != str(TICKS_PER_SECOND) or type(rate) is not str:
+        raise ValueError("Unsupported Film Time tick rate")
+    # Validate the decimal width before integer conversion, even on Python
+    # runtimes with different integer-string conversion limits.
+    if len(ticks) > 19:
+        raise ValueError("Film Time ticks exceed supported integer range")
+    tick = _int(int(ticks), "time tick")
+    result = spatial_audio_at(
+        index, project_id, scene_id, scene_revision,
+        timeline_id, timeline_revision, tick, limit=limit)
+    return {**result, "queried_film_time": {
+        "ticks": ticks, "ticks_per_second": rate}}
