@@ -205,9 +205,12 @@ class OriginalUVTextureNativeImport(unittest.TestCase):
                 self.bridge.data_av_import_original_mesh_roughness(request)
         self.window.url="http://127.0.0.1:19991/"
         # The base-color RGB image is not an authentic scalar roughness map.
+        # Reject before prompting the director and before new FilmIndex blobs.
+        dialogs_before=self.window.dialogs
         with patch.dict(sys.modules,{"webview":fake}):
             with self.assertRaises(ValueError):
                 self.bridge.data_av_import_original_mesh_roughness(request)
+        self.assertEqual(self.window.dialogs,dialogs_before)
         with self.assertRaises(KeyError):
             self.index.read_revision(self.pid,self.name,3)
 
