@@ -144,7 +144,8 @@ class FrozenSceneAV:
         page=self.timeline.events_in(
             self.project_id,self.data["timeline_id"],
             self.data["timeline_revision"],start_tick=start_tick,
-            end_tick=end_tick,limit=MAX_SOUND_EVENTS+1)
+            end_tick=end_tick,limit=MAX_SOUND_EVENTS+1,
+            event_kinds=("sound", "dialogue"))
         if page["next_cursor"] is not None or len(page["events"])>MAX_SOUND_EVENTS:
             raise RuntimeError("Sound event density exceeds native mixer budget")
         events=[x for x in page["events"] if x["event_kind"] in (
