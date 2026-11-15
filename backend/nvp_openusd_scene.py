@@ -71,6 +71,79 @@ def _vector(value):
     return [float(x) for x in value]
 
 
+def _original_camera_specs(stage, roles, specs, *, author):
+    """Author or independently reverify explicit immutable native camera data."""
+    from backend.nvp_openusd_native_schemas import (
+        MM_PER_CAMERA_UNIT, METERS_PER_UNIT)
+    Gf,Sdf,Usd,UsdGeom=_usd()
+    camera_paths={p for p,r in roles.items() if r=="camera"}
+    if (type(specs) is not list or not camera_paths or
+            len(specs)!=len(camera_paths) or len(specs)>MAX_PRIMS):
+        raise ValueError("Original native camera specifications incomplete")
+    seen=set()
+    canonical=[]
+    for row in specs:
+        if type(row) is not dict or set(row)!={
+                "path","rotation_euler_deg","focal_length_mm",
+                "focus_distance_m"}:
+            raise ValueError("Unsupported original native camera fields")
+        path=_path(row["path"],Sdf)
+        if path not in camera_paths or path in seen:
+            raise ValueError("Duplicate or foreign native source camera")
+        seen.add(path)
+        degrees=row["rotation_euler_deg"]
+        if (type(degrees) is not list or len(degrees)!=3 or
+            any(type(x) not in (int,float) or not math.isfinite(x)
+                or abs(x)>360 for x in degrees)):
+            raise ValueError("Native camera orientation requires finite angles")
+        rotation=[float(x) for x in degrees]
+        focal=row["focal_length_mm"]
+        focus=row["focus_distance_m"]
+        if (type(focal) not in (int,float) or not math.isfinite(focal) or
+            not 8<=focal<=300 or type(focus) not in (int,float) or
+            not math.isfinite(focus) or not .05<=focus<=1_000_000):
+            raise ValueError("Native camera focal length/focus out of range")
+        focal=float(focal)
+        focus=float(focus)
+        prim=stage.GetPrimAtPath(path)
+        camera=UsdGeom.Camera(prim)
+        if not camera or not prim.IsDefined():
+            raise RuntimeError("Genuine native UsdGeom.Camera source required")
+        order=prim.GetAttribute("xformOpOrder")
+        rotate=prim.GetAttribute("xformOp:rotateXYZ")
+        if author:
+            rotate=prim.CreateAttribute(
+                "xformOp:rotateXYZ",Sdf.ValueTypeNames.Float3)
+            if (not rotate.Set(Gf.Vec3f(*rotation)) or
+                not order.Set(["xformOp:translate","xformOp:rotateXYZ"]) or
+                not camera.GetFocalLengthAttr().Set(
+                    focal/MM_PER_CAMERA_UNIT) or
+                not camera.GetFocusDistanceAttr().Set(
+                    focus/METERS_PER_UNIT)):
+                raise RuntimeError("Could not author original native camera")
+        else:
+            if (not order or list(order.Get() or [])!=[
+                    "xformOp:translate","xformOp:rotateXYZ"] or
+                not rotate or not rotate.HasAuthoredValue() or
+                not camera.GetFocalLengthAttr().HasAuthoredValue() or
+                not camera.GetFocusDistanceAttr().HasAuthoredValue()):
+                raise RuntimeError("Frozen camera lost authored source controls")
+            actual=[float(x) for x in rotate.Get()]
+            if (len(actual)!=3 or any(
+                    not math.isclose(x,y,rel_tol=0,abs_tol=1e-4)
+                    for x,y in zip(actual,rotation)) or
+                not math.isclose(float(camera.GetFocalLengthAttr().Get())*
+                    MM_PER_CAMERA_UNIT,focal,rel_tol=0,abs_tol=1e-4) or
+                not math.isclose(float(camera.GetFocusDistanceAttr().Get())*
+                    METERS_PER_UNIT,focus,rel_tol=0,abs_tol=1e-4)):
+                raise RuntimeError("Original native camera differs from source")
+        canonical.append({"path":path,"rotation_euler_deg":rotation,
+                          "focal_length_mm":focal,"focus_distance_m":focus})
+    if seen!=camera_paths:
+        raise RuntimeError("Original native camera sources incomplete")
+    return sorted(canonical,key=lambda row:row["path"])
+
+
 def _digest(doc):
     return hashlib.sha256(json.dumps(
         doc,sort_keys=True,separators=(",",":"),
@@ -134,7 +207,8 @@ class OpenUSDSceneBridge:
                 expected_revision=0, asset_bindings=None,
                 performance_channels=None, native_schemas=False,
                 skeletal_rigs=None, actor_bindings=None,
-                imported_character_sources=None):
+                imported_character_sources=None,
+                native_camera_specs=None):
         """Create immutable world+motion layer blobs and an exact scene revision.
 
         A failed FilmIndex publication may leave *orphan blobs*, not an approved
@@ -148,6 +222,8 @@ class OpenUSDSceneBridge:
             raise ValueError("Scene prim/curve authoring budget exceeded")
         if type(native_schemas) is not bool:
             raise ValueError("Explicit native scene schema choice required")
+        if native_camera_specs is not None and not native_schemas:
+            raise ValueError("Original camera source requires native USD schema")
         _native_publish_checkpoint("before_pxr")
         Gf,Sdf,Usd,UsdGeom=_usd()
         _native_publish_checkpoint("after_pxr")
@@ -200,6 +276,9 @@ class OpenUSDSceneBridge:
                 raise RuntimeError("Cannot author USD layout transform")
             paths[path]=role
             _native_publish_checkpoint("after_prim_" + role)
+        native_camera_settings=(
+            _original_camera_specs(layout,paths,native_camera_specs,author=True)
+            if native_camera_specs is not None else None)
         motion=Sdf.Layer.CreateAnonymous("nvp_performance.usda")
         moving=Usd.Stage.Open(motion)
         moving.SetTimeCodesPerSecond(float(TICKS_PER_SECOND))
@@ -344,6 +423,8 @@ class OpenUSDSceneBridge:
                   "contains_external_references":False,
                   "rendered":False,
                   "creator_approved":False}
+        if native_camera_settings is not None:
+            manifest["native_camera_settings"]=native_camera_settings
         def guard(db):
             for original in imported:
                 source=self.index._read_revision(
@@ -503,6 +584,12 @@ class OpenUSDSceneBridge:
                     project_id,doc["skeleton_layer_sha256"]).decode("utf-8"),
                 "reopen_skeleton.usda",Sdf)
         composed=_compose(base,motion,Sdf,Usd,param,skeletons)
+        if "native_camera_settings" in doc:
+            if doc.get("native_schema_version") is None:
+                raise RuntimeError("Frozen camera specs lack typed native source")
+            _original_camera_specs(
+                composed,doc["prim_roles"],doc["native_camera_settings"],
+                author=False)
         if doc.get("native_schema_version"):
             from backend.nvp_openusd_native_schemas import METERS_PER_UNIT
             if not math.isclose(

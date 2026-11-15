@@ -111,10 +111,21 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         scene_record,stage=OpenUSDSceneBridge(cls.index).open(
             cls.pid,"NineCameraOriginalScene",1)
         cls.assertTrueStatic(len(scene_record["data"]["native_camera_settings"])==9)
+        authored={x["path"]:x for x in scene_record["data"]["native_camera_settings"]}
         for angle,framing in GRID:
             path=cls.camera_paths[(angle,framing)]
-            if not stage.GetPrimAtPath(path).IsA(UsdGeom.Camera):
-                raise RuntimeError("Nine native original camera prims not authored")
+            prim=stage.GetPrimAtPath(path)
+            if not prim.IsA(UsdGeom.Camera) or path not in authored:
+                raise RuntimeError("Nine original native camera prims not authored")
+            camera=UsdGeom.Camera(prim)
+            cls.assertTrueStatic(abs(
+                float(camera.GetFocalLengthAttr().Get())*100 -
+                lens[framing])<1e-4)
+            cls.assertTrueStatic(abs(
+                float(camera.GetFocusDistanceAttr().Get())-11)<1e-4)
+            cls.assertTrueStatic(tuple(
+                float(x) for x in prim.GetAttribute("xformOp:rotateXYZ").Get())==
+                tuple(authored[path]["rotation_euler_deg"]))
         # 48 kHz FilmIndex-recorded original source provenance, but PCM is
         # disposable CI test data and NOT a real human voice or film master.
         cls.recorded_test_pcm=RecordedSoundSources(cls.index).publish(
