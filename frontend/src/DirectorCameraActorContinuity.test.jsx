@@ -30,7 +30,18 @@ const nativeSources=()=>({
     external_texture_paths_allowed:false,
     sources:[{source_kind:'asset',source_id:'OriginalTextureAsset',
       revision:1,document_sha256:'d'.repeat(64),
-      png_sha256:['e'.repeat(64)]}]})),
+      png_sha256:['e'.repeat(64)]}],
+    original_uv_meshes:[{
+      asset_id:'SourceMappedMesh',revision:1,
+      document_sha256:'f'.repeat(64)}]})),
+  data_av_import_original_mesh_texture:vi.fn(async()=>({
+    format:'nvp.wo2.native_original_texture_import.v1',
+    status:'ORIGINAL_SOURCE_TEXTURE_BOUND',
+    asset_id:'SourceMappedMesh',source_revision:1,
+    source_asset_sha256:'f'.repeat(64),
+    original_png_sha256:'9'.repeat(64),
+    native_source_reopened:true,original_modified:false,
+    film_master_approved:false})),
   film02md_publish_cells:vi.fn(async()=>{throw Error('Only native creator confirmation');})
 });
 
@@ -52,6 +63,27 @@ describe('CONV-06 original source environment inventory on one trusted desktop',
     expect(screen.getByText(/OriginalTextureAsset · 1 source-verified images/)).toBeTruthy();
     expect(native.film02md_publish_cells).not.toHaveBeenCalled();
     expect(screen.queryByText('e'.repeat(64))).toBeNull();
+  });
+
+  it('uses only selected original asset identity for the native PNG picker',async()=>{
+    const native=nativeSources();
+    window.pywebview={api:native};
+    render(<DirectorCameraActorContinuity movie={movie}/>);
+    fireEvent.click(screen.getByText(/Advanced direction: camera drafts/));
+    fireEvent.click(screen.getByText('Advanced: original architecture and image sources'));
+    await screen.findByText(/SourceMappedMesh — revision 1/);
+    fireEvent.click(screen.getByText('Choose PNG and confirm in native window'));
+    await waitFor(()=>expect(native.data_av_import_original_mesh_texture)
+      .toHaveBeenCalledWith({
+        project_id:pid,asset_id:'SourceMappedMesh',source_revision:1,
+        source_document_sha256:'f'.repeat(64)}));
+    const request=native.data_av_import_original_mesh_texture.mock.calls[0][0];
+    expect(Object.keys(request).sort()).toEqual([
+      'asset_id','project_id','source_document_sha256','source_revision']);
+    expect(request).not.toHaveProperty('file');
+    expect(request).not.toHaveProperty('approved');
+    await screen.findByText(/Native-approved original image saved/);
+    expect(native.film01c_texture_catalog.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('rejects cross-project or fake Cycles approval metadata',async()=>{
