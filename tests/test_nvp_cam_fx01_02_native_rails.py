@@ -18,7 +18,8 @@ from backend.nvp_cam_fx01_camera_rails import (
     OriginalCameraRails,normalize_rail,evaluate_rail,MAX_SPEED_MPS)
 from backend.nvp_cam_fx02_usd_camera_layer import (
     open_approved_camera_layer,film_time_samples,
-    camera_matrix_rows,camera_rail_path)
+    camera_matrix_rows,camera_rail_path,
+    _original_rail_namespace_reserved,CAMERA_ROOT)
 
 def node(tick,position,target,*,mode="hermite",ease="smoothstep",
          focal=35,focus=8,roll=0,aperture=5.6):
@@ -213,6 +214,18 @@ class OriginalCAMFX01And02NativeRailTests(unittest.TestCase):
         self.assertEqual(self.index.read_revision(
             self.pid,"OriginalStreetTake",1)["document_sha256"],
             self.original_scene_take)
+
+    def test_native_absent_rail_root_is_not_a_source_collision(self):
+        # Real usd-core null prim behavior, not a fake stage or a skipped
+        # collision guard. Source-owned, over and under source namespaces
+        # must continue to be rejected before any stronger layer is applied.
+        stage=Usd.Stage.CreateInMemory()
+        UsdGeom.Xform.Define(stage,"/World")
+        self.assertFalse(stage.GetPrimAtPath(CAMERA_ROOT))
+        self.assertFalse(_original_rail_namespace_reserved(stage))
+        UsdGeom.Xform.Define(stage,CAMERA_ROOT)
+        self.assertTrue(_original_rail_namespace_reserved(stage))
+        self.assertTrue(stage.GetPrimAtPath(CAMERA_ROOT).IsDefined())
 
     def test_exact_native_camera_orientation_and_original_up_axis(self):
         spec=self.spec()
