@@ -11,6 +11,8 @@ on:
       - 'backend/nvp_usd_film01c_texture.py'
       - 'backend/nvp_native_usd_texture.py'
       - 'backend/nvp_cam_fx02_usd_camera_layer.py'
+      - 'backend/nvp_data_av_visual.py'
+      - 'tests/test_nvp_conv06_visual_mesh_contract.py'
       - 'tests/test_nvp_cam_fx01_02_native_rails.py'
       - 'backend/nvp_wo2_openpbr.py'
       - 'backend/nvp_wo2_material_slots.py'
@@ -95,6 +97,7 @@ jobs:
             test_nvp_usd_film01c_lazy_resolver.py
             test_nvp_wo2_texture_tiles.py
             test_nvp_conv06_wo2_readback_contract.py
+            test_nvp_conv06_visual_mesh_contract.py
             test_nvp_convergence_camera_reel_native.py
             test_nvp_usd_film01i_ninecam_take.py
             test_nvp_conv11_worker_receipt_reopen_native.py
