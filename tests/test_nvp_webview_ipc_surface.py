@@ -150,6 +150,27 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             self.assertIsInstance(surface.args[0],ast.Name)
             self.assertEqual(surface.args[0].id,"bridge")
 
+    def test_installed_visible_source_reads_script_editor_not_body_text(self):
+        # A real resumed movie opens Scenes by default. The original
+        # screenplay is a controlled textarea value only after Script is
+        # selected; body.textContent can never prove it was displayed.
+        path=Path(__file__).resolve().parents[1]/"tools"/"nvp_desktop_alpha.py"
+        tree=ast.parse(path.read_text(encoding="utf-8"),filename=str(path))
+        smoke=next(node for node in tree.body
+                   if isinstance(node,ast.FunctionDef) and
+                   node.name=="run_visible_window_smoke")
+        source_strings=[node.value for node in ast.walk(smoke)
+                        if isinstance(node,ast.Constant) and
+                        isinstance(node.value,str)]
+        self.assertTrue(any("Script phase not selectable" in s
+                            for s in source_strings))
+        self.assertTrue(any("textarea.line-numbered-input" in s
+                            for s in source_strings))
+        self.assertTrue(any(".startsWith('EXT. NATIVE CAMERA SOUND SOURCE" in s
+                            for s in source_strings))
+        self.assertFalse(any("document.body.textContent.includes('EXT. NATIVE" in s
+                             for s in source_strings))
+
     def test_reject_untrusted_bridge_object(self):
         with self.assertRaises(TypeError):
             NativeWebviewIPCSurface(self.native_window)

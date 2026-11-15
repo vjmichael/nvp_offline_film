@@ -112,6 +112,7 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   await waitFor(()=>expect(screen.getByRole('navigation',{name:'Filmmaking steps'})).toBeTruthy());
   fireEvent.click(screen.getByRole('button',{name:/Script/}));
   const editor=screen.getByRole('textbox',{name:'Edit screenplay'});
+  expect(editor.value).toBe(MOVIE.screenplay);
   const revision='EXT. GARDEN - DAWN\n\nA bird lands.';
   fireEvent.change(editor,{target:{value:revision}});
   expect(editor.value).toBe(revision);

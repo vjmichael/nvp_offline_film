@@ -413,10 +413,26 @@ def run_visible_window_smoke():
                     "if(!b)return false;b.click();return true})()")
                 if not chosen:
                     raise RuntimeError("Director cannot open saved frozen source")
+                # Movie resume opens the last filmmaking phase (normally
+                # Scenes). A textarea's value is not document.body.textContent:
+                # choose the real Script phase and verify the original source
+                # in its visible editor, rather than accepting a title.
+                opened_script=window.evaluate_js(
+                    "(()=>{let nav=document.querySelector('nav.film-steps');"
+                    "if(!nav)return false;"
+                    "let step=[...nav.querySelectorAll('button')].find(x=>"
+                    "x.textContent.includes('Script'));"
+                    "if(!step)return false;step.click();return true})()")
+                if not opened_script:
+                    raise RuntimeError("Director Script phase not selectable")
                 wait_js(
                     "Boolean(document.querySelector('nav.film-steps') && "
-                    "document.body.textContent.includes('EXT. NATIVE CAMERA SOUND SOURCE'))",
-                    25,"Native original's film source not visible in director screen")
+                    "document.querySelector('h1')?.textContent.includes('SLATE-08B Window Acceptance') && "
+                    "document.querySelector('textarea.line-numbered-input')?.value"
+                    ".startsWith('EXT. NATIVE CAMERA SOUND SOURCE - DAY') && "
+                    "document.querySelector('textarea.line-numbered-input')?.value"
+                    ".includes('A field and an owl.'))",
+                    25,"Native original screenplay is not visible in director Script phase")
                 _smoke_checkpoint("window_original_film_source_visible")
                 # Direct native sound catalog via the same installed WebView2
                 # bridge. --smoke-data-av separately proves sample-accurate

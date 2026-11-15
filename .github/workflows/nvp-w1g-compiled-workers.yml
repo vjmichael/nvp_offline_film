@@ -7,11 +7,11 @@ name: NVP W1-G five compiled native first-party worker capability slices
 # creator-authorized, redistributable, EFS-accepted or complete NVP film release.
 on:
   workflow_dispatch:
-# Preserve only the latest candidate acceptance run per branch/workflow.
-# Superseded source heads must not monopolize finite native runners.
+# Preserve every submitted original native-source/compiled evidence result.
+# Manual candidate runs queue; do not auto-cancel a frozen source run.
 concurrency:
   group: nvp-w1g-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -30,9 +30,21 @@ jobs:
       - name: Verify canonical exact-head ELF compiler input bytes
         run: python -m tools.nvp_w1g_source_identity_audit
       - name: Reject altered or mismatched first-party supply provenance
-        run: python -m unittest discover -s tests -p test_nvp_w1g_compiled_supply_chain_intake.py -v
+        shell: bash
+        run: |
+          set -euo pipefail
+          pattern=test_nvp_w1g_compiled_supply_chain_intake.py
+          test -f "tests/$pattern"
+          python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Original worker tests:',n); sys.exit(0 if n else 2)" "$pattern"
+          python -m unittest discover -s tests -p "$pattern" -v
       - name: Prove physical ADC catalog remains an unaccepted non-recording probe
-        run: python -m unittest discover -s tests -p test_nvp_p1a_physical_device_preflight.py -v
+        shell: bash
+        run: |
+          set -euo pipefail
+          pattern=test_nvp_p1a_physical_device_preflight.py
+          test -f "tests/$pattern"
+          python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Original preflight tests:',n); sys.exit(0 if n else 2)" "$pattern"
+          python -m unittest discover -s tests -p "$pattern" -v
       - name: Compile all five ELF64 binaries and run actual operations
         run: |
           set -euo pipefail
@@ -67,10 +79,15 @@ jobs:
       - name: Reject altered or mismatched first-party supply provenance
         shell: pwsh
         run: |
-          python -m unittest discover -s tests -p test_nvp_w1g_compiled_supply_chain_intake.py -v
-          if ($LASTEXITCODE -ne 0) { throw 'Native worker supply-review negative matrix failed' }
-          python -m unittest discover -s tests -p test_nvp_p1a_physical_device_preflight.py -v
-          if ($LASTEXITCODE -ne 0) { throw 'Native physical microphone preflight refusal contract failed' }
+          foreach ($f in @('test_nvp_w1g_compiled_supply_chain_intake.py','test_nvp_p1a_physical_device_preflight.py')) {
+            if (-not (Test-Path -LiteralPath ("tests/" + $f))) {
+              throw "Missing original native supply/preflight test: $f"
+            }
+            python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Original supply/preflight tests:',n,sys.argv[1]); sys.exit(0 if n else 2)" $f
+            if ($LASTEXITCODE -ne 0) { throw "Original native supply/preflight suite is empty: $f" }
+            python -m unittest discover -s tests -p $f -v
+            if ($LASTEXITCODE -ne 0) { throw "Original native supply/preflight suite failed: $f" }
+          }
       - name: Verify canonical exact-head PE compiler input bytes
         shell: pwsh
         run: |

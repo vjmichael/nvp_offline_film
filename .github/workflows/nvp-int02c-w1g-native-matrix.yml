@@ -6,11 +6,11 @@ name: NVP INT-02C / W1-G exact-head native Cycles and worker matrix
 # Isolated integration branch only. No release, merge, or physical-human approval.
 on:
   workflow_dispatch:
-# Preserve only the latest candidate acceptance run per branch/workflow.
-# Superseded source heads must not monopolize finite native runners.
+# Keep independently submitted original same-SHA acceptance intact.
+# New manually requested groups queue; an earlier run is never auto-cancelled.
 concurrency:
   group: nvp-w1g-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -32,39 +32,46 @@ jobs:
           python -m pip install --only-binary=:all: 'usd-core==26.11'
       - name: Exact-head compile and native refusal/transaction tests
         run: |
+          set -euo pipefail
           python -m compileall -q backend tools tests
-          python -m unittest discover -s tests -p 'test_nvp_int02_edited_film.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_int02_playable_preview.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_p1bc_actor_dialogue_native.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_p1bc_glb_scene_native.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_p1def_p2_native.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_int02_shot_composition.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_native_package.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_protected_upgrade.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_first_party_result_verifier.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_native_link_audit.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_webview_ipc_surface.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_release_build_marker.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1f_reel_audit.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_supply_candidate.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_owned_subprocess.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_launch_surface_audit.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_conv06_no_legacy_blender_fallback.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_no_ffmpeg_contract.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_conv03_shared_security_convergence.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_filming_windows_release.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_p1a_original_capture_worker_bridge.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_plan02b_native_capture.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_filming_worker_custody.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_release_gate.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_production_authority.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_encrypted_review.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_signed_wheelhouse.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_reconcile_compiled_release.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_physical_efs_review.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_supply_chain_hardening.py' -v
-          python -m unittest discover -s tests -p 'test_nvp_w1g_release_safety.py' -v
-          python -m unittest discover -s tests -p 'test_blender_worker.py' -v
+          run_original_suite() {
+            local pattern="$1"
+            test -f "tests/$pattern" || { echo "Missing original native test: $pattern"; return 1; }
+            python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Original native tests discovered:',n,sys.argv[1]); sys.exit(0 if n else 2)" "$pattern"
+            python -m unittest discover -s tests -p "$pattern" -v
+          }
+          run_original_suite 'test_nvp_int02_edited_film.py'
+          run_original_suite 'test_nvp_int02_playable_preview.py'
+          run_original_suite 'test_nvp_p1bc_actor_dialogue_native.py'
+          run_original_suite 'test_nvp_p1bc_glb_scene_native.py'
+          run_original_suite 'test_nvp_p1def_p2_native.py'
+          run_original_suite 'test_nvp_int02_shot_composition.py'
+          run_original_suite 'test_nvp_w1g_native_package.py'
+          run_original_suite 'test_nvp_w1g_protected_upgrade.py'
+          run_original_suite 'test_nvp_w1g_first_party_result_verifier.py'
+          run_original_suite 'test_nvp_w1g_native_link_audit.py'
+          run_original_suite 'test_nvp_webview_ipc_surface.py'
+          run_original_suite 'test_nvp_w1g_release_build_marker.py'
+          run_original_suite 'test_nvp_w1f_reel_audit.py'
+          run_original_suite 'test_nvp_w1g_supply_candidate.py'
+          run_original_suite 'test_nvp_w1g_owned_subprocess.py'
+          run_original_suite 'test_nvp_w1g_launch_surface_audit.py'
+          run_original_suite 'test_nvp_conv06_no_legacy_blender_fallback.py'
+          run_original_suite 'test_nvp_no_ffmpeg_contract.py'
+          run_original_suite 'test_nvp_conv03_shared_security_convergence.py'
+          run_original_suite 'test_nvp_filming_windows_release.py'
+          run_original_suite 'test_nvp_p1a_original_capture_worker_bridge.py'
+          run_original_suite 'test_nvp_plan02b_native_capture.py'
+          run_original_suite 'test_nvp_filming_worker_custody.py'
+          run_original_suite 'test_nvp_w1g_release_gate.py'
+          run_original_suite 'test_nvp_w1g_production_authority.py'
+          run_original_suite 'test_nvp_w1g_encrypted_review.py'
+          run_original_suite 'test_nvp_w1g_signed_wheelhouse.py'
+          run_original_suite 'test_nvp_w1g_reconcile_compiled_release.py'
+          run_original_suite 'test_nvp_w1g_physical_efs_review.py'
+          run_original_suite 'test_nvp_w1g_supply_chain_hardening.py'
+          run_original_suite 'test_nvp_w1g_release_safety.py'
+          run_original_suite 'test_blender_worker.py'
 
   native-python-contracts-windows:
     name: Windows exact-head W1-G and INT-02C contracts
@@ -108,6 +115,11 @@ jobs:
             'test_nvp_w1g_supply_chain_hardening.py',
             'test_nvp_webview_ipc_surface.py','test_blender_worker.py')
           foreach ($f in $files) {
+            if (-not (Test-Path -LiteralPath ("tests/" + $f))) {
+              throw "Missing original Windows native test: $f"
+            }
+            python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Original native tests discovered:',n,sys.argv[1]); sys.exit(0 if n else 2)" $f
+            if ($LASTEXITCODE -ne 0) { throw "Original Windows native suite is absent or empty: $f" }
             python -m unittest discover -s tests -p $f -v
             if ($LASTEXITCODE -ne 0) { throw "Native matrix failed: $f" }
           }

@@ -138,6 +138,25 @@ class CrossBranchNativeSecurityConvergence(TestCase):
             spawn.assert_not_called()
 
 
+    def test_original_manual_security_gates_refuse_empty_suite_or_cancellation(self):
+        # Independent gate 1 already refused zero discovered tests. The
+        # historical SEC-06 Windows phase, W1-G and compiled-native phases
+        # must not silently pass missing negative assertions either.
+        root=Path(__file__).resolve().parents[1]/".github"/"workflows"
+        requirements={
+            "nvp-sec06-independent-gate1-20261112.yml":2,
+            "nvp-int02c-w1g-native-matrix.yml":2,
+            "nvp-w1g-compiled-workers.yml":3,
+        }
+        for workflow,minimum in requirements.items():
+            with self.subTest(workflow=workflow):
+                source=(root/workflow).read_text(encoding="utf-8")
+                self.assertGreaterEqual(source.count("countTestCases()"),minimum)
+                self.assertNotIn("cancel-in-progress: true",source)
+                self.assertIn("test -f",source)
+                self.assertIn("Test-Path",source)
+
+
 if __name__=="__main__":
     import unittest
     unittest.main()

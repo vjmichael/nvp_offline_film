@@ -161,6 +161,11 @@ jobs:
             'test_nvp_w1g_production_authority.py',
             'test_nvp_filming_windows_release.py')
           foreach ($f in $fixtures) {
+            if (-not (Test-Path -LiteralPath ("tests/" + $f))) {
+              throw "Missing independent SEC-06 Windows security test: $f"
+            }
+            python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Independent SEC-06 tests discovered:',n,sys.argv[1]); sys.exit(0 if n else 2)" $f
+            if ($LASTEXITCODE -ne 0) { throw "Independent SEC-06 Windows fixture is absent or empty: $f" }
             python -m unittest discover -s tests -p $f -v
             if ($LASTEXITCODE -ne 0) { throw "SEC-06 Windows independent fixture failed: $f" }
           }
