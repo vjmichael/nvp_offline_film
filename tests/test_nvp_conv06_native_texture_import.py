@@ -127,6 +127,90 @@ class OriginalUVTextureNativeImport(unittest.TestCase):
                          [result["original_png_sha256"]])
         self.assertFalse(updated["external_texture_paths_allowed"])
 
+    def test_independent_native_roughness_approval_reopens_both_original_pngs(self):
+        base=self.import_original()
+        self.assertEqual(base["revision"],2)
+        source=self.index.read_revision(self.pid,self.name,2)
+        roughness=Image.new("RGB",(32,16),(90,90,90))
+        output=BytesIO()
+        roughness.save(output,format="PNG")
+        original_map=output.getvalue()
+        file=Path(self.work.name)/"separately-selected-roughness.png"
+        file.write_bytes(original_map)
+        self.window.png_path=file
+        self.window.dialogs=0
+        request={
+            "project_id":self.pid,"asset_id":self.name,
+            "source_revision":2,
+            "source_document_sha256":source["document_sha256"]}
+        with patch.dict(sys.modules,{"webview":SimpleNamespace(
+                FileDialog=SimpleNamespace(OPEN="native_original_roughness"))}):
+            accepted=self.bridge.data_av_import_original_mesh_roughness(request)
+        self.assertEqual(accepted["format"],
+            "nvp.wo2.native_original_roughness_import.v1")
+        self.assertEqual(accepted["status"],"ORIGINAL_ROUGHNESS_SOURCE_BOUND")
+        self.assertEqual(accepted["revision"],3)
+        self.assertFalse(accepted["film_master_approved"])
+        self.assertEqual(accepted["original_base_png_sha256"],
+                         sha256(self.png).hexdigest())
+        self.assertEqual(accepted["original_roughness_png_sha256"],
+                         sha256(original_map).hexdigest())
+        self.assertEqual(self.window.dialogs,1)
+        self.assertIn(source["document_sha256"],self.window.last_prompt)
+        old,_=self.assets.open(self.pid,self.name,1)
+        textured,_=self.assets.open(self.pid,self.name,2)
+        revised,stage=self.assets.open(self.pid,self.name,3)
+        self.assertNotIn("texture",old["data"]["preview_material"])
+        self.assertNotIn("pbr_maps",textured["data"]["preview_material"])
+        self.assertEqual(revised["data"]["points"],old["data"]["points"])
+        self.assertEqual(revised["data"]["mesh_uvs"],old["data"]["mesh_uvs"])
+        self.assertEqual(
+            revised["data"]["preview_material"]["texture"],
+            textured["data"]["preview_material"]["texture"])
+        self.assertEqual(
+            revised["data"]["preview_material"]["pbr_maps"]["roughness"]["sha256"],
+            sha256(original_map).hexdigest())
+        from pxr import UsdShade,Usd
+        shader=UsdShade.Shader(Usd.Stage.Open(stage).GetPrimAtPath(
+            "/Asset/Material/MtlxMap_Roughness"))
+        self.assertTrue(shader)
+        self.assertEqual(str(shader.GetInput("file").GetAttr().Get().path),
+                         "nvp-blob://texture/"+sha256(original_map).hexdigest())
+
+    def test_roughness_denial_invalid_pixels_and_browser_path_refused(self):
+        base=self.import_original()
+        src=self.index.read_revision(self.pid,self.name,2)
+        request={"project_id":self.pid,"asset_id":self.name,
+                 "source_revision":2,
+                 "source_document_sha256":src["document_sha256"]}
+        self.window.approved=False
+        fake=SimpleNamespace(FileDialog=SimpleNamespace(OPEN="native"))
+        with patch.dict(sys.modules,{"webview":fake}):
+            refused=self.bridge.data_av_import_original_mesh_roughness(request)
+        self.assertEqual(refused["status"],"NATIVE_DENIED")
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,self.name,3)
+        self.window.approved=True
+        for bad in (
+            {**request,"source_png_path":str(self.selected)},
+            {**request,"creator_approved":True},
+            {**request,"source_document_sha256":"f"*64}):
+            with self.subTest(bad=bad):
+                with patch.dict(sys.modules,{"webview":fake}):
+                    with self.assertRaises((PermissionError,ValueError,RuntimeError)):
+                        self.bridge.data_av_import_original_mesh_roughness(bad)
+        self.window.url="https://hostile.example/"
+        with patch.dict(sys.modules,{"webview":fake}):
+            with self.assertRaisesRegex(PermissionError,"origin"):
+                self.bridge.data_av_import_original_mesh_roughness(request)
+        self.window.url="http://127.0.0.1:19991/"
+        # The base-color RGB image is not an authentic scalar roughness map.
+        with patch.dict(sys.modules,{"webview":fake}):
+            with self.assertRaises(ValueError):
+                self.bridge.data_av_import_original_mesh_roughness(request)
+        with self.assertRaises(KeyError):
+            self.index.read_revision(self.pid,self.name,3)
+
     def test_denied_or_cancelled_picker_cannot_create_texture_asset_revision(self):
         self.window.approved=False
         denied=self.import_original()
