@@ -12,6 +12,7 @@ on:
       - 'backend/nvp_native_usd_texture.py'
       - 'backend/nvp_openusd_assets.py'
       - 'tests/test_nvp_conv06_native_texture_import.py'
+      - 'tests/nvp_conv06_native_texture_test_support.py'
       - 'frontend/src/DirectorCameraActorContinuity.test.jsx'
       - 'backend/nvp_cam_fx02_usd_camera_layer.py'
       - 'backend/nvp_data_av_visual.py'
