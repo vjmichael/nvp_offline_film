@@ -297,7 +297,8 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
             listener_path="/World/ListenerLeft")
         mixed=audience.audio_window(0,128)
         self.assertEqual(mixed["audible_event_ids"],["actor_speaks"])
-        self.assertEqual(len(mixed["pcm_stereo_s16le"]),128*4)
+        import base64
+        self.assertEqual(len(base64.b64decode(mixed["pcm_base64"])),128*4)
 
     def test_native_creator_permission_seek_and_stop_are_window_scoped(self):
         bridge=TrustedDesktopCameraBridge(
