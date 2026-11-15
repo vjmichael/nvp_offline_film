@@ -12,6 +12,72 @@ function validMatrix(m){
       r.every(x=>typeof x==='number'&&Number.isFinite(x)));
 }
 
+// Verified native USD source vertices are disposable WebGL audition data.
+// Never fetch textures, resolve a local file, or turn the source preview into
+// an independently authorized film/rendering worker.
+export function sourceGeometryFor(item){
+  if(item?.shape!=='mesh'&&item?.shape!=='skinned_mesh')
+    throw Error('Native USD source mesh shape required');
+  if(item.source_mesh_reopened!==true||
+     item.source_texture_pixels_exposed!==false||
+     typeof item.geometry_asset_sha256!=='string'||
+     !/^[a-f0-9]{64}$/.test(item.geometry_asset_sha256))
+    throw Error('Original USD source geometry was not verified');
+  if(item.shape==='skinned_mesh'&&(
+     item.source_skinning_authorized!==true||
+     !item.source_rig_binding||
+     item.source_rig_binding.source_skeleton_layer_sha256!==
+       item.geometry_asset_sha256||
+     typeof item.source_skinning_tick!=='string'))
+    throw Error('Exact original UsdSkel ActorID audition was not authorized');
+  const points=item.mesh_points;
+  const triangles=item.mesh_triangles;
+  if(!Array.isArray(points)||points.length<3||points.length>4096||
+     !Array.isArray(triangles)||triangles.length<1||
+     triangles.length>8192)
+    throw Error('Original USD mesh exceeds source preview bounds');
+  const finitePair=p=>Array.isArray(p)&&p.length===2&&
+    p.every(x=>typeof x==='number'&&Number.isFinite(x)&&Math.abs(x)<=1024);
+  const validPoint=p=>Array.isArray(p)&&p.length===3&&
+    p.every(x=>typeof x==='number'&&Number.isFinite(x)&&Math.abs(x)<=1e8);
+  if(!points.every(validPoint)||!triangles.every(face=>
+      Array.isArray(face)&&face.length===3&&
+      face.every(n=>Number.isInteger(n)&&n>=0&&n<points.length)&&
+      new Set(face).size===3))
+    throw Error('Original USD source points/faces are not valid');
+  const uvs=item.mesh_uvs;
+  const faceUV=item.mesh_face_uvs;
+  if(uvs!=null&&(
+      !Array.isArray(uvs)||uvs.length!==points.length||
+      !uvs.every(finitePair)))
+    throw Error('Original native vertex UV source differs from mesh');
+  if(faceUV!=null&&(
+      !Array.isArray(faceUV)||faceUV.length!==triangles.length||
+      !faceUV.every(face=>Array.isArray(face)&&face.length===3&&
+        face.every(finitePair))))
+    throw Error('Original native face-varying USD UV source differs');
+  const geometry=new THREE.BufferGeometry();
+  if(faceUV!=null){
+    // USD faceVarying coordinates require an unindexed triangle stream.
+    const coords=[],uv=[];
+    triangles.forEach((face,i)=>face.forEach((index,j)=>{
+      coords.push(...points[index]);
+      uv.push(...faceUV[i][j]);
+    }));
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(coords,3));
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+  }else{
+    geometry.setAttribute('position',
+      new THREE.Float32BufferAttribute(points.flat(),3));
+    geometry.setIndex(triangles.flat());
+    if(uvs!=null)
+      geometry.setAttribute('uv',
+        new THREE.Float32BufferAttribute(uvs.flat(),2));
+  }
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function shapeFor(item){
   if(!Number.isFinite(item.size_m)||item.size_m<=0||item.size_m>10000)
     throw Error('Untrusted USD 3D geometry scale');
@@ -19,6 +85,8 @@ function shapeFor(item){
     item.size_m,item.size_m,item.size_m);
   if(item.shape==='sphere')return new THREE.SphereGeometry(
     item.size_m/2,24,16);
+  if(item.shape==='mesh'||item.shape==='skinned_mesh')
+    return sourceGeometryFor(item);
   if(item.shape==='gizmo'){
     if(item.semantic_role==='camera')return new THREE.ConeGeometry(.25,.6,8);
     if(item.semantic_role==='light')return new THREE.OctahedronGeometry(.25);
@@ -141,7 +209,12 @@ export default function DataFirstWorldViewport({
     for(const obj of bounded){
       if(typeof obj.path!=='string'||!validMatrix(obj.world_matrix))continue;
       incoming.add(obj.path);
-      const fingerprint=[obj.shape,obj.size_m,obj.semantic_role].join(':');
+      const fingerprint=[
+        obj.shape,obj.size_m,obj.semantic_role,
+        obj.geometry_asset_sha256||'',
+        obj.source_skinning_tick||'',
+        obj.source_color_rgb?.join(',')||'',
+        sceneSha].join(':');
       let mesh=state.meshes.get(obj.path);
       if(mesh&&mesh.userData.sourceGeometry!==fingerprint){
         state.world.remove(mesh);
@@ -151,10 +224,18 @@ export default function DataFirstWorldViewport({
       if(!mesh){
         try{
           const geometry=shapeFor(obj);
+          const sourceRGB=obj.source_color_rgb;
+          if(sourceRGB!=null&&(
+              !Array.isArray(sourceRGB)||sourceRGB.length!==3||
+              !sourceRGB.every(x=>typeof x==='number'&&
+                Number.isFinite(x)&&x>=0&&x<=1)))
+            throw Error('Original USD source surface RGB invalid');
           const color=obj.gizmo_only?
             (obj.semantic_role==='camera'?0x38bdf8:
              obj.semantic_role==='actor'?0xc084fc:0xf59e0b):
-            0x94a3b8;
+            sourceRGB!=null?
+              new THREE.Color(sourceRGB[0],sourceRGB[1],sourceRGB[2]):
+              0x94a3b8;
           const material=new THREE.MeshStandardMaterial({
             color,roughness:.8,metalness:.05});
           mesh=new THREE.Mesh(geometry,material);
@@ -177,7 +258,7 @@ export default function DataFirstWorldViewport({
       }
     }
     state.requestRender();
-  },[objects,listenerPath]);
+  },[objects,listenerPath,sceneSha,tick]);
 
   // A verified prospective rail is a disposable camera GUIDE over the
   // native 3D source world, not authored actor geometry or a film frame.
@@ -230,9 +311,11 @@ export default function DataFirstWorldViewport({
         {(item.world_translation||[]).map(n=>Number(n).toFixed(2)).join(', ')} m
       </li>)}
     </ul>
-    <p className="fineprint">This WebGL scene uses validated native
-      OpenUSD transforms and procedural geometry. Full character meshes,
-      textures, physical materials, Hydra parity and cinema-quality
-      lighting still require separate acceptance.</p>
+    <p className="fineprint">This temporary WebGL scene shows genuine
+      source-reopened OpenUSD triangle meshes and exact Film Time UsdSkel
+      actor deformation when native Take authorization is present.
+      It is not a recorded or rendered frame. Textures, physical materials,
+      Hydra/Blender Cycles parity, picture quality, licenses and film-master
+      authorization require separate independent acceptance.</p>
   </section>;
 }
