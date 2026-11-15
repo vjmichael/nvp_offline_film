@@ -162,6 +162,27 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
             self.pid, "spatial_world", 1)["document_sha256"],
             record["document_sha256"])
 
+    def test_spatial_query_filters_non_audio_before_source_budget(self):
+        # Non-audio Film Time events must never hide original sound behind
+        # the database's bounded result window.
+        from unittest.mock import patch
+        original = TemporalLedger.events_at
+        calls = []
+
+        def checked_events(ledger, *args, **kwargs):
+            calls.append(kwargs.get("event_kind"))
+            if kwargs.get("event_kind") is None:
+                raise AssertionError("Unfiltered timeline query is unsafe")
+            return original(ledger, *args, **kwargs)
+
+        with patch.object(TemporalLedger, "events_at", checked_events):
+            result = spatial_audio_at(
+                self.index, self.pid, "spatial_world", 1,
+                "sound_events", 1, T // 2, limit=1)
+        self.assertEqual(calls, ["sound", "dialogue"])
+        self.assertEqual([b["event_id"] for b in result["bindings"]],
+                         ["actor_speaks"])
+
     def test_usd_spatial_query_rejects_invalid_time_and_budget(self):
         for tick in (-1, True, 1.5, "0", 2**63):
             with self.subTest(tick=tick), self.assertRaises(ValueError):
