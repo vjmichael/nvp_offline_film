@@ -478,6 +478,76 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                 "native_source_imported":True,
                 "film_master_approved":False}
 
+    def data_av_import_original_mesh_roughness(self,request):
+        """OS-picked source-only roughness, with its own one-use human consent.
+
+        This never makes a creator-approved film or a production license;
+        untrusted WebView sends only already saved original source identity.
+        """
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","asset_id","source_revision",
+                "source_document_sha256"}:
+            raise PermissionError("Only one exact original roughness source request")
+        from backend.nvp_film_index import _require_pid,_id,_sha
+        pid=_require_pid(request["project_id"])
+        aid=_id(request["asset_id"],"original UV material asset")
+        rev=request["source_revision"]
+        digest=_sha(request["source_document_sha256"])
+        if type(rev) is not int or rev<1:
+            raise PermissionError("Native roughness requires frozen source revision")
+        from webview import FileDialog
+        window=self._native_window()
+        if not callable(getattr(window,"create_file_dialog",None)):
+            raise PermissionError("Real native PNG file picker required")
+        chosen=window.create_file_dialog(
+            FileDialog.OPEN,allow_multiple=False,
+            file_types=("Original grayscale PNG images (*.png)",))
+        if not chosen:
+            return {"format":"nvp.wo2.native_original_roughness_import.v1",
+                    "status":"CANCELLED","original_modified":False}
+        if type(chosen) not in (tuple,list) or len(chosen)!=1:
+            raise PermissionError("Only one OS-picked original roughness PNG")
+        from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+        def confirm(scope):
+            if (type(scope) is not dict or
+                scope.get("operation")!=
+                    "nvp.wo2.native_import_original_roughness_map.v1" or
+                scope.get("project_id")!=pid or
+                scope.get("asset_id")!=aid or
+                scope.get("source_revision")!=rev or
+                scope.get("source_asset_sha256")!=digest or
+                scope.get("channel")!="roughness" or
+                any(type(scope.get(x)) is not int or scope[x]<1
+                    for x in ("width","height","size_bytes")) or
+                any(type(scope.get(x)) is not str or len(scope[x])!=64
+                    for x in ("source_png_sha256","original_base_png_sha256"))):
+                return False
+            return self._ask(
+                "Approve ONE original grayscale roughness map on the same "
+                "source-authentic UV mesh?\\n"
+                "Project: "+pid+"\\nAsset: "+aid+
+                "\\nOriginal revision: "+str(rev)+
+                "\\nSource document SHA: "+digest+
+                "\\nFrozen color PNG SHA: "+scope["original_base_png_sha256"]+
+                "\\nSelected roughness PNG SHA: "+scope["source_png_sha256"]+
+                "\\nImage dimensions: "+str(scope["width"])+" x "+
+                    str(scope["height"])+
+                "\\nThis creates one new USD source revision only; it does "
+                "not grant a renderer, commercial license, actor Take edits, "
+                "or a final film master.")
+        result=OpenUSDAssetRegistry(self.index).publish_native_selected_mesh_roughness(
+            pid,aid,expected_source_revision=rev,
+            expected_source_document_sha256=digest,
+            selected_path=chosen[0],approve_native=confirm)
+        if result["status"]=="NATIVE_DENIED":
+            return {"format":"nvp.wo2.native_original_roughness_import.v1",
+                    "status":"NATIVE_DENIED","original_modified":False}
+        return {**result,
+                "format":"nvp.wo2.native_original_roughness_import.v1",
+                "native_source_imported":True,
+                "film_master_approved":False}
+
     def data_av_import_original_audio(self,project_id,source_id):
         """Open a REAL native OS picker. The browser supplies IDs, never paths."""
         self._native_window()
