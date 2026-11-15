@@ -87,24 +87,50 @@ def static_composed_usd(index: FilmIndex, project_id, take_id, take_sha,
         params[key]=value
     from backend.nvp_int02_usd_materials import source_preview_materials
     material_bindings=source_preview_materials(stage,tick)
-    # P1-B/C: render the REAL skinned character evaluated at authored Film
-    # Time. The native Blender importer must never re-skin a source mesh
-    # after it was baked for this one immutable picture sample.
+    # CONV-06: the original source had genuine non-imported artist USD
+    # UsdSkel performances too. Bake ALL source-pinned, skin-weighted actors,
+    # not only later reviewed GLB imports. A Blender worker must never infer
+    # missing character geometry or re-skin an already deformed frame.
+    from backend.nvp_openusd_skinning import evaluate_skin,SKIN_MESH_SUFFIX
+    rigs=scene["data"].get("skeleton_rigs",[])
+    imported=scene["data"].get("imported_characters",[])
+    if type(rigs) is not list or type(imported) is not list or len(rigs)>8:
+        raise RuntimeError("Original production UsdSkel manifest is invalid")
+    imported_by_path={item["path"]:item for item in imported}
+    if len(imported_by_path)!=len(imported):
+        raise RuntimeError("Original imported ActorID sources are duplicated")
+    cast={item["path"]:item
+          for item in scene["data"].get("actor_bindings",[])}
     frozen_actor_skin=[]
-    for original in scene["data"].get("imported_characters",[]):
-        from backend.nvp_openusd_skinning import evaluate_skin
-        actor=original["path"]
-        mesh_path=actor+"/Rig/CharacterMesh"
+    baked_paths=set()
+    for rig in rigs:
+        actor=rig["path"]
+        if not rig.get("skin_weighted"):
+            if actor in imported_by_path:
+                raise RuntimeError("Imported original character lacks authentic USD skin")
+            continue
+        mesh_path=actor+SKIN_MESH_SUFFIX
+        if (actor in baked_paths or
+            rig.get("skin_mesh_path")!=mesh_path or
+            scene["data"]["prim_roles"].get(actor)!="actor"):
+            raise RuntimeError("Original USD actor/source mesh identity changed")
+        if actor in imported_by_path and (
+            actor not in cast or
+            cast[actor]["actor_id"]!=imported_by_path[actor]["actor_id"]):
+            raise RuntimeError("Imported original ActorID cast no longer matches the source")
         evaluated=evaluate_skin(
             stage,stage.GetPrimAtPath(mesh_path),actor,tick)
         if (evaluated["usd_skin_binding_verified"] is not True or
-            evaluated["skinning_evaluated"] is not True):
-            raise RuntimeError("Original imported character is not genuinely skin-deformed")
+            evaluated["skinning_evaluated"] is not True or
+            len(evaluated["deformed_points"])!=rig["skin_vertex_count"]):
+            raise RuntimeError("Original skinned actor failed true USD evaluation")
         frozen_actor_skin.append({
-            "actor_id":original["actor_id"],
             "mesh_path":mesh_path,
             "points":evaluated["deformed_points"],
         })
+        baked_paths.add(actor)
+    if set(imported_by_path)-baked_paths:
+        raise RuntimeError("Reviewed imported character was not baked from original USD")
     flat=stage.Flatten()
     baked=Usd.Stage.Open(flat)
     if baked is None:
