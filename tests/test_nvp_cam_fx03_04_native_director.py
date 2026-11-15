@@ -150,7 +150,10 @@ class OriginalCAMFX03SourceAndDurableAI(unittest.TestCase):
         self.assertEqual(self.index.read_revision(
             self.pid,self.world_take,1)["document_sha256"],
             self.original_take_sha)
-        for take,original_sha in zip(self.source.shots,
+        original_source_shots=self.source.source.shots
+        self.assertEqual(len(original_source_shots),
+                         len(self.original_pcm_take_shas))
+        for take,original_sha in zip(original_source_shots,
                                      self.original_pcm_take_shas):
             self.assertEqual(self.index.read_revision(
                 self.pid,take["take_id"],1)["document_sha256"],original_sha)

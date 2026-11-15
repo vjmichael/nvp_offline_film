@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
-from backend.nvp_w1g_legacy_blender_launch import run_trusted_blender
+from backend.nvp_blender_acceptance import blender_available, run_trusted_blender
 from pathlib import Path
 
 from backend.nvp_character_assets import CharacterAssets
