@@ -177,6 +177,17 @@ def _read_strong_layer(byte_source):
     return layer
 
 
+def _original_rail_namespace_reserved(stage):
+    """Reject an actual source-owned rail namespace, not USD's null sentinel.
+
+    In usd-core 26.11, GetPrimAtPath for an absent path returns an invalid
+    prim whose IsDefined() raises RuntimeError. This is not an authored
+    namespace and must not be mistaken for a source collision.
+    """
+    prim=stage.GetPrimAtPath(CAMERA_ROOT)
+    return bool(prim) and prim.IsDefined()
+
+
 def generate_camera_director_layer(rail_id,spec):
     """Author and independently read actual USD bytes; no source Take writes."""
     from pxr import Usd
@@ -225,7 +236,7 @@ def open_approved_camera_layer(index:FilmIndex,pid,rail_id,revision):
         if abs(stage.GetTimeCodesPerSecond()-float(T))>.5:
             raise RuntimeError("Original 01E world and director camera rail use different clocks")
         path=camera_rail_path(rail_id)
-        if stage.GetPrimAtPath(CAMERA_ROOT).IsDefined():
+        if _original_rail_namespace_reserved(stage):
             raise PermissionError("Original source world already owns the rail rig namespace")
         root_before=stage.GetRootLayer().ExportToString()
         at=[spec["film_start_tick"],
