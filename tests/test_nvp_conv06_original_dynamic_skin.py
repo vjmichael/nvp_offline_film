@@ -46,8 +46,10 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
         return self.scenes.publish(
             self.pid,"OriginalUsdActor" if with_skin else "UnmeshedActor",
             prims=[{"path":"/World/Actor","role":"actor",
-                    "position":[0,0,0]}],
-            curves=[],skeletal_rigs=[rig])
+                    "position":[0,0,0]},
+                   {"path":"/World/Camera","role":"camera",
+                    "position":[0,0,5]}],
+            curves=[],native_schemas=True,skeletal_rigs=[rig])
 
     def _snapshot(self,original,tick):
         return {
@@ -90,6 +92,59 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
         self.assertEqual(len(shifted),len(original))
         for a,b in zip(shifted,original):
             self.assertAlmostEqual(a[0]-b[0],1.,places=4)
+
+    def test_real_original_usd_joint_pose_baked_into_one_protected_cycles_source(self):
+        # This proves the real exact-time USD DATA handed to the current
+        # protected Blender supervisor, NOT a completed Cycles render.
+        from pxr import Sdf,Usd,UsdGeom,UsdSkel
+        from backend.nvp_openusd_take import OpenUSDTakeCapture
+        from backend.nvp_temporal_ledger import TemporalLedger
+        from backend.nvp_int02_cycles_renderer import static_composed_usd
+        scene=self._publish()
+        timeline=TemporalLedger(self.index).publish(
+            self.pid,"OriginalSkinEvents",[
+                {"event_id":"OriginalActorMoves","event_kind":"action",
+                 "subject_id":"Actor","start_tick":0,
+                 "end_tick":TICKS_PER_SECOND,
+                 "source_id":"OriginalUsdActor","source_revision":1,
+                 "payload":{"usd_prim_path":"/World/Actor"}}],
+            duration_tick=2*TICKS_PER_SECOND)
+        take=OpenUSDTakeCapture(
+            self.index,verify_creator_action=lambda event,scope:
+                event=="NATIVE_SOURCE_TEST" and
+                scope.get("operation")=="nvp.freeze.usd_temporal_take.v1"
+        ).freeze(self.pid,"OriginalSkinTake",
+            scene_id="OriginalUsdActor",scene_revision=1,
+            timeline_id="OriginalSkinEvents",timeline_revision=1,
+            sample_ticks=[0,TICKS_PER_SECOND],
+            creator_event="NATIVE_SOURCE_TEST")
+        self.assertEqual(scene["revision"],1)
+        self.assertEqual(timeline["revision"],1)
+        points=[]
+        for tick in (0,TICKS_PER_SECOND):
+            layer_bytes,params,materials=static_composed_usd(
+                self.index,self.pid,"OriginalSkinTake",
+                take["document_sha256"],tick,
+                camera_path="/World/Camera")
+            self.assertGreater(len(layer_bytes),100)
+            self.assertEqual(round(params["camera_focal_length_mm"]),50)
+            flat=Sdf.Layer.CreateAnonymous("real_original_skin_source.usda")
+            self.assertTrue(flat.ImportFromString(layer_bytes.decode("utf8")))
+            stage=Usd.Stage.Open(flat)
+            prim=stage.GetPrimAtPath("/World/Actor/Rig/CharacterMesh")
+            self.assertTrue(prim and prim.IsA(UsdGeom.Mesh))
+            self.assertFalse(prim.HasAPI(UsdSkel.BindingAPI))
+            self.assertFalse(prim.GetProperty("skel:skeleton"))
+            self.assertFalse(UsdGeom.Mesh(prim).GetPointsAttr().GetTimeSamples())
+            points.append([[float(x) for x in value]
+                           for value in UsdGeom.Mesh(prim).GetPointsAttr().Get()])
+        self.assertNotEqual(points[0],points[1])
+        for at_start,at_end in zip(*points):
+            self.assertAlmostEqual(at_end[0]-at_start[0],1.,places=4)
+        with self.assertRaises(RuntimeError):
+            static_composed_usd(
+                self.index,self.pid,"OriginalSkinTake","f"*64,0,
+                camera_path="/World/Camera")
 
     def test_forged_original_scene_or_implicit_skin_authority_is_refused(self):
         record=self._publish()
