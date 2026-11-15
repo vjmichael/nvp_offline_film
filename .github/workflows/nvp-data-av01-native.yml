@@ -209,23 +209,71 @@ jobs:
           }
           $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-data-av-failure.txt'
           Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
-          $smoke=Start-Process -FilePath $installed -ArgumentList '--smoke-data-av' -Wait -PassThru
+          # A successful native USD/PCM stage receipt is not a process-exit
+          # receipt. Bound the actual installed binary's exit, preserve its
+          # diagnostics, and fail closed if it remains alive after acceptance.
+          $smoke=Start-Process -FilePath $installed -ArgumentList '--smoke-data-av' -PassThru
+          if (-not $smoke.WaitForExit(120000)) {
+            Write-Output "NVP_INSTALLED_SOURCE_EXIT_TIMEOUT pid=$($smoke.Id)"
+            if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
+              Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output
+            }
+            $smoke.Refresh()
+            if (-not $smoke.HasExited) {
+              $smoke.Kill($true)
+              if (-not $smoke.WaitForExit(10000)) { throw 'Timed-out NVP.exe could not be stopped' }
+            }
+            throw 'Installed NVP.exe did not exit within 120 seconds; native smoke is NOT accepted'
+          }
           $smokeExit=$smoke.ExitCode
           if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
             Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output
           }
           if ($smokeExit -ne 0) { throw "Installed native Digital Take and sound playback failed (exit $smokeExit)" }
+          if (-not (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH)) {
+            throw 'Installed native USD/PCM original smoke receipt missing'
+          }
+          $smokeReport=Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw
+          if (-not $smokeReport.Contains('NVP_SMOKE_STAGE after_native_acceptance_run')) {
+            throw 'Installed native USD/PCM original smoke never completed'
+          }
+          # Check OS process state independently of the positive receipt.
+          $leftovers=@(Get-CimInstance Win32_Process -Filter "Name = 'NVP.exe'" |
+            Where-Object { $_.ExecutablePath -eq $installed })
+          if ($leftovers.Count -ne 0) { throw 'Installed native source smoke left NVP.exe running' }
           # Independently observe the ACTUAL installed WebView2/React/IPC
           # failure; the previous receipt proved native USD/PCM but not UI.
           # Use a separate throwaway CI diagnostic so a prior smoke cannot
           # be mistaken for WebView2 success or hide its original traceback.
           $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-webview2-failure.txt'
           Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
-          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -Wait -PassThru
+          $window=Start-Process -FilePath $installed -ArgumentList '--smoke-window' -PassThru
+          if (-not $window.WaitForExit(120000)) {
+            Write-Output "NVP_INSTALLED_WEBVIEW_EXIT_TIMEOUT pid=$($window.Id)"
+            if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
+              Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output
+            }
+            $window.Refresh()
+            if (-not $window.HasExited) {
+              $window.Kill($true)
+              if (-not $window.WaitForExit(10000)) { throw 'Timed-out installed WebView2 could not be stopped' }
+            }
+            throw 'Installed WebView2 did not exit within 120 seconds; native UI is NOT accepted'
+          }
           if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) {
             Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output
           }
           if ($window.ExitCode -ne 0) { throw "Installed WebView2 data-first sound UI failed (exit $($window.ExitCode))" }
+          if (-not (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH)) {
+            throw 'Installed WebView2 original smoke receipt missing'
+          }
+          $windowReport=Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw
+          if (-not $windowReport.Contains('NVP_SMOKE_STAGE window_webview2_loop_exited')) {
+            throw 'Installed native WebView2 original smoke did not finish'
+          }
+          $uiLeftovers=@(Get-CimInstance Win32_Process -Filter "Name = 'NVP.exe'" |
+            Where-Object { $_.ExecutablePath -eq $installed })
+          if ($uiLeftovers.Count -ne 0) { throw 'Installed WebView2 left NVP.exe running' }
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
           $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait -PassThru

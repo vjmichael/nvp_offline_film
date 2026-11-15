@@ -400,7 +400,7 @@ class NineCameraOriginalFilmSource(unittest.TestCase):
         self.assertEqual(len(camera_paths),3)
         # Tampered standalone PCM must invalidate the independently reopened
         # original Blender picture/sound receipt, including after restart.
-         prior=supervisor.root/"NineCamPhysical_0"/"original_audio"
+        prior=supervisor.root/"NineCamPhysical_0"/"original_audio"
         original_stems=[x for x in prior.glob("stem_*.wav")]
         self.assertEqual(len(original_stems),1)
         original_stems[0].write_bytes(b"tampered")
