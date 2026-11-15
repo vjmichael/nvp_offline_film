@@ -1,0 +1,6 @@
+# Exact original Film03 worker Git blob identities are verified from on-disk bytes.
+# Keep LF checkouts on Windows as well as Linux; do not alter executable source.
+/tools/nvp_film03_actor_animation_worker.py text eol=lf
+/tools/nvp_film03_actor_animation_reopen.py text eol=lf
+/tools/nvp_film03_real_face_blender_worker.py text eol=lf
+/tools/nvp_film03_real_face_blender_reopen.py text eol=lf

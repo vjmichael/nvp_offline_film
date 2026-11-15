@@ -478,7 +478,7 @@ class DurableShotBatchQueue:
             scope={
                 "operation":"nvp.film01s.claim_one_source_shot.v1",
                 "plan_id":plan_id,"plan_sha256":_sha(plan),
-                "original_performance_sha256":plan["original_performance_sha256"],
+                "source_performance_sha256":plan["original_performance_sha256"],
                 "quality":quality,"shot_id":shot_id,
                 "shot_sha256":ticket_sha,"attempt":attempt,
                 "concurrent_worker_capacity":capacity["safe_workers"]}
