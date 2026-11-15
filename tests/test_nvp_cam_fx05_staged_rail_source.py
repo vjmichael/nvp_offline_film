@@ -127,6 +127,15 @@ class OriginalCAMFX05RealSourceStageTests(unittest.TestCase):
                 rail_path=camera_rail_path("CAMFX05ReviewedRail")
                 camera=UsdGeom.Camera.Get(src,rail_path)
                 self.assertTrue(camera.GetPrim().IsDefined())
+                # The source-hashed original Film Time pose must survive
+                # independently reopened 24fps snapshot composition.
+                actual=UsdGeom.Xformable(camera).GetLocalTransformation(
+                    Usd.TimeCode(1.0))
+                expected=evidence["director_camera_matrix_rows"]
+                for i in range(4):
+                    for j in range(4):
+                        self.assertAlmostEqual(float(actual[i][j]),
+                                               expected[i][j],places=5)
                 self.assertTrue(src.GetPrimAtPath(
                     evidence["original_camera_path"]).IsA(UsdGeom.Camera))
                 self.assertEqual(camera.GetFocalLengthAttr().Get(

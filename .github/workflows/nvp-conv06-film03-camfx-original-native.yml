@@ -26,6 +26,8 @@ on:
       - 'tests/test_nvp_conv06_original_dynamic_skin.py'
       - 'tests/test_nvp_conv06_visual_mesh_contract.py'
       - 'tests/test_nvp_cam_fx01_02_native_rails.py'
+      - 'backend/nvp_cam_fx05_verified_shot_source.py'
+      - 'tests/test_nvp_cam_fx05_staged_rail_source.py'
       - 'backend/nvp_wo2_openpbr.py'
       - 'backend/nvp_wo2_material_slots.py'
       - 'backend/nvp_wo2_pbr_channels.py'

@@ -123,19 +123,62 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
         raise RuntimeError("Approved rail layer bytes differ from pinned source")
     stronger=_read_strong_layer(stored)
     rail_path=camera_rail_path(rail_id)
+    position=evaluate_rail(spec,tick)
+    rail_rows=camera_matrix_rows(position)
+    camera_at=Usd.TimeCode(float(tick))
+    # The approved rail layer is authored at genuine 7,056,000,000-tick
+    # Film Time. The 01F/02M-H picture source is already a frozen one-frame
+    # 24fps snapshot. USD composition rescales time samples when layer
+    # timeCodesPerSecond differ, so never evaluate its native rail by
+    # accidentally interpreting Film Time ticks as snapshot timecodes.
+    from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+    native=Usd.Stage.Open(stronger,load=Usd.Stage.LoadAll)
+    if (not native or
+        native.GetTimeCodesPerSecond()!=float(TICKS_PER_SECOND)):
+        raise RuntimeError("Approved native rail lost exact original Film Time clock")
+    native_camera=UsdGeom.Camera.Get(native,rail_path)
+    if not native_camera or not native_camera.GetPrim().IsDefined():
+        raise RuntimeError("Approved native rail camera did not reopen")
+    observed=UsdGeom.Xformable(native_camera).GetLocalTransformation(camera_at)
+    if any(abs(float(observed[i][j])-rail_rows[i][j])>1e-5
+           for i in range(4) for j in range(4)):
+        raise RuntimeError("Director camera does not agree with pinned Film Time")
+
+    # Sample the source-hashed native rail at its own clock, then compose
+    # only a disposable one-frame camera opinion into the original picture
+    # stage at its existing timebase. Neither approved USD nor source Take
+    # is retimed, mutated or republished; no Blender worker is started.
+    overlay=Usd.Stage.CreateInMemory()
+    overlay.SetTimeCodesPerSecond(src.GetTimeCodesPerSecond())
+    overlay.SetFramesPerSecond(src.GetFramesPerSecond())
+    overlay.SetStartTimeCode(1.)
+    overlay.SetEndTimeCode(1.)
+    overlay.OverridePrim("/World")
+    UsdGeom.Scope.Define(overlay,"/World/NVPDirectorRails")
+    frozen_source_camera=UsdGeom.Camera.Define(overlay,rail_path)
+    frozen_transform=frozen_source_camera.AddTransformOp(
+        precision=UsdGeom.XformOp.PrecisionDouble,
+        opSuffix="NVPFilmTime")
+    if not frozen_transform.Set(observed,at):
+        raise RuntimeError("Approved native camera transform cannot freeze at snapshot frame")
+    for name in ("GetFocalLengthAttr","GetFocusDistanceAttr","GetFStopAttr",
+                 "GetHorizontalApertureAttr","GetVerticalApertureAttr",
+                 "GetClippingRangeAttr"):
+        original_attr=getattr(native_camera,name)()
+        value=original_attr.Get(camera_at)
+        if value is None or not getattr(frozen_source_camera,name)().Set(value,at):
+            raise RuntimeError("Approved native rail optics cannot freeze at snapshot frame")
+    overlay_layer=overlay.GetRootLayer()
     session=src.GetSessionLayer()
-    session.subLayerPaths.insert(0,stronger.identifier)
+    session.subLayerPaths.insert(0,overlay_layer.identifier)
     try:
         camera=UsdGeom.Camera.Get(src,rail_path)
         if not camera or not camera.GetPrim().IsDefined():
             raise RuntimeError("Native approved USD camera rail did not compose")
-        position=evaluate_rail(spec,tick)
-        rail_rows=camera_matrix_rows(position)
-        camera_at=Usd.TimeCode(float(tick))
-        observed=UsdGeom.Xformable(camera).GetLocalTransformation(camera_at)
-        if any(abs(float(observed[i][j])-rail_rows[i][j])>1e-5
+        observed_frame=UsdGeom.Xformable(camera).GetLocalTransformation(at)
+        if any(abs(float(observed_frame[i][j])-rail_rows[i][j])>1e-5
                for i in range(4) for j in range(4)):
-            raise RuntimeError("Director camera does not agree with pinned Film Time")
+            raise RuntimeError("Derived camera differs from approved native Film Time pose")
         # Original snapshot is fixed at source time 1; freeze ONLY the derived
         # rail camera at that frame for Blender, retaining the original shot
         # and separately recording authoritative original Film Time ticks.
@@ -153,14 +196,8 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
         if not all(rail_attrs):
             raise RuntimeError("Approved camera rail has incomplete optical/xform source")
         for attr in rail_attrs:
-            value=attr.Get(camera_at)
-            if value is None:
-                raise RuntimeError("Approved rail sample was not defined at source tick")
-            for old in attr.GetTimeSamples():
-                if not attr.ClearAtTime(Usd.TimeCode(old)):
-                    raise RuntimeError("Could not isolate disposable rail sample")
-            if not attr.Set(value,at):
-                raise RuntimeError("Could not freeze disposable rail sample")
+            if attr.GetTimeSamples()!=[1.0] or attr.Get(at) is None:
+                raise RuntimeError("Disposable rail retains foreign Film Time samples")
         frozen.SetStartTimeCode(1.0)
         frozen.SetEndTimeCode(1.0)
         frozen.SetTimeCodesPerSecond(24.0)
@@ -190,8 +227,8 @@ def stage_approved_rail_frame(index: FilmIndex, pid: str, binding_id: str,
             raise RuntimeError("Independent physical OpenUSD readback differs from rail")
         os.replace(pending,job/USD)
     finally:
-        if stronger.identifier in session.subLayerPaths:
-            session.subLayerPaths.remove(stronger.identifier)
+        if overlay_layer.identifier in session.subLayerPaths:
+            session.subLayerPaths.remove(overlay_layer.identifier)
     if src.GetRootLayer().ExportToString()!=source_layer_before:
         raise RuntimeError("Source stage root mutated during derived camera opinion")
     packet=staged["packet"]
