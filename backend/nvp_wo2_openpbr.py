@@ -118,7 +118,7 @@ def author_openpbr_texture(stage,material_path,material,
 
 
 def verify_openpbr_texture(stage,material_path,material,
-                           descriptor,roughness,metallic):
+                           descriptor,roughness,metallic,*,pbr_maps=None):
     """Reject every unexpected node, source URI, transform or UV rewiring."""
     from pxr import UsdShade
     shader=UsdShade.Shader(
@@ -149,15 +149,34 @@ def verify_openpbr_texture(stage,material_path,material,
             str(source[0].GetPrim().GetPath())!=expected_path or
             source[1]!=expected_output):
             raise RuntimeError("Frozen MaterialX image graph rewired")
-    for key,expected in (
-        ("base_metalness",metallic),
-        ("specular_roughness",roughness),
+    if pbr_maps is not None and (
+        type(pbr_maps) is not dict or
+        any(k not in ("roughness","metallic","emission","normal","opacity")
+            for k in pbr_maps)):
+        raise RuntimeError("Unsupported approved MaterialX map inventory")
+    for key,expected,channel in (
+        ("base_metalness",metallic,"metallic"),
+        ("specular_roughness",roughness,"roughness"),
     ):
         value=shader.GetInput(key)
-        if (not value or value.HasConnectedSource() or
-            not math.isclose(float(value.GetAttr().Get()),
-                float(expected),rel_tol=1e-5,abs_tol=1e-5)):
+        if (not value or not math.isclose(
+                float(value.GetAttr().Get()),float(expected),
+                rel_tol=1e-5,abs_tol=1e-5)):
             raise RuntimeError("MaterialX source scalar changed")
+        connected=value.GetConnectedSource() if value.HasConnectedSource() else None
+        allowed=bool(pbr_maps and channel in pbr_maps)
+        if allowed:
+            # The PBR author intentionally wires a reviewed native PNG map
+            # to this input. Accept ONLY its exact MaterialX image output;
+            # the independently verified map graph checks its URI, color
+            # space, UVs, wrapping and original source hash separately.
+            if (not connected or
+                str(connected[0].GetPrim().GetPath())!=
+                    material_path+"/MtlxMap_"+channel.capitalize() or
+                connected[1]!="out"):
+                raise RuntimeError("Approved MaterialX scalar map rewired")
+        elif connected is not None:
+            raise RuntimeError("Unexpected MaterialX scalar connection")
     return {"format":FORMAT,
             "materialx_image_graph_authored":True,
             "immutable_texture_sha256":descriptor["sha256"],

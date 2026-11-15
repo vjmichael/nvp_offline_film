@@ -618,7 +618,8 @@ class OpenUSDAssetRegistry:
                         stage,"/Asset/Material",bound,
                         original_material["texture"],
                         original_material["roughness"],
-                        original_material["metallic"])
+                        original_material["metallic"],
+                        pbr_maps=original_material.get("pbr_maps"))
                 else:
                     from backend.nvp_wo2_openpbr import verify_openpbr_scalar
                     verify_openpbr_scalar(

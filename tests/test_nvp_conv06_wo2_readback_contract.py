@@ -10,7 +10,8 @@ import unittest
 from pxr import Usd,UsdGeom,UsdShade
 
 from backend.nvp_wo2_openpbr import (
-    author_openpbr_scalar,verify_openpbr_scalar,NODE_ID)
+    author_openpbr_scalar,verify_openpbr_scalar,
+    author_openpbr_texture,verify_openpbr_texture,NODE_ID)
 from backend.nvp_wo2_material_slots import normalize_material_slots
 from backend.nvp_wo2_pbr_channels import publish_pbr_maps
 
@@ -41,6 +42,44 @@ class OriginalWO2SourceReadback(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             verify_openpbr_scalar(
                 layer,"/Asset/Material",reopened,rgb,0.55,0.1)
+
+    def test_original_png_materialx_pbr_map_accepts_only_verified_source_graph(self):
+        # Real first-party OpenUSD graph: original PNG base color and one
+        # reviewed grayscale roughness map. No external texture reader or
+        # fake renderer success is used in this readback test.
+        from pxr import Sdf
+        from backend.nvp_wo2_pbr_channels import (
+            author_pbr_maps,verify_pbr_map_graph)
+        stage=Usd.Stage.CreateInMemory()
+        UsdGeom.Xform.Define(stage,"/Asset")
+        path="/Asset/Material"
+        material=UsdShade.Material.Define(stage,path)
+        preview=UsdShade.Shader.Define(stage,path+"/PreviewSurface")
+        base={
+            "source_modified":False,"color_space":"sRGB","wrap":"repeat",
+            "usd_asset_path":"nvp-blob://texture/"+"a"*64,
+            "sha256":"a"*64}
+        maps={"roughness":{
+            "usd_asset_path":"nvp-blob://texture/"+"b"*64,
+            "sha256":"b"*64}}
+        author_openpbr_texture(stage,path,material,base,0.4,0.1)
+        openpbr=UsdShade.Shader(stage.GetPrimAtPath(path+"/OpenPBR"))
+        author_pbr_maps(stage,path,preview,openpbr,maps)
+        result=verify_openpbr_texture(
+            stage,path,material,base,0.4,0.1,pbr_maps=maps)
+        self.assertTrue(result["materialx_image_graph_authored"])
+        verify_pbr_map_graph(stage,path,preview,openpbr,maps)
+        # Browser-supplied/unapproved map inventories cannot cause a
+        # previously scalar-only material to silently accept a connection.
+        with self.assertRaises(RuntimeError):
+            verify_openpbr_texture(
+                stage,path,material,base,0.4,0.1)
+        bad=UsdShade.Shader.Define(stage,path+"/UntrustedSource")
+        untrusted=bad.CreateOutput("out",Sdf.ValueTypeNames.Float)
+        openpbr.GetInput("specular_roughness").ConnectToSource(untrusted)
+        with self.assertRaises(RuntimeError):
+            verify_openpbr_texture(
+                stage,path,material,base,0.4,0.1,pbr_maps=maps)
 
     def test_original_face_subsets_cannot_overlap_or_escape_source_mesh(self):
         first={
