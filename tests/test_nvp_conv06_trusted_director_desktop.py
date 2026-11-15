@@ -5,6 +5,9 @@ from unittest.mock import patch
 
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 
+# Original desktop tests use one valid canonical FilmIndex project identity.
+PROJECT_ID = "1" * 32
+
 
 def fake_bridge(*, locked=False, url="http://127.0.0.1:19991/"):
     bridge = object.__new__(TrustedDesktopCameraBridge)
@@ -23,18 +26,18 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
     def test_protected_project_denies_both_recovered_families(self):
         bridge = fake_bridge(locked=True)
         with self.assertRaisesRegex(PermissionError, "protected"):
-            bridge.camfx03_draft_catalog("movie001")
+            bridge.camfx03_draft_catalog(PROJECT_ID)
         with self.assertRaisesRegex(PermissionError, "protected"):
-            bridge.film03_actor_catalog("movie001")
+            bridge.film03_actor_catalog(PROJECT_ID)
         with self.assertRaisesRegex(PermissionError, "protected"):
             bridge.film03_actor_profile_publish({})
 
     def test_foreign_window_denies_actor_and_camera_methods(self):
         bridge = fake_bridge(url="http://127.0.0.1:19992/")
         with self.assertRaisesRegex(PermissionError, "origin"):
-            bridge.camfx03_draft_catalog("movie001")
+            bridge.camfx03_draft_catalog(PROJECT_ID)
         with self.assertRaisesRegex(PermissionError, "origin"):
-            bridge.film03_actor_catalog("movie001")
+            bridge.film03_actor_catalog(PROJECT_ID)
 
     def test_camera_publication_requires_fresh_native_event_and_scope(self):
         bridge = fake_bridge()
@@ -58,7 +61,7 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                 assert self.approve(director_event, scope)
                 observed.append((pid,rid))
                 return {"document_sha256": "d"*64, "revision": 1}
-        request = {"project_id": "movie001", "rail_id": "Rail001",
+        request = {"project_id": PROJECT_ID, "rail_id": "Rail001",
                    "rail_spec": {}, "expected_revision": 0,
                    "preview_sha256": "e"*64}
         with patch("backend.nvp_cam_fx01_camera_rails.OriginalCameraRails", Rail):
@@ -68,11 +71,11 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                 "backend.nvp_cam_fx03_04_desktop_mixin.CameraRailDirectorMixin.camfx03_draft_publish",
                 autospec=True,
                 side_effect=lambda self, ignored: self.camfx02_publish(request)):
-                result = bridge.camfx03_draft_publish({"project_id":"movie001"})
+                result = bridge.camfx03_draft_publish({"project_id":PROJECT_ID})
             with self.assertRaisesRegex(PermissionError, "Direct browser"):
                 bridge.camfx02_publish(request)
         self.assertEqual(result["revision"], 1)
-        self.assertEqual(observed, [("movie001","Rail001")])
+        self.assertEqual(observed, [(PROJECT_ID,"Rail001")])
 
     def test_failed_draft_publication_does_not_leave_browser_grant(self):
         bridge = fake_bridge()
@@ -80,9 +83,9 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
             "backend.nvp_cam_fx03_04_desktop_mixin.CameraRailDirectorMixin.camfx03_draft_publish",
             autospec=True, side_effect=RuntimeError("cancelled")):
             with self.assertRaisesRegex(RuntimeError, "cancelled"):
-                bridge.camfx03_draft_publish({"project_id":"movie001"})
+                bridge.camfx03_draft_publish({"project_id":PROJECT_ID})
         with self.assertRaisesRegex(PermissionError, "Direct browser"):
-            bridge.camfx02_publish({"project_id":"movie001"})
+            bridge.camfx02_publish({"project_id":PROJECT_ID})
 
     def test_actor_profile_approval_is_host_only_and_exact(self):
         bridge = fake_bridge()
@@ -104,7 +107,7 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                 return {"project_id":pid,"actor_id":actor_id,"current":{"profile_revision":1}}
         with patch("backend.nvp_film03_actor_identity_core.ActorIdentityCore", Actor):
             result = bridge.film03_actor_profile_publish({
-                "project_id":"movie001","actor_id":"a"*32,"profile":{},
+                "project_id":PROJECT_ID,"actor_id":"a"*32,"profile":{},
                 "expected_profile_revision":0,"expected_bible_revision":1,
                 "director_note":"Director reviewed source"})
         self.assertTrue(result["native_director_identity_approved"])
@@ -173,7 +176,7 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
         bridge=fake_bridge()
         digest="a"*64
         request={
-            "project_id":"movie001","binding_id":"ApprovedDistrictShot001",
+            "project_id":PROJECT_ID,"binding_id":"ApprovedDistrictShot001",
             "district_id":"OriginalDistrict001","district_revision":1,
             "world_take_id":"OriginalWorldTake001","film_tick":7056000000}
         observed=[]
@@ -210,7 +213,7 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                 observed.append(("reopen",pid,binding_id))
                 return {"binding_id":binding_id,"native_source_reopened":True}
         with patch("backend.nvp_usd_film02m_h_actor_camera_binding.OriginalDistrictShotBinding",Original):
-            preview=bridge.film02mh_preview_shot(request)
+            preview=bridge.film02mh_preview_shot({k:v for k,v in request.items() if k != "binding_id"})
             self.assertEqual(preview["binding_preview_sha256"],digest)
             with self.assertRaisesRegex(PermissionError,"Exact native-approved"):
                 bridge.film02mh_commit_shot_binding({
@@ -228,14 +231,14 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                 **request,"source_preview_sha256":digest})
             self.assertEqual(result["revision"],1)
             reopened=bridge.film02mh_reopen_shot_binding({
-                "project_id":"movie001","binding_id":request["binding_id"]})
+                "project_id":PROJECT_ID,"binding_id":request["binding_id"]})
             self.assertTrue(reopened["native_source_reopened"])
             self.assertEqual(observed[-2:],[
-                ("publish","movie001",request["binding_id"]),
-                ("reopen","movie001",request["binding_id"])])
+                ("publish",PROJECT_ID,request["binding_id"]),
+                ("reopen",PROJECT_ID,request["binding_id"])])
             bridge.window.get_current_url=lambda:"https://hostile.example/"
             with self.assertRaisesRegex(PermissionError,"origin"):
-                bridge.film02mh_preview_shot(request)
+                bridge.film02mh_preview_shot({k:v for k,v in request.items() if k != "binding_id"})
             with self.assertRaisesRegex(PermissionError,"origin"):
                 bridge.film02mh_commit_shot_binding({
                     **request,"source_preview_sha256":digest})
@@ -245,12 +248,12 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
         foreign = fake_bridge(url="http://127.0.0.1:19992/")
         for bridge in (locked, foreign):
             with self.assertRaises(PermissionError):
-                bridge.film02md_architecture_catalog("movie001")
+                bridge.film02md_architecture_catalog(PROJECT_ID)
             with self.assertRaises(PermissionError):
-                bridge.film01c_texture_catalog("movie001")
+                bridge.film01c_texture_catalog(PROJECT_ID)
             with self.assertRaises(PermissionError):
                 bridge.film02md_publish_cells({
-                    "project_id":"movie001","cell_world_id":"Cells001",
+                    "project_id":PROJECT_ID,"cell_world_id":"Cells001",
                     "cells":[],"expected_revision":0})
 
     def test_actual_source_catalog_is_metadata_only_and_reopened(self):
@@ -272,7 +275,7 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                 "kind":"scene","document_sha256":"e"*64,"data":{}}}
         index=bridge.index
         def list_objects(pid,kind):
-            assert pid=="movie001"
+            assert pid==PROJECT_ID
             keys={"world":["Building001"],
                   "presentation":["Cells001"],
                   "asset":["Asset001"],"scene":["Scene001"]}
@@ -282,11 +285,11 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
         index.read_revision=lambda pid,id,rev: docs[id,rev]
         @contextmanager
         def original_building(pid,id,rev):
-            self.assertEqual((pid,id,rev),("movie001","Building001",1))
+            self.assertEqual((pid,id,rev),(PROJECT_ID,"Building001",1))
             yield {"record":docs[id,rev],"mesh_count":11}
         @contextmanager
         def original_cells(pid,id,rev):
-            self.assertEqual((pid,id,rev),("movie001","Cells001",1))
+            self.assertEqual((pid,id,rev),(PROJECT_ID,"Cells001",1))
             yield SimpleNamespace(original={"CellWest":{},"CellEast":{}})
         class Kit:
             def __init__(self, index, *, verify_director_action):
@@ -302,9 +305,9 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
             "backend.nvp_usd_film01c_texture.source_texture_descriptors",
             side_effect=lambda index,pid,*,kind,record:
                 {"d"*64:b"original_png"} if kind=="asset" else {}):
-            world=bridge.film02md_architecture_catalog("movie001")
-            textures=bridge.film01c_texture_catalog("movie001")
-        self.assertEqual(world["project_id"],"movie001")
+            world=bridge.film02md_architecture_catalog(PROJECT_ID)
+            textures=bridge.film01c_texture_catalog(PROJECT_ID)
+        self.assertEqual(world["project_id"],PROJECT_ID)
         self.assertEqual(len(world["buildings"]),1)
         self.assertEqual(world["buildings"][0]["original_mesh_count"],11)
         self.assertEqual(world["cell_worlds"][0]["cell_ids"],
@@ -340,7 +343,7 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
                     "Source publication consumed its one native consent")
                 return {"revision":1,"document_sha256":"d"*64}
         request={
-            "project_id":"movie001","cell_world_id":"CellWorld01",
+            "project_id":PROJECT_ID,"cell_world_id":"CellWorld01",
             "cells":[{"cell_id":"CellWest","building_id":"Building001",
                       "building_revision":1}],
             "expected_revision":0}
@@ -359,10 +362,10 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
     def test_browser_cannot_supply_extra_security_or_worker_fields(self):
         bridge = fake_bridge()
         with self.assertRaises(PermissionError):
-            bridge.camfx02_publish({"project_id":"movie001","permission":"yes"})
+            bridge.camfx02_publish({"project_id":PROJECT_ID,"permission":"yes"})
         with self.assertRaises(PermissionError):
             bridge.film03_actor_profile_publish({
-                "project_id":"movie001","worker_command":"blender.exe"})
+                "project_id":PROJECT_ID,"worker_command":"blender.exe"})
 
 
 if __name__ == "__main__":
