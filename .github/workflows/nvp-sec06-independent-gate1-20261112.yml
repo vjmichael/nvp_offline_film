@@ -66,6 +66,10 @@ jobs:
             test_blender_worker.py \
             test_nvp_native_live_take.py \
             test_nvp_data_first_filming.py; do
+            # Unittest discovery exits successfully on zero matches.
+            # A missing original negative test must fail this security gate.
+            test -f "tests/$f" || { echo "Missing original security test: $f"; exit 1; }
+            python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Original tests discovered:',n,sys.argv[1]); sys.exit(0 if n else 2)" "$f"
             python -m unittest discover -s tests -p "$f" -v
           done
 
@@ -116,6 +120,11 @@ jobs:
             'test_nvp_webview_ipc_surface.py','test_blender_worker.py',
             'test_nvp_native_live_take.py','test_nvp_data_first_filming.py')
           foreach ($f in $files) {
+            if (-not (Test-Path -LiteralPath ("tests/" + $f))) {
+              throw "Missing original Windows security test: $f"
+            }
+            python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Original tests discovered:',n,sys.argv[1]); sys.exit(0 if n else 2)" $f
+            if ($LASTEXITCODE -ne 0) { throw "Original Windows security test absent or empty: $f" }
             python -m unittest discover -s tests -p $f -v
             if ($LASTEXITCODE -ne 0) { throw "Gate 1 Windows regression failed: $f" }
           }
