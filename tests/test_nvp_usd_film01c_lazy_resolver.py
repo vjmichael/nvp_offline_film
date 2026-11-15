@@ -179,9 +179,13 @@ class USDFilm01CLazyResolution(unittest.TestCase):
         }]
         b.publish(sets=sets,props=props)
         original,before_layer=b.assets.open(b.pid,"TexturedTile",3)
-        original_file=UsdShade.Shader(
-            Usd.Stage.Open(before_layer).GetPrimAtPath(
-                "/Asset/Material/Texture")).GetInput("file").GetAttr().Get()
+        # Hold the reopened USD stage alive for the complete shader read:
+        # UsdPrim/UsdShade handles do not own their originating stage.
+        original_stage=Usd.Stage.Open(before_layer)
+        original_shader=UsdShade.Shader(
+            original_stage.GetPrimAtPath("/Asset/Material/Texture"))
+        self.assertTrue(original_shader.GetPrim().IsValid())
+        original_file=original_shader.GetInput("file").GetAttr().Get()
         original_path=str(original_file.path)
         self.assertTrue(original_path.startswith(PREFIX))
         with b.world.open(b.pid,"TownWorld",1) as world:
@@ -210,14 +214,17 @@ class USDFilm01CLazyResolution(unittest.TestCase):
                 str(source_shader.GetInput("file").GetAttr().Get().path),
                 real_uri)
             self.assertFalse(world.receipt()["usd_delegates_or_pixels_rendered"])
-        after,_=b.assets.open(b.pid,"TexturedTile",3)
+        after,after_layer=b.assets.open(b.pid,"TexturedTile",3)
         self.assertEqual(original["document_sha256"],
                          after["document_sha256"])
+        # Independent post-world source reopen, with strong stage custody,
+        # proves that disposable texture path resolution did not rewrite it.
+        after_stage=Usd.Stage.Open(after_layer)
+        after_shader=UsdShade.Shader(
+            after_stage.GetPrimAtPath("/Asset/Material/Texture"))
+        self.assertTrue(after_shader.GetPrim().IsValid())
         self.assertEqual(original_path,
-                         str(UsdShade.Shader(
-                            Usd.Stage.Open(before_layer).GetPrimAtPath(
-                                "/Asset/Material/Texture")).
-                            GetInput("file").GetAttr().Get().path))
+                         str(after_shader.GetInput("file").GetAttr().Get().path))
 
     def test_unapproved_external_texture_assetpath_and_symlink_refused(self):
         b=self.baseline
