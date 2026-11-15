@@ -27,9 +27,15 @@ ENTRYPOINTS=(
     "backend/nvp_data_av_desktop.py",
     "backend/nvp_slate08b_native_camera_ipc.py",
 )
+# Standalone PyAV (av) is forbidden as an imported package, but an
+# internal source module such as nvp_data_av_scene is NOT the PyAV package.
 BAN=re.compile(r"(?:^|[._/\\])(?:ffmpeg|ffprobe|imageio_ffmpeg|libavcodec|"
-               r"libavformat|libavutil)(?:$|[._/\\-])",re.I)
-NAME=re.compile(r"\b(?:ffmpeg|ffprobe|imageio_ffmpeg|avcodec|avformat)\b",re.I)
+               r"libavformat|libavutil|libavfilter|libavdevice|libswscale|"
+               r"libswresample|avcodec|avformat)(?:$|[._/\\-])|"
+               r"(?:^|[./\\])av(?:$|[./\\])",re.I)
+NAME=re.compile(r"\b(?:ffmpeg|ffprobe|imageio_ffmpeg|avcodec|avformat|"
+                r"libavcodec|libavformat|libavutil|libavfilter|libavdevice|"
+                r"libswscale|libswresample)\b",re.I)
 SHELL_CALLS={"run","Popen","check_call","check_output","call","which",
              "system","spawnv","spawnve","execv","execve","execvp","execvpe",
              "popen"}
@@ -39,8 +45,14 @@ def source_path(mod):
     if not mod.startswith(("backend.","tools.")):
         return None
     parts=mod.split(".")
-    p=ROOT.joinpath(*parts).with_suffix(".py")
-    return p if p.is_file() else None
+    base=ROOT.joinpath(*parts)
+    module_file=base.with_suffix(".py")
+    if module_file.is_file():
+        return module_file
+    # Python package imports execute __init__.py before their children.
+    # Skipping package initializers leaves an executable dependency blind spot.
+    initializer=base/"__init__.py"
+    return initializer if initializer.is_file() else None
 
 
 def dotted(node):
@@ -52,7 +64,7 @@ def dotted(node):
     return ""
 
 
-def imports(tree):
+def imports(tree, current_path=None):
     result=[]
     for node in ast.walk(tree):
         if isinstance(node,ast.Import):
@@ -63,6 +75,15 @@ def imports(tree):
             if node.level==0:
                 result.extend(name+"."+a.name for a in node.names
                               if a.name!="*")
+            elif current_path:
+                package=current_path.removesuffix(".py").split("/")[:-1]
+                if node.level <= len(package):
+                    prefix=package[:len(package)-node.level+1]
+                    base=".".join(prefix+([name] if name else []))
+                    if base:
+                        result.append(base)
+                        result.extend(base+"."+a.name for a in node.names
+                                      if a.name!="*")
     return result
 
 
@@ -74,13 +95,22 @@ def reached_runtime():
         if path in seen:
             continue
         seen.add(path)
+        # Importing backend.scenes.shot also executes backend/__init__.py
+        # and backend/scenes/__init__.py. Audit those before treating the
+        # leaf module as a complete representation of the runtime graph.
+        parts=Path(path).parts[:-1]
+        for depth in range(1,len(parts)+1):
+            initializer=Path(*parts[:depth])/"__init__.py"
+            rel=initializer.as_posix()
+            if (ROOT/initializer).is_file() and rel not in seen:
+                frontier.append(rel)
         absolute=ROOT/path
         if not absolute.is_file():
             raise RuntimeError("Missing packaged native source: "+path)
-        yield path,ast.parse(absolute.read_text("utf-8"),filename=path)
-        # Intentional, bounded traversal. Relative internal imports need
-        # explicit module resolution and are not taken as proven by this pass.
-        for mod in imports(ast.parse(absolute.read_text("utf-8"))):
+        tree=ast.parse(absolute.read_text("utf-8"),filename=path)
+        yield path,tree
+        # Traverse local absolute and relative imports without escaping packages.
+        for mod in imports(tree, path):
             dep=source_path(mod)
             if dep:
                 rel=dep.relative_to(ROOT).as_posix()
@@ -96,7 +126,11 @@ def violations():
                     if BAN.search(imp.name):
                         issues.append((path,node.lineno,"forbidden imported codec"))
             elif isinstance(node,ast.ImportFrom):
-                if node.module and BAN.search(node.module):
+                # Inspect the complete imported symbols, not just the module.
+                # 'from . import av' and 'from safe import ffmpeg' otherwise
+                # evade the codec ban even when reached by a native entrypoint.
+                names=imports(ast.Module(body=[node],type_ignores=[]),path)
+                if any(BAN.search(name) for name in names):
                     issues.append((path,node.lineno,"forbidden imported codec"))
             elif isinstance(node,ast.Call):
                 target=dotted(node.func)
