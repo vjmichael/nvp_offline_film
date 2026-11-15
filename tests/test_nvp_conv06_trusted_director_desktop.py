@@ -139,6 +139,33 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
             bridge.data_av_texture_tile("active",request)
         self.assertEqual(len(received),1)
 
+    def test_frozen_actor_rig_tile_cannot_bypass_native_take_or_origin(self):
+        bridge=fake_bridge()
+        calls=[]
+        bridge._data_av=lambda:SimpleNamespace(
+            read_original_rig_texture_tile=lambda session,request:
+                (calls.append((session,request)) or {
+                    "take_document_sha256":"a"*64,"source_modified":False}))
+        request={
+            "actor_path":"/World/ActorOriginal",
+            "skeleton_layer_sha256":"b"*64,
+            "texture_sha256":"c"*64,
+            "mip_level":0,"tile_x":0,"tile_y":0}
+        with self.assertRaisesRegex(PermissionError,"native ActorID"):
+            bridge.data_av_rig_texture_tile("ticket",{
+                **request,"approval":"browser_clicked"})
+        result=bridge.data_av_rig_texture_tile("ticket",request)
+        self.assertFalse(result["source_modified"])
+        self.assertEqual(calls,[("ticket",request)])
+        bridge.window.get_current_url=lambda:"https://foreign.example/"
+        with self.assertRaisesRegex(PermissionError,"origin"):
+            bridge.data_av_rig_texture_tile("ticket",request)
+        bridge.window.get_current_url=lambda:"http://127.0.0.1:19991/"
+        bridge._project_lock_check=lambda:True
+        with self.assertRaisesRegex(PermissionError,"protected"):
+            bridge.data_av_rig_texture_tile("ticket",request)
+        self.assertEqual(len(calls),1)
+
     def test_original_actor_district_shot_binding_requires_exact_one_use_native_consent(self):
         # Real source composition and original actor/PCM identity are covered
         # by the unchanged 01E/02M-H native source test. This case protects
