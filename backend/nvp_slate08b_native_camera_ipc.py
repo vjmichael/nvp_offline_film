@@ -474,8 +474,8 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
         if result["status"]=="NATIVE_DENIED":
             return {"format":"nvp.wo2.native_original_texture_import.v1",
                     "status":"NATIVE_DENIED","original_modified":False}
-        return {"format":"nvp.wo2.native_original_texture_import.v1",
-                **result,"native_source_imported":True,
+        return {**result,"format":"nvp.wo2.native_original_texture_import.v1",
+                "native_source_imported":True,
                 "film_master_approved":False}
 
     def data_av_import_original_audio(self,project_id,source_id):
