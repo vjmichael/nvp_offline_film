@@ -24,6 +24,8 @@ on:
       - 'frontend/src/NativeColorGradePanel.jsx'
       - 'tests/test_nvp_data_first_filming.py'
       - 'tools/nvp_no_ffmpeg_contract.py'
+      - 'tests/test_nvp_no_ffmpeg_contract.py'
+      - 'backend/nvp_temporal_ledger.py'
       - 'backend/nvp_slate08b_native_camera_ipc.py'
       - 'frontend/src/DataFirstAVPanel*'
       - 'frontend/src/App.jsx'
@@ -50,7 +52,10 @@ jobs:
         with:
           python-version: '3.11'
       - name: Refuse executable FFmpeg/ffprobe in active import graph or installer
-        run: python tools/nvp_no_ffmpeg_contract.py
+        run: |
+          python tools/nvp_no_ffmpeg_contract.py
+          test -f tests/test_nvp_no_ffmpeg_contract.py
+          python -m unittest discover -s tests -p 'test_nvp_no_ffmpeg_contract.py' -v
 
   native-frozen-source:
     needs: [zero-ffmpeg-policy]
