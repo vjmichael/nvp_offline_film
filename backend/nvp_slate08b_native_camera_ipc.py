@@ -408,6 +408,76 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                 ask_native=self._ask)
         return self._data_av_controller
 
+    def data_av_import_original_mesh_texture(self,request):
+        """OS-picked original PNG -> exact existing original UV mesh revision.
+
+        No image bytes, path, approval bool, material graph or untrusted
+        renderer instructions are accepted from the WebView. The FilmIndex
+        original asset is independently reopened by the native importer.
+        """
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "project_id","asset_id","source_revision",
+                "source_document_sha256"}:
+            raise PermissionError("Only exact native original mesh source identity")
+        from backend.nvp_film_index import _require_pid,_id,_sha
+        pid=_require_pid(request["project_id"])
+        aid=request["asset_id"]
+        _id(aid,"original UV asset")
+        revision=request["source_revision"]
+        sha=_sha(request["source_document_sha256"])
+        if type(revision) is not int or revision<1:
+            raise PermissionError("Exact original source asset revision required")
+        from webview import FileDialog
+        window=self._native_window()
+        if not callable(getattr(window,"create_file_dialog",None)):
+            raise PermissionError("Trusted native PNG picker unavailable")
+        chosen=window.create_file_dialog(
+            FileDialog.OPEN,allow_multiple=False,
+            file_types=("Original PNG images (*.png)",))
+        if not chosen:
+            return {"format":"nvp.wo2.native_original_texture_import.v1",
+                    "status":"CANCELLED","original_modified":False}
+        if type(chosen) not in (tuple,list) or len(chosen)!=1:
+            raise PermissionError("Native source import requires one OS-picked PNG")
+        from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+
+        def confirm(scope):
+            if (type(scope) is not dict or scope.get("operation")!=
+                    "nvp.wo2.native_import_original_mesh_texture.v1" or
+                scope.get("project_id")!=pid or
+                scope.get("asset_id")!=aid or
+                scope.get("source_revision")!=revision or
+                scope.get("source_asset_sha256")!=sha or
+                any(type(scope.get(x)) is not int or scope[x]<1
+                    for x in ("width","height","size_bytes")) or
+                type(scope.get("source_png_sha256")) is not str or
+                len(scope["source_png_sha256"])!=64):
+                return False
+            return self._ask(
+                "Import ONE independently read PNG to the existing original "
+                "USD UV mesh?\\n"
+                "Project: "+pid+
+                "\\nOriginal asset: "+aid+
+                "\\nExact source revision: "+str(revision)+
+                "\\nOriginal source SHA: "+sha+
+                "\\nNative selected PNG SHA: "+scope["source_png_sha256"]+
+                "\\nImage: "+str(scope["width"])+" x "+str(scope["height"])+
+                "\\nPNG bytes: "+str(scope["size_bytes"])+
+                "\\nThis creates ONE new immutable USD asset revision. "
+                "The original is unchanged; no Blender, movie frame, "
+                "production license or film-master approval is granted.")
+        result=OpenUSDAssetRegistry(self.index).publish_native_selected_mesh_texture(
+            pid,aid,expected_source_revision=revision,
+            expected_source_document_sha256=sha,
+            selected_path=chosen[0],approve_native=confirm)
+        if result["status"]=="NATIVE_DENIED":
+            return {"format":"nvp.wo2.native_original_texture_import.v1",
+                    "status":"NATIVE_DENIED","original_modified":False}
+        return {"format":"nvp.wo2.native_original_texture_import.v1",
+                **result,"native_source_imported":True,
+                "film_master_approved":False}
+
     def data_av_import_original_audio(self,project_id,source_id):
         """Open a REAL native OS picker. The browser supplies IDs, never paths."""
         self._native_window()
