@@ -33,6 +33,8 @@ on:
       - 'backend/nvp_data_av_desktop.py'
       - 'tests/test_nvp_wo2_texture_tiles.py'
       - 'tests/test_nvp_usd_film01e_world_take.py'
+      - 'tests/test_nvp_usd_film01f_world_render.py'
+      - 'tests/test_nvp_usd_film02mh_real_shot_render.py'
       - 'backend/nvp_conv06_trusted_director_desktop.py'
       - 'frontend/src/DirectorCameraActorContinuity.jsx'
       - 'tools/nvp_usd_film02m_d_blender_aperture_smoke.py'
@@ -96,6 +98,8 @@ jobs:
             test_nvp_usd_film01_world.py
             test_nvp_usd_film01d_shot_working_set.py
             test_nvp_usd_film01e_world_take.py
+            test_nvp_usd_film01f_world_render.py
+            test_nvp_usd_film02mh_real_shot_render.py
             test_nvp_cam_fx01_02_native_rails.py
             test_nvp_cam_fx03_04_native_director.py
             test_nvp_cam_fx05_staged_rail_source.py
