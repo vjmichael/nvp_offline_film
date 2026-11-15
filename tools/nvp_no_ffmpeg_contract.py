@@ -71,11 +71,15 @@ def imports(tree, current_path=None):
             result.extend(x.name for x in node.names)
         elif isinstance(node,ast.ImportFrom):
             name=node.module or ""
-            result.append(name)
             if node.level==0:
+                # Absolute imports can be resolved without a package context.
+                result.append(name)
                 result.extend(name+"."+a.name for a in node.names
                               if a.name!="*")
             elif current_path:
+                # Never treat an invalid relative import that escapes its
+                # package as an absolute module. Auditing imaginary modules
+                # is not proof of the active runtime dependency graph.
                 package=current_path.removesuffix(".py").split("/")[:-1]
                 if node.level <= len(package):
                     prefix=package[:len(package)-node.level+1]

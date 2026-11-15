@@ -130,7 +130,13 @@ class OriginalTwoShotWorldTakeSource(unittest.TestCase):
             self.assertEqual(row["original_world_take_sha256"],
                              self.take_shas[i])
             self.assertEqual(len(row["actor_sources"]),4)
-            self.assertEqual(row["original_pcm_source_count"],1)
+            # The original opening has one PCM stem, the second original
+            # world Take has TWO independently recorded source events.
+            self.assertEqual(row["original_pcm_source_count"],
+                             1 if i==0 else 2)
+            self.assertEqual(row["original_pcm_source_count"],
+                len(self.index.read_revision(
+                    self.pid,take_id,1)["data"]["original_timeline_audio_sources"]))
             self.assertTrue(row["original_sound_not_mixed"])
             self.assertEqual(stage.GetStartTimeCode(),1.0)
             self.assertEqual(stage.GetEndTimeCode(),1.0)
@@ -165,7 +171,7 @@ class OriginalTwoShotWorldTakeSource(unittest.TestCase):
                 _snapshot_usd(self.index,self.pid,self.ids[0],1,work)
             with self.assertRaises((KeyError,PermissionError,RuntimeError)):
                 _snapshot_usd(
-                    self.index,"another-project",self.ids[0],5*T,work)
+                    self.index,"0"*32,self.ids[0],5*T,work)
         self.assertEqual(
             self.index.read_revision(
                 self.pid,self.ids[0],1)["document_sha256"],self.take_shas[0])
@@ -195,17 +201,18 @@ class OriginalTwoShotWorldTakeSource(unittest.TestCase):
             self.assertEqual(row["world_take_sha256"],self.take_shas[i])
             self.assertTrue(row["actual_original_pcm_readback_verified"])
             self.assertFalse(row["final_picture_sound_mux_verified"])
-            stems=row["original_source_stems"]
+            stems=row["original_stems"]
+            self.assertEqual(row["stem_count"],len(stems))
             self.assertEqual(len(stems),1 if i==0 else 2)
             for item in stems:
-                path=folder/item["wave_file"]
-                self.assertEqual(item["real_wav_sha256"],sha_file(path))
-                self.assertFalse(item["gain_processing_applied"])
+                path=folder/item["file"]
+                self.assertEqual(item["file_sha256"],sha_file(path))
+                self.assertTrue(item["original_pcm_unmixed"])
                 with wave.open(str(path),"rb") as wav:
                     self.assertEqual(wav.getframerate(),48000)
                     self.assertEqual(wav.getnchannels(),1)
                     self.assertEqual(wav.getsampwidth(),2)
-                    self.assertEqual(wav.getnframes(),item["sample_count"])
+                    self.assertEqual(wav.getnframes(),item["source_samples"])
                     essence=sha256()
                     while True:
                         data=wav.readframes(8192)
@@ -213,7 +220,7 @@ class OriginalTwoShotWorldTakeSource(unittest.TestCase):
                             break
                         essence.update(data)
                     self.assertEqual(
-                        essence.hexdigest(),item["original_pcm_essence_sha256"])
+                        essence.hexdigest(),item["original_pcm_sha256"])
 
     def test_actual_two_original_shot_cycles_frames_and_fresh_reopen(self):
         executable=os.environ.get("NVP_FILM01F_BLENDER_BIN")
