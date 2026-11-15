@@ -157,7 +157,8 @@ class USDFilm01CLazyResolution(unittest.TestCase):
         self.assertEqual(textured["revision"],3)
         self.assertEqual(b.index.read_revision(b.pid,"TexturedTile",1)[
             "document_sha256"],raw_mesh["document_sha256"])
-        self.assertNotIn("texture",raw_mesh["data"]["preview_material"])
+        self.assertNotIn("texture",b.index.read_revision(
+            b.pid,"TexturedTile",1)["data"]["preview_material"])
         # Put the original exact source into a SCENE as well as an ordinary
         # background prop: only the prop image is eagerly staged at first.
         b.scenes.publish(
