@@ -362,12 +362,31 @@ class ConvergedDirectorDesktopActions(CameraRailDirectorMixin):
         pid = self._wo5_project(project_id)
         from backend.nvp_usd_film01c_texture import source_texture_descriptors
         sources = []
+        original_uv_meshes = []
         for kind in ("asset", "scene"):
             for row in self.index.list_objects(pid, kind=kind)[:64]:
                 record = self.index.read_revision(
                     pid, row["object_id"], row["head_revision"])
                 original = source_texture_descriptors(
                     self.index, pid, kind=kind, record=record)
+                if kind=="asset":
+                    data=record["data"]
+                    mat=data.get("preview_material")
+                    if (data.get("shape")=="mesh" and
+                        (data.get("mesh_uvs") or data.get("face_uvs")) and
+                        data.get("external_references") is False and
+                        isinstance(mat,dict) and
+                        not any(k in mat for k in ("texture","pbr_maps")) and
+                        not data.get("material_slots")):
+                        from backend.nvp_openusd_assets import OpenUSDAssetRegistry
+                        reopened,_=OpenUSDAssetRegistry(self.index).open(
+                            pid,row["object_id"],row["head_revision"])
+                        if reopened["document_sha256"]!=record["document_sha256"]:
+                            raise RuntimeError("Original UV mesh SHA changed")
+                        original_uv_meshes.append({
+                            "asset_id":row["object_id"],
+                            "revision":row["head_revision"],
+                            "document_sha256":record["document_sha256"]})
                 if not original:
                     continue
                 sources.append({
@@ -383,6 +402,7 @@ class ConvergedDirectorDesktopActions(CameraRailDirectorMixin):
         return {
             "format": "nvp.conv06.original_texture_metadata_catalog.v1",
             "project_id": pid, "sources": sources,
+            "original_uv_meshes":original_uv_meshes,
             "original_png_bytes_exposed": False,
             "external_texture_paths_allowed": False,
             "film_master_approved": False,
