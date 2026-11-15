@@ -17,6 +17,8 @@ KINDS = frozenset(("cube", "sphere", "mesh"))
 MAX_MESH_VERTICES=2048
 MAX_MESH_TRIANGLES=4096
 MAX_SIZE_METERS = 1000.0
+# Internal Python-only capability; never passed through WebView JSON or tools.
+_ORIGINAL_NATIVE_WO2_SOURCE_ADMISSION=object()
 
 
 class OpenUSDAssetRegistry:
@@ -28,13 +30,19 @@ class OpenUSDAssetRegistry:
     def publish(self, project_id, asset_id, *, shape, size_m,
                 expected_revision=0, points=None, triangles=None,
                 preview_material=None, mesh_uvs=None, face_uvs=None,
-                texture_png=None,material_slots=None,pbr_maps_png=None):
+                texture_png=None,material_slots=None,pbr_maps_png=None,
+                _original_native_source_admission=None):
         _require_pid(project_id)
         _id(asset_id, "reusable asset ID")
         if shape not in KINDS:
             raise ValueError("Unsupported native authored geometry")
-        if any(x is not None for x in (texture_png,pbr_maps_png,material_slots)):
-            raise PermissionError("Original Film01 scalar-mesh recovery cannot authorize legacy texture/PBR/material slots")
+        if (any(x is not None for x in
+                (texture_png,pbr_maps_png,material_slots)) and
+                _original_native_source_admission is not
+                    _ORIGINAL_NATIVE_WO2_SOURCE_ADMISSION):
+            raise PermissionError(
+                "Original Film01 generic geometry publisher cannot authorize "
+                "unreviewed texture/PBR/material slots")
         if (type(size_m) not in (float, int) or
             not math.isfinite(size_m) or
             not 0 < size_m <= MAX_SIZE_METERS):
@@ -180,7 +188,18 @@ class OpenUSDAssetRegistry:
             shader.CreateOutput("surface",Sdf.ValueTypeNames.Token)
             material.CreateSurfaceOutput().ConnectToSource(
                 shader.ConnectableAPI(),"surface")
-            # Source-only scalar USDPreviewSurface; no unreviewed OpenPBR fallback.
+            # Only a separately approved original PNG source receives its
+            # historic authored MaterialX image node here. The generic scalar
+            # path remains PreviewSurface-only and cannot admit hidden inputs.
+            if (_original_native_source_admission is
+                    _ORIGINAL_NATIVE_WO2_SOURCE_ADMISSION and
+                    "texture" in authored_material):
+                from backend.nvp_wo2_openpbr import author_openpbr_texture
+                author_openpbr_texture(
+                    stage,"/Asset/Material",material,
+                    authored_material["texture"],
+                    authored_material["roughness"],
+                    authored_material["metallic"])
             if authored_material.get("pbr_maps"):
                 from backend.nvp_wo2_pbr_channels import author_pbr_maps
                 author_pbr_maps(stage,"/Asset/Material",shader,
@@ -227,6 +246,97 @@ class OpenUSDAssetRegistry:
             project_id, asset_id, "asset", document,
             expected_revision=expected_revision, dependencies=[],
             precommit_guard=guard)
+
+    def publish_native_selected_mesh_texture(self,project_id,asset_id,*,
+            expected_source_revision,expected_source_document_sha256,
+            selected_path,approve_native):
+        """One OS-picked original PNG -> ONE immutable revised UV-mesh source.
+
+        This is NOT the generic asset publisher and has no arbitrary file,
+        browser-provided image bytes, shader, rights or Blender authority.
+        Existing mesh points/UVs/preview scalar values are copied from
+        independently reopened FilmIndex, never from untrusted JSON.
+        """
+        from backend.nvp_film_index import _sha
+        from backend.nvp_native_usd_texture import (
+            import_native_selected_png,verified_texture)
+        _require_pid(project_id)
+        _id(asset_id,"verified original source asset")
+        _sha(expected_source_document_sha256)
+        if (type(expected_source_revision) is not int or
+            expected_source_revision<1 or not callable(approve_native)):
+            raise PermissionError("Exact original revision and native OS approval required")
+        old,_=self.open(project_id,asset_id,expected_source_revision)
+        data=old["data"]
+        if (old["document_sha256"]!=expected_source_document_sha256 or
+            data.get("shape")!="mesh" or
+            data.get("external_references") is not False or
+            not (data.get("mesh_uvs") or data.get("face_uvs")) or
+            data.get("material_slots") or
+            not isinstance(data.get("preview_material"),dict) or
+            any(k in data["preview_material"] for k in
+                ("pbr_maps","texture"))):
+            raise PermissionError(
+                "Only unchanged source-authentic UV mesh with scalar material")
+        used=False
+        def review(original):
+            nonlocal used
+            if used:
+                return False
+            used=True
+            exact={
+                "operation":"nvp.wo2.native_import_original_mesh_texture.v1",
+                "project_id":project_id,
+                "asset_id":asset_id,
+                "source_revision":expected_source_revision,
+                "source_asset_sha256":expected_source_document_sha256,
+                "source_png_sha256":original["sha256"],
+                "width":original["width"],"height":original["height"],
+                "size_bytes":original["size_bytes"]}
+            return approve_native(exact) is True
+        imported=import_native_selected_png(
+            self.index,project_id,selected_path,approve=review)
+        if imported["status"]=="DENIED":
+            return {"status":"NATIVE_DENIED","original_modified":False,
+                    "source_asset_modified":False}
+        if imported["status"]!="ORIGINAL_TEXTURE_IMPORTED":
+            raise RuntimeError("OS picker did not return independently verified PNG")
+        original_again,_=self.open(project_id,asset_id,expected_source_revision)
+        if original_again["document_sha256"]!=expected_source_document_sha256:
+            raise RuntimeError("Source asset changed during native original import")
+        png,_=verified_texture(self.index,project_id,imported["texture"])
+        mat=data["preview_material"]
+        published=self.publish(
+            project_id,asset_id,
+            shape="mesh",size_m=data["size_m"],
+            expected_revision=expected_source_revision,
+            points=data["points"],triangles=data["triangles"],
+            mesh_uvs=data.get("mesh_uvs"),face_uvs=data.get("face_uvs"),
+            preview_material={
+                "base_color_rgb":mat["base_color_rgb"],
+                "roughness":mat["roughness"],
+                "metallic":mat["metallic"]},
+            texture_png=png,
+            _original_native_source_admission=
+                _ORIGINAL_NATIVE_WO2_SOURCE_ADMISSION)
+        reopened,_=self.open(
+            project_id,asset_id,published["revision"])
+        if (reopened["document_sha256"]!=published["document_sha256"] or
+            reopened["data"]["preview_material"]["texture"]!=
+                imported["texture"]):
+            raise RuntimeError(
+                "Native approved source PNG and revised USD mesh differ")
+        return {
+            "format":"nvp.wo2.native_approved_original_mesh_texture.v1",
+            "status":"ORIGINAL_SOURCE_TEXTURE_BOUND",
+            "asset_id":asset_id,
+            "source_revision":expected_source_revision,
+            "source_asset_sha256":expected_source_document_sha256,
+            "revision":published["revision"],
+            "document_sha256":published["document_sha256"],
+            "original_png_sha256":imported["texture"]["sha256"],
+            "native_source_reopened":True,
+            "original_modified":False,"film_master_approved":False}
 
     def import_rigged_actor(self, project_id, asset_id, source, *,
                             actor_id, approve_import, creator_event):
