@@ -336,6 +336,7 @@ def run_visible_window_smoke():
                 timeline_revision=1,sample_ticks=[0],
                 creator_event="smoke_only")
         server,worker,port,sock=serve(app)
+        _smoke_checkpoint("window_original_host_server_ready")
     except BaseException:
         if old_home is None: os.environ.pop("NVP_HOME",None)
         else: os.environ["NVP_HOME"]=old_home
@@ -349,6 +350,7 @@ def run_visible_window_smoke():
         window=webview.create_window("NVP Director-first Native Sound Acceptance",
             "http://127.0.0.1:"+str(port),width=1100,height=760,js_api=bridge)
         bridge._attach_window(window)
+        _smoke_checkpoint("window_real_webview2_attached")
         window.events.loaded += lambda:loaded.set()
         def wait_js(expression,seconds,description):
             deadline=time.monotonic()+seconds
@@ -361,6 +363,7 @@ def run_visible_window_smoke():
             try:
                 if not loaded.wait(timeout=30):
                     raise RuntimeError("Installed WebView2 page-loaded event missing")
+                _smoke_checkpoint("window_real_page_loaded")
                 # Director-first navigation has replaced old engineering tabs.
                 # Native A/V remains accessible to host/bridge, not in a
                 # visible technical panel.
@@ -370,6 +373,7 @@ def run_visible_window_smoke():
                     "&& document.body.textContent.includes('New Movie') "
                     "&& document.body.textContent.includes('Resume Working'))",
                     25,"Real director New/Resume UI not mounted")
+                _smoke_checkpoint("window_director_home_visible")
                 technical=window.evaluate_js(
                     "Boolean(document.querySelector('nav.tabs') || "
                     "document.querySelector('section[aria-label=\"Data-first native A/V preview\"]'))")
@@ -385,6 +389,7 @@ def run_visible_window_smoke():
                     ".catch(()=>{window.__nvpBridgeCheck='FAILED'})")
                 wait_js("window.__nvpBridgeCheck==='PASSED'",15,
                         "Native camera host bridge did not answer in WebView2")
+                _smoke_checkpoint("window_native_camera_ipc_verified")
                 # Real UI opens a project, but no technical tabs are restored.
                 selected=window.evaluate_js(
                     "(()=>{let d=document.querySelector('div[role=\"dialog\"]');"
@@ -407,6 +412,7 @@ def run_visible_window_smoke():
                     "Boolean(document.querySelector('nav.film-steps') && "
                     "document.body.textContent.includes('EXT. NATIVE CAMERA SOUND SOURCE'))",
                     25,"Native original's film source not visible in director screen")
+                _smoke_checkpoint("window_original_film_source_visible")
                 # Direct native sound catalog via the same installed WebView2
                 # bridge. --smoke-data-av separately proves sample-accurate
                 # PCM output; this checks the actual native JS/host boundary.
@@ -421,13 +427,16 @@ def run_visible_window_smoke():
                     ".catch(()=>{window.__nvpNativeSoundCheck='FAILED'})")
                 wait_js("window.__nvpNativeSoundCheck==='PASSED'",
                         20,"Installed native sound bridge cannot read original Digital Take")
+                _smoke_checkpoint("window_native_source_sound_verified")
                 result["passed"]=True
                 _smoke_checkpoint("native_data_av_bridge_director_screen_pass")
             except Exception as error:
                 result["failure"]=str(error)
+                _smoke_checkpoint("window_native_ui_assertion_failed")
             finally:
                 window.destroy()
         webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+        _smoke_checkpoint("window_webview2_loop_exited")
         if not result["passed"]:
             raise RuntimeError(
                 "Native director screen or data-first IPC failed: "+
