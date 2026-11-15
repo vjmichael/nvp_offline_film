@@ -27,10 +27,17 @@ def spatial_audio_at(index:FilmIndex,project_id,scene_id,scene_revision,
     record,stage=OpenUSDSceneBridge(index).open(
         project_id,scene_id,scene_revision)
     timeline=TemporalLedger(index)
-    events=timeline.events_at(project_id,timeline_id,timeline_revision,
-                              tick=tick,limit=limit+1)
-    if len(events)>limit:
-        raise RuntimeError("Native USD spatial source budget exceeded")
+    # The timeline also contains camera, motion and editorial events. Query
+    # original sound kinds separately so unrelated events cannot consume the
+    # audio budget or conceal an audible source behind a SQL LIMIT.
+    events=[]
+    for kind in ("sound", "dialogue"):
+        events.extend(timeline.events_at(
+            project_id,timeline_id,timeline_revision,
+            tick=tick,limit=limit+1,event_kind=kind))
+        if len(events)>limit:
+            raise RuntimeError("Native USD spatial source budget exceeded")
+    events.sort(key=lambda event: (event["start_tick"], event["event_id"]))
     descriptors=[]
     roles=record["data"]["prim_roles"]
     for event in events:
