@@ -91,6 +91,11 @@ class OriginalUVTextureNativeImport(unittest.TestCase):
                 self.request if request is None else request)
 
     def test_real_uv_mesh_png_revises_source_without_rewriting_original(self):
+        available=self.bridge.film01c_texture_catalog(self.pid)
+        self.assertEqual(available["original_uv_meshes"],[{
+            "asset_id":self.name,"revision":1,
+            "document_sha256":self.original["document_sha256"]}])
+        self.assertFalse(available["original_png_bytes_exposed"])
         result=self.import_original()
         self.assertEqual(result["status"],"ORIGINAL_SOURCE_TEXTURE_BOUND")
         self.assertEqual(result["format"],"nvp.wo2.native_original_texture_import.v1")
@@ -114,6 +119,13 @@ class OriginalUVTextureNativeImport(unittest.TestCase):
         self.assertEqual(current["data"]["mesh_uvs"],old["data"]["mesh_uvs"])
         descriptor=current["data"]["preview_material"]["texture"]
         self.assertEqual(verified_texture(self.index,self.pid,descriptor)[0],self.png)
+        updated=self.bridge.film01c_texture_catalog(self.pid)
+        self.assertEqual(updated["original_uv_meshes"],[])
+        self.assertEqual(updated["sources"][0]["source_id"],self.name)
+        self.assertEqual(updated["sources"][0]["revision"],2)
+        self.assertEqual(updated["sources"][0]["png_sha256"],
+                         [result["original_png_sha256"]])
+        self.assertFalse(updated["external_texture_paths_allowed"])
 
     def test_denied_or_cancelled_picker_cannot_create_texture_asset_revision(self):
         self.window.approved=False
