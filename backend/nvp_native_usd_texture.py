@@ -121,12 +121,14 @@ def texture_transport(index: FilmIndex, project_id, descriptor):
 
 
 def import_native_selected_png(index: FilmIndex, project_id, selected_path, *,
-                               approve):
+                               approve,validate_source=None):
     """Only the host passes an OS-picked file; JavaScript cannot select paths."""
     from pathlib import Path
     import os
     import stat
-    if not callable(approve) or not isinstance(selected_path, (str, Path)):
+    if (not callable(approve) or
+        (validate_source is not None and not callable(validate_source)) or
+        not isinstance(selected_path, (str, Path))):
         raise PermissionError("Trusted native picker and approval required")
     selected=Path(selected_path)
     if not selected.is_absolute() or selected.is_symlink():
@@ -155,7 +157,12 @@ def import_native_selected_png(index: FilmIndex, project_id, selected_path, *,
         png=b"".join(chunks)
     finally:
         os.close(fd)
-    width,height,_=decode_png(png)
+    width,height,rgba=decode_png(png)
+    # Optional stronger, host-owned original channel constraints must run
+    # BEFORE the native consent prompt and before the FilmIndex blob is
+    # admitted. This cannot be selected or bypassed by the WebView.
+    if validate_source is not None:
+        validate_source(width,height,rgba)
     digest=sha256(png).hexdigest()
     if approve({"sha256":digest,"width":width,"height":height,
                 "size_bytes":len(png),"format":FORMAT}) is not True:
