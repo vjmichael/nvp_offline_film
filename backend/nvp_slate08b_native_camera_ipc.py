@@ -464,6 +464,20 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
             raise PermissionError("Only a native Take-bound source PNG tile")
         return self._data_av().read_original_texture_tile(session_id,request)
 
+    def data_av_rig_texture_tile(self,session_id,request):
+        """Verify original ActorID rig layer and image within one live Take.
+
+        The original authored skeleton, source material graph, approved
+        source performance and PNG descriptor are all checked by the
+        existing trusted controller. This is source readback, not rendering.
+        """
+        self._native_window()
+        if type(request) is not dict or set(request)!={
+                "actor_path","skeleton_layer_sha256",
+                "texture_sha256","mip_level","tile_x","tile_y"}:
+            raise PermissionError("Only exact native ActorID rig texture tile")
+        return self._data_av().read_original_rig_texture_tile(session_id,request)
+
     def data_av_scene_at(self,session_id,tick):
         return self._data_av().scene_at(session_id,tick)
 
