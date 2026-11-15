@@ -24,6 +24,7 @@ from backend.nvp_usd_film01c_texture import (
 )
 from backend.nvp_native_usd_texture import PREFIX
 from test_nvp_usd_film01_world import NativeFilmWorld01
+from nvp_conv06_native_texture_test_support import original_png_approved_from_native_window
 
 
 def png_bytes():
@@ -134,7 +135,7 @@ class USDFilm01CLazyResolution(unittest.TestCase):
         b=self.baseline
         original_png=png_bytes()
         roughness_png=grayscale_png_bytes()
-        b.assets.publish(
+        raw_mesh=b.assets.publish(
             b.pid,"TexturedTile",shape="mesh",size_m=1,
             points=[[0.,0.,0.],[.8,0.,0.],[0.,.8,0.]],
             triangles=[[0,1,2]],
@@ -143,9 +144,20 @@ class USDFilm01CLazyResolution(unittest.TestCase):
                 "base_color_rgb":[.6,.5,.3],
                 "roughness":.4,"metallic":.1,
             },
-            texture_png=original_png,
-            pbr_maps_png={"roughness":roughness_png},
         )
+        # Preserve the original real USD shader/MaterialX and source-resolver
+        # tests, but no longer let an arbitrary caller publish unsigned PNGs.
+        # Each independently OS-picked original image has its own native
+        # confirmation and pinned source asset revision: 1 -> 2 -> 3.
+        base=original_png_approved_from_native_window(
+            b.index,b.pid,"TexturedTile",raw_mesh,original_png)
+        textured=original_png_approved_from_native_window(
+            b.index,b.pid,"TexturedTile",base,roughness_png,
+            channel="roughness")
+        self.assertEqual(textured["revision"],3)
+        self.assertEqual(b.index.read_revision(b.pid,"TexturedTile",1)[
+            "document_sha256"],raw_mesh["document_sha256"])
+        self.assertNotIn("texture",raw_mesh["data"]["preview_material"])
         # Put the original exact source into a SCENE as well as an ordinary
         # background prop: only the prop image is eagerly staged at first.
         b.scenes.publish(
@@ -154,18 +166,18 @@ class USDFilm01CLazyResolution(unittest.TestCase):
                     "position":[0,0,0]}],curves=[],
             asset_bindings=[{
                 "path":"/World/Wall","asset_id":"TexturedTile",
-                "asset_revision":1,
+                "asset_revision":3,
             }])
         sets=[*b.sets,{
             "name":"Textured","scene_id":"TexturedInterior","scene_revision":1,
         }]
         props=[*b.props,{
             "name":"TexturedProp","asset_id":"TexturedTile",
-            "asset_revision":1,
+            "asset_revision":3,
             "load":"reference","position_m":[2,1,0],
         }]
         b.publish(sets=sets,props=props)
-        original,before_layer=b.assets.open(b.pid,"TexturedTile",1)
+        original,before_layer=b.assets.open(b.pid,"TexturedTile",3)
         original_file=UsdShade.Shader(
             Usd.Stage.Open(before_layer).GetPrimAtPath(
                 "/Asset/Material/Texture")).GetInput("file").GetAttr().Get()
@@ -197,7 +209,7 @@ class USDFilm01CLazyResolution(unittest.TestCase):
                 str(source_shader.GetInput("file").GetAttr().Get().path),
                 real_uri)
             self.assertFalse(world.receipt()["usd_delegates_or_pixels_rendered"])
-        after,_=b.assets.open(b.pid,"TexturedTile",1)
+        after,_=b.assets.open(b.pid,"TexturedTile",3)
         self.assertEqual(original["document_sha256"],
                          after["document_sha256"])
         self.assertEqual(original_path,
