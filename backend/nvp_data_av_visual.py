@@ -13,6 +13,8 @@ from backend.nvp_openusd_assets import OpenUSDAssetRegistry
 
 FORMAT="nvp.data_av.native_visual_state.v1"
 MAX_OBJECTS=64
+MAX_MESH_POINTS_TOTAL=4096
+MAX_MESH_TRIANGLES_TOTAL=8192
 
 
 def visual_state(index:FilmIndex,project_id,scene_snapshot):
@@ -23,11 +25,18 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot):
         len(scene_snapshot["objects"])>MAX_OBJECTS):
         raise ValueError("Invalid bounded USD world-state snapshot")
     visual=[]
+    mesh_points_total=0
+    mesh_triangles_total=0
     assets=OpenUSDAssetRegistry(index)
     for obj in scene_snapshot["objects"]:
         role=obj["semantic_role"]
         shape="gizmo"
         size=0.4
+        mesh_points=None
+        mesh_triangles=None
+        mesh_uvs=None
+        mesh_face_uvs=None
+        source_material=None
         binding=obj.get("asset")
         if binding is not None:
             source,_layer=assets.open(
@@ -38,8 +47,19 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot):
                 raise RuntimeError("Live geometry does not match frozen USD asset SHA")
             shape=source["data"]["shape"]
             size=source["data"]["size_m"]
-            if shape not in ("cube","sphere"):
-                raise RuntimeError("Unsupported native procedural geometry")
+            if shape not in ("cube","sphere","mesh"):
+                raise RuntimeError("Unsupported original source geometry")
+            source_material=source["data"].get("preview_material")
+            if shape=="mesh":
+                mesh_points=source["data"]["points"]
+                mesh_triangles=source["data"]["triangles"]
+                mesh_uvs=source["data"].get("mesh_uvs")
+                mesh_face_uvs=source["data"].get("face_uvs")
+                mesh_points_total+=len(mesh_points)
+                mesh_triangles_total+=len(mesh_triangles)
+                if (mesh_points_total>MAX_MESH_POINTS_TOTAL or
+                        mesh_triangles_total>MAX_MESH_TRIANGLES_TOTAL):
+                    raise RuntimeError("Verified original USD mesh budget exceeded")
         matrix=obj["world_matrix"]
         if (type(matrix) is not list or len(matrix)!=4 or
             any(type(row) is not list or len(row)!=4 for row in matrix)):
@@ -52,6 +72,16 @@ def visual_state(index:FilmIndex,project_id,scene_snapshot):
             "geometry_asset_sha256":(
                 binding["asset_document_sha256"] if binding else None),
             "gizmo_only":binding is None,
+            "mesh_points":mesh_points,
+            "mesh_triangles":mesh_triangles,
+            "mesh_uvs":mesh_uvs,
+            "mesh_face_uvs":mesh_face_uvs,
+            "source_color_rgb":(
+                source_material["base_color_rgb"]
+                if source_material is not None else None),
+            "source_mesh_reopened":shape=="mesh",
+            "source_texture_pixels_exposed":False,
+            "source_skinning_authorized":False,
         })
     return {"format":FORMAT,
             "time_tick":str(scene_snapshot["time_tick"]),
