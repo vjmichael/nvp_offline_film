@@ -315,15 +315,13 @@ class ConvergedDirectorDesktopTests(unittest.TestCase):
         self.assertTrue(world["native_source_reopened"])
         self.assertFalse(world["actual_cycles_accepted"])
         self.assertFalse(world["original_take_or_pcm_modified"])
-        self.assertEqual(textures["sources"][0]["png_sha256"],["d"*64])
+        self.assertEqual(textures["sources"][0]["png_sha256"],"d"*64)
         self.assertFalse(textures["original_png_bytes_exposed"])
         self.assertFalse(textures["external_texture_paths_allowed"])
         # Metadata may name original PNG hashes; original source bytes must
         # never be returned to the browser as part of the catalog.
         self.assertNotIn("b'original_png'",str(textures))
         self.assertNotIn('b"original_png"',str(textures))
-        self.assertEqual(textures["sources"][0]["png_sha256"],["d"*64)
-        self.assertFalse(textures["original_png_bytes_exposed"])
 
     def test_original_cell_publication_uses_one_exact_native_scope(self):
         bridge=fake_bridge()
