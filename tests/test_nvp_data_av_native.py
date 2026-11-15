@@ -224,6 +224,41 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
                     self.index, self.pid, "spatial_world", 1,
                     "sound_events", 1, bad)
 
+    def test_audio_window_filters_before_sql_budget(self):
+        # Regression: a crowded scene's non-audio events must not conceal
+        # recorded dialogue by consuming the bounded SQL event window.
+        from unittest.mock import patch
+        original = TemporalLedger.events_in
+        seen = []
+
+        def checked(ledger, *args, **kwargs):
+            seen.append(kwargs.get("event_kinds"))
+            if kwargs.get("event_kinds") != ("sound", "dialogue"):
+                raise AssertionError("Native audio must filter before LIMIT")
+            return original(ledger, *args, **kwargs)
+
+        with patch.object(TemporalLedger, "events_in", checked):
+            result = self.engine("/World/ListenerLeft").audio_window(0, 128)
+        self.assertEqual(result["audible_event_ids"], ["actor_speaks"])
+        self.assertEqual(seen, [("sound", "dialogue")])
+
+    def test_filtered_event_pagination_preserves_unfiltered_history(self):
+        kwargs = dict(start_tick=0, end_tick=T, limit=1)
+        filtered = self.timeline.events_in(
+            self.pid, "sound_events", 1, **kwargs,
+            event_kinds=("sound", "dialogue"))
+        self.assertEqual([e["event_id"] for e in filtered["events"]],
+                         ["actor_speaks"])
+        unfiltered = self.timeline.events_in(
+            self.pid, "sound_events", 1, **kwargs)
+        self.assertEqual(unfiltered["events"], filtered["events"])
+        for invalid in ((), ("sound", "sound"), ("unknown",), "sound",
+                        ("sound", 1)):
+            with self.subTest(kinds=invalid), self.assertRaises(ValueError):
+                self.timeline.events_in(
+                    self.pid, "sound_events", 1, **kwargs,
+                    event_kinds=invalid)
+
     def test_native_creator_permission_seek_and_stop_are_window_scoped(self):
         bridge=TrustedDesktopCameraBridge(
             self.index,origin="http://127.0.0.1:7777")
