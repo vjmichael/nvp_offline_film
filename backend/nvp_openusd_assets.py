@@ -338,6 +338,104 @@ class OpenUSDAssetRegistry:
             "native_source_reopened":True,
             "original_modified":False,"film_master_approved":False}
 
+    def publish_native_selected_mesh_roughness(self,project_id,asset_id,*,
+            expected_source_revision,expected_source_document_sha256,
+            selected_path,approve_native):
+        """One native-selected original roughness image on one approved UV mesh.
+
+        A second original source authorization is required after approved
+        base-color texture publication. The original texture and geometry
+        are reopened from FilmIndex, not accepted from a browser request.
+        This authoring operation is not P1-F licensed production clearance.
+        """
+        from backend.nvp_film_index import _sha
+        from backend.nvp_native_usd_texture import (
+            import_native_selected_png,verified_texture)
+        _require_pid(project_id)
+        _id(asset_id,"original PBR source asset")
+        _sha(expected_source_document_sha256)
+        if (type(expected_source_revision) is not int or
+            expected_source_revision<1 or not callable(approve_native)):
+            raise PermissionError("Exact native original roughness import required")
+        prior,_=self.open(project_id,asset_id,expected_source_revision)
+        data=prior["data"]
+        mat=data.get("preview_material")
+        if (prior["document_sha256"]!=expected_source_document_sha256 or
+            data.get("shape")!="mesh" or
+            data.get("external_references") is not False or
+            not (data.get("mesh_uvs") or data.get("face_uvs")) or
+            data.get("material_slots") or not isinstance(mat,dict) or
+            "texture" not in mat or "pbr_maps" in mat):
+            raise PermissionError(
+                "Original roughness requires a reviewed source-textured UV mesh")
+        original_png,_=verified_texture(
+            self.index,project_id,mat["texture"])
+        used=False
+        def review(image):
+            nonlocal used
+            if used:
+                return False
+            used=True
+            scope={
+                "operation":"nvp.wo2.native_import_original_roughness_map.v1",
+                "project_id":project_id,"asset_id":asset_id,
+                "source_revision":expected_source_revision,
+                "source_asset_sha256":expected_source_document_sha256,
+                "original_base_png_sha256":mat["texture"]["sha256"],
+                "source_png_sha256":image["sha256"],
+                "width":image["width"],"height":image["height"],
+                "size_bytes":image["size_bytes"],"channel":"roughness"}
+            return approve_native(scope) is True
+        imported=import_native_selected_png(
+            self.index,project_id,selected_path,approve=review)
+        if imported["status"]=="DENIED":
+            return {"status":"NATIVE_DENIED","original_modified":False,
+                    "source_asset_modified":False}
+        if imported["status"]!="ORIGINAL_TEXTURE_IMPORTED":
+            raise RuntimeError("Native roughness picker did not return PNG source")
+        roughness_png,_=verified_texture(
+            self.index,project_id,imported["texture"])
+        # The original WO2 PBR source validates that grayscale is exact.
+        # Do it before any new asset revision is committed.
+        from backend.nvp_wo2_pbr_channels import publish_pbr_maps
+        from backend.nvp_native_usd_texture import decode_png
+        _,_,rgba=decode_png(roughness_png)
+        if any(rgba[i]!=rgba[i+1] or rgba[i]!=rgba[i+2]
+               for i in range(0,len(rgba),4)):
+            raise ValueError("Original roughness must be grayscale PNG")
+        current,_=self.open(project_id,asset_id,expected_source_revision)
+        if current["document_sha256"]!=expected_source_document_sha256:
+            raise RuntimeError("Original mesh source changed during PBR import")
+        result=self.publish(
+            project_id,asset_id,shape="mesh",
+            size_m=data["size_m"],expected_revision=expected_source_revision,
+            points=data["points"],triangles=data["triangles"],
+            mesh_uvs=data.get("mesh_uvs"),face_uvs=data.get("face_uvs"),
+            preview_material={
+                "base_color_rgb":mat["base_color_rgb"],
+                "roughness":mat["roughness"],"metallic":mat["metallic"]},
+            texture_png=original_png,
+            pbr_maps_png={"roughness":roughness_png},
+            _original_native_source_admission=
+                _ORIGINAL_NATIVE_WO2_SOURCE_ADMISSION)
+        reopened,_=self.open(project_id,asset_id,result["revision"])
+        new_mat=reopened["data"]["preview_material"]
+        if (reopened["document_sha256"]!=result["document_sha256"] or
+            new_mat["texture"]!=mat["texture"] or
+            new_mat["pbr_maps"]["roughness"]!=imported["texture"]):
+            raise RuntimeError("Approved original material and PBR revision differ")
+        return {
+            "format":"nvp.wo2.native_approved_original_roughness_map.v1",
+            "status":"ORIGINAL_ROUGHNESS_SOURCE_BOUND",
+            "asset_id":asset_id,"source_revision":expected_source_revision,
+            "source_asset_sha256":expected_source_document_sha256,
+            "revision":result["revision"],
+            "document_sha256":result["document_sha256"],
+            "original_base_png_sha256":mat["texture"]["sha256"],
+            "original_roughness_png_sha256":imported["texture"]["sha256"],
+            "native_source_reopened":True,
+            "original_modified":False,"film_master_approved":False}
+
     def import_rigged_actor(self, project_id, asset_id, source, *,
                             actor_id, approve_import, creator_event):
         """Import reviewed original USD; no external files or model authority."""
