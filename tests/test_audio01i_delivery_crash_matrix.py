@@ -79,9 +79,18 @@ class Audio01IDeliveryCrashMatrix(unittest.TestCase):
                 else:
                     self.assertFalse(output.exists())
                     self.assertTrue(stage.is_dir())
-                if registered:
+                if point=="delivery_event_finalized":
                     result=reopened.verify_delivery(pid,"delivery",output)
                     self.assertEqual(result["status"],"VERIFIED_FINAL_AUDIO")
+                elif registered:
+                    # FilmIndex registration alone is not the completed
+                    # one-use native creator event. Never publish success
+                    # across the crash between those two durable commits.
+                    record=reopened.capture.index.read_revision(
+                        pid,"delivery",1)
+                    self.assertTrue(record["data"]["final_master"])
+                    with self.assertRaises(PermissionError):
+                        reopened.verify_delivery(pid,"delivery",output)
                 else:
                     with self.assertRaises(KeyError):
                         reopened.capture.index.read_revision(pid,"delivery")

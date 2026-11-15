@@ -1,6 +1,6 @@
 import React from 'react';
 import {describe,it,expect,vi,afterEach} from 'vitest';
-import {render,screen,fireEvent,waitFor,cleanup} from '@testing-library/react';
+import {render,screen,fireEvent,waitFor,cleanup,act} from '@testing-library/react';
 import DataFirstAVPanel from './DataFirstAVPanel.jsx';
 
 const pid='a'.repeat(32);
@@ -40,7 +40,13 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
       expect(await screen.findByText('captured_take')).toBeTruthy();
       expect(screen.getByLabelText('Native spatial listener').value)
         .toBe('/World/Camera');
-      fireEvent.click(screen.getByText('Approve and audition 3D source sound'));
+      const audition=screen.getByRole('button',
+        {name:'Approve and audition 3D source sound'});
+      expect(audition.disabled).toBe(false);
+      await act(async()=>{
+        fireEvent.click(audition);
+        await Promise.resolve();
+      });
       await waitFor(()=>expect(bridge.data_av_begin).toHaveBeenCalledWith({
         project_id:pid,take_id:'captured_take',
         take_document_sha256:sha,

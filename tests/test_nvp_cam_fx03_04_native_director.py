@@ -144,6 +144,9 @@ class OriginalCAMFX03SourceAndDurableAI(unittest.TestCase):
                     "BEHIND_CAMERA","PARTLY_IN_FRAME","OUT_OF_FRAME"})
         with self.assertRaises(PermissionError):
             self.guide("ImaginaryModelActor")
+        # Well-formed but foreign ActorID must also fail authorization.
+        with self.assertRaises(PermissionError):
+            self.guide("f"*32)
         self.assertEqual(self.index.read_revision(
             self.pid,self.world_take,1)["document_sha256"],
             self.original_take_sha)

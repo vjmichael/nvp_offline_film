@@ -11,6 +11,7 @@ from hashlib import sha256
 from contextlib import ExitStack
 import json
 import math
+import re
 
 from backend.nvp_film_index import FilmIndex,_require_pid,_id
 from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
@@ -26,6 +27,8 @@ MAX_ACTORS=24
 MAX_SOURCE_PRIMS=2000
 MAX_TRIANGLES=12000
 MAX_SAMPLES=5
+# Story Bible ActorIDs are UUID4 .hex, not FilmIndex named-object identities.
+SOURCE_ACTOR_ID=re.compile(r"[a-f0-9]{32}\\Z".replace("\\\\","\\"))
 
 def _dot(a,b):
     return sum(x*y for x,y in zip(a,b))
@@ -162,7 +165,9 @@ def guided_camera_scene(index:FilmIndex,pid,rail_spec,*,
     if not isinstance(index,FilmIndex):
         raise TypeError("Only original FilmIndex for camera scene context")
     _require_pid(pid)
-    if actor_id is not None:_id(actor_id,"approved source ActorID")
+    if actor_id is not None and (type(actor_id) is not str or
+            not SOURCE_ACTOR_ID.fullmatch(actor_id)):
+        raise PermissionError("Unrecognized ActorID target from another source")
     if district_binding_id is not None:
         _id(district_binding_id,"approved original district shot")
     if type(rail_spec) is not dict:
