@@ -13,6 +13,8 @@ on:
       - "frontend/src/FilmCameraNativeBridge.test.jsx"
       - "frontend/src/DirectorCameraActorContinuity.jsx"
       - "frontend/src/DirectorCameraActorContinuity.test.jsx"
+      - "frontend/src/DataFirstWorldViewport.jsx"
+      - "frontend/src/DataFirstWorldViewport.test.jsx"
       - "backend/nvp_conv06_trusted_director_desktop.py"
       - "tests/test_nvp_slate08b_native_camera_ipc.py"
       - ".github/workflows/nvp-slate08b-desktop-camera.yml"
@@ -63,4 +65,4 @@ jobs:
           node-version: "22"
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx src/DirectorCameraActorContinuity.test.jsx
+      - run: npm run test:ui -- src/CameraLensWorkbench.test.jsx src/FilmCameraSourcePanel.test.jsx src/FilmCameraNativeBridge.test.jsx src/DirectorCameraActorContinuity.test.jsx src/DataFirstWorldViewport.test.jsx
