@@ -33,7 +33,7 @@ def original_png_approved_from_native_window(index,pid,aid,source,png,*,
             create_file_dialog=lambda *a,**k:
                 (selection.append((a,k)) or [str(file)]),
             create_confirmation_dialog=lambda title,message:
-                (shown.append((title,message)) or True))
+                (shown.append((title,message)) and len(shown)==1))
         bridge=object.__new__(TrustedDesktopCameraBridge)
         bridge.index=index
         bridge.origin="http://127.0.0.1:19991"
