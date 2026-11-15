@@ -235,13 +235,24 @@ class TemporalLedger:
         return [self._display(r) for r in rows]
 
     def events_in(self, project_id, timeline_id, revision, *, start_tick,
-                  end_tick, limit=100, after=None):
-        """Page sparse events overlapping [start,end); no frame expansion."""
+                  end_tick, limit=100, after=None, event_kinds=None):
+        """Page sparse events overlapping [start,end); no frame expansion.
+
+        An explicit sound-only filter is applied in SQLite BEFORE LIMIT,
+        preventing unrelated camera/motion events from hiding audible data.
+        """
         start = _int(start_tick, "range start")
         end = _int(end_tick, "range end")
         _int(limit, "page size", minimum=1, maximum=MAX_QUERY)
         if end <= start:
             raise ValueError("Requested event interval must be positive")
+        if event_kinds is not None:
+            if (type(event_kinds) not in (tuple, list) or
+                not event_kinds or len(event_kinds) > len(KINDS) or
+                any(type(kind) is not str or kind not in KINDS
+                    for kind in event_kinds) or
+                len(set(event_kinds)) != len(event_kinds)):
+                raise ValueError("Invalid bounded event kind filter")
         self._revision(project_id,timeline_id,revision)
         if after is None:
             cursor_tick,cursor_id = -1, ""
@@ -250,18 +261,24 @@ class TemporalLedger:
                 raise ValueError("Cursor must be exact (start_tick,event_id)")
             cursor_tick = _int(after[0], "cursor tick")
             cursor_id = _id(after[1],"cursor event")
-        with self.index.studio._connection() as db:
-            rows=db.execute("""SELECT event_id,event_kind,subject_id,start_tick,
+        # The kind predicate must precede SQL LIMIT; otherwise high-density
+        # non-audio events can silently starve the native sound mixer.
+        kinds = tuple(event_kinds) if event_kinds is not None else ()
+        predicate = (" AND event_kind IN (" +
+                     ",".join("?" for _ in kinds) + ")" if kinds else "")
+        query = """SELECT event_id,event_kind,subject_id,start_tick,
                 end_tick,source_id,source_revision,source_document_sha256,payload_json
                 FROM nvp_temporal_events
                 WHERE project_id=? AND timeline_id=? AND revision=?
                   AND start_tick < ?
                   AND (end_tick > ? OR (start_tick=end_tick AND start_tick >= ?))
                   AND (start_tick > ? OR
-                       (start_tick = ? AND event_id > ?))
-                ORDER BY start_tick,event_id LIMIT ?""",
+                       (start_tick = ? AND event_id > ?))""" + predicate + """
+                ORDER BY start_tick,event_id LIMIT ?"""
+        with self.index.studio._connection() as db:
+            rows=db.execute(query,
                 (project_id,timeline_id,revision,end,start,start,
-                 cursor_tick,cursor_tick,cursor_id,limit)).fetchall()
+                 cursor_tick,cursor_tick,cursor_id,*kinds,limit)).fetchall()
         events=[self._display(r) for r in rows]
         next_cursor=((events[-1]["start_tick"],events[-1]["event_id"])
                      if len(events)==limit else None)
