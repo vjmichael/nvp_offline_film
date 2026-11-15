@@ -75,8 +75,8 @@ class OriginalNativeSkinnedActorPreview(unittest.TestCase):
         self.assertTrue(actor["source_skinning_authorized"])
         self.assertEqual(actor["source_skinning_tick"],"0")
         self.assertEqual(actor["original_blend_shape_count"],0)
-        self.assertIsNone(actor["source_rig_binding"][
-            "source_skeleton_layer_sha256"] if False else None)
+        self.assertEqual(
+            len(actor["source_rig_binding"]["source_skeleton_layer_sha256"]),64)
         self.assertFalse(start["image_samples_rendered"])
         self.assertFalse(start["frame_grid_authority"])
         self.assertFalse(start["source_modified"])
