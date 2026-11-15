@@ -27,6 +27,11 @@ if not getattr(sys, "frozen", False):
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
 
+# pywebview walks js_api's PUBLIC object graph before page-loaded. The full
+# trusted bridge owns GUI/SQLite/custody objects and can deadlock WebView2;
+# expose only the existing reviewed narrow per-window method surface.
+from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
+
 
 def bundle_root():
     return Path(getattr(sys,"_MEIPASS",Path(__file__).resolve().parents[1]))
@@ -348,7 +353,7 @@ def run_visible_window_smoke():
     try:
         bridge=create_trusted_camera_bridge(port)
         window=webview.create_window("NVP Director-first Native Sound Acceptance",
-            "http://127.0.0.1:"+str(port),width=1100,height=760,js_api=bridge)
+            "http://127.0.0.1:"+str(port),width=1100,height=760,js_api=NativeWebviewIPCSurface(bridge))
         bridge._attach_window(window)
         _smoke_checkpoint("window_real_webview2_attached")
         window.events.loaded += lambda:loaded.set()
@@ -1225,7 +1230,7 @@ def main(argv=None):
         bridge=create_trusted_camera_bridge(port)
         window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
-            width=1280,height=800,min_size=(960,600),js_api=bridge)
+            width=1280,height=800,min_size=(960,600),js_api=NativeWebviewIPCSurface(bridge))
         bridge._attach_window(window)
         webview.start(gui="edgechromium",debug=False)
         return 0

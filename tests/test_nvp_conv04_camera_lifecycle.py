@@ -77,8 +77,10 @@ class OriginalCameraLifecycle(unittest.TestCase):
         self.assertEqual(len(manifest),1)
         stage=self._reopened_stage(frozen)
         self.assertTrue(stage.GetPrimAtPath("/World").IsDefined())
+        # Absent USD prims are null handles: IsDefined() is invalid on them.
+        # Keep the native stage alive while requiring no recorded camera.
         self.assertFalse(stage.GetPrimAtPath(
-            "/World/Objects/"+self.camera["id"]).IsDefined())
+            "/World/Objects/"+self.camera["id"]))
         self.assertFalse(any(p.IsA(UsdGeom.Camera)
             for p in Usd.PrimRange(stage.GetPseudoRoot())))
         original_sha=sha256(frozen).hexdigest()
@@ -102,8 +104,9 @@ class OriginalCameraLifecycle(unittest.TestCase):
         self.assertEqual(len(manifest),2)
         _validate(original,self.handoff)
         after,_=_build_usd(original)
-        self.assertFalse(self._reopened_stage(after).GetPrimAtPath(
-            camera_path).IsDefined())
+        reopened=self._reopened_stage(after)
+        self.assertTrue(reopened.GetPrimAtPath("/World").IsDefined())
+        self.assertFalse(reopened.GetPrimAtPath(camera_path))
         self.assertEqual(sha256(base).hexdigest(),base_sha)
         self.assertNotEqual(sha256(with_camera).hexdigest(),base_sha)
 
@@ -112,8 +115,9 @@ class OriginalCameraLifecycle(unittest.TestCase):
         _validate(empty,self.handoff)
         data,manifest=_build_usd(empty)
         self.assertEqual(manifest,[])
-        self.assertTrue(self._reopened_stage(data).GetPrimAtPath(
-            "/World").IsDefined())
+        # Retain the stage until the native prim readback is complete.
+        reopened=self._reopened_stage(data)
+        self.assertTrue(reopened.GetPrimAtPath("/World").IsDefined())
 
     def test_camera_limits_and_source_identity_remain_fail_closed(self):
         many=self._scene([{**self.camera,"id":"O_"+format(i,"012x")}

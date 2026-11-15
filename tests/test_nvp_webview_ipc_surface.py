@@ -4,6 +4,7 @@ The Windows prior native traceback pointed at webview.util.get_functions()
 recursing through the trusted bridge's PUBLIC FilmIndex and GUI window.
 Introspection must not traverse live authority, SQLite or COM objects.
 """
+import ast
 import inspect
 import unittest
 from pathlib import Path
@@ -124,6 +125,30 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             TrustedDesktopCameraBridge(
                 self.trusted.index,origin="http://127.0.0.1:7777",
                 native_capture_auditor={"creator_approved":True})
+
+    def test_installed_webview_entrypoints_use_the_reviewed_ipc_surface(self):
+        # Source-wiring guard: the real packaged application and the actual
+        # installed WebView2 smoke must NEVER hand pywebview the full trusted
+        # bridge, whose public OS-window/SQLite graphs can deadlock before_load.
+        path=Path(__file__).resolve().parents[1]/"tools"/"nvp_desktop_alpha.py"
+        tree=ast.parse(path.read_text(encoding="utf-8"),filename=str(path))
+        calls=[node for node in ast.walk(tree)
+               if isinstance(node,ast.Call) and
+               isinstance(node.func,ast.Attribute) and
+               isinstance(node.func.value,ast.Name) and
+               node.func.value.id=="webview" and
+               node.func.attr=="create_window"]
+        surfaces=[kw.value for call in calls for kw in call.keywords
+                  if kw.arg=="js_api"]
+        self.assertEqual(len(surfaces),2,
+                         "Review every installed pywebview JS API binding")
+        for surface in surfaces:
+            self.assertIsInstance(surface,ast.Call)
+            self.assertIsInstance(surface.func,ast.Name)
+            self.assertEqual(surface.func.id,"NativeWebviewIPCSurface")
+            self.assertEqual(len(surface.args),1)
+            self.assertIsInstance(surface.args[0],ast.Name)
+            self.assertEqual(surface.args[0].id,"bridge")
 
     def test_reject_untrusted_bridge_object(self):
         with self.assertRaises(TypeError):
