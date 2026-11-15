@@ -386,8 +386,13 @@ class OpenUSDAssetRegistry:
                 "width":image["width"],"height":image["height"],
                 "size_bytes":image["size_bytes"],"channel":"roughness"}
             return approve_native(scope) is True
+        def only_original_grayscale(width,height,rgba):
+            if any(rgba[i]!=rgba[i+1] or rgba[i]!=rgba[i+2]
+                   for i in range(0,len(rgba),4)):
+                raise ValueError("Original roughness must be grayscale PNG")
         imported=import_native_selected_png(
-            self.index,project_id,selected_path,approve=review)
+            self.index,project_id,selected_path,approve=review,
+            validate_source=only_original_grayscale)
         if imported["status"]=="DENIED":
             return {"status":"NATIVE_DENIED","original_modified":False,
                     "source_asset_modified":False}
@@ -395,14 +400,8 @@ class OpenUSDAssetRegistry:
             raise RuntimeError("Native roughness picker did not return PNG source")
         roughness_png,_=verified_texture(
             self.index,project_id,imported["texture"])
-        # The original WO2 PBR source validates that grayscale is exact.
-        # Do it before any new asset revision is committed.
-        from backend.nvp_wo2_pbr_channels import publish_pbr_maps
-        from backend.nvp_native_usd_texture import decode_png
-        _,_,rgba=decode_png(roughness_png)
-        if any(rgba[i]!=rgba[i+1] or rgba[i]!=rgba[i+2]
-               for i in range(0,len(rgba),4)):
-            raise ValueError("Original roughness must be grayscale PNG")
+        # Original PBR map publishing independently checks scalar pixel
+        # contracts again before authoring a real MaterialX/USD graph.
         current,_=self.open(project_id,asset_id,expected_source_revision)
         if current["document_sha256"]!=expected_source_document_sha256:
             raise RuntimeError("Original mesh source changed during PBR import")
