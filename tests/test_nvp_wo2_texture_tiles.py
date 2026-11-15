@@ -6,6 +6,7 @@ import test_nvp_openusd_reusable_assets as fixture
 
 from backend.nvp_data_av_desktop import TrustedDataAVController
 from backend.nvp_exact_time_shots import ExactTimeShotSequence
+from nvp_conv06_native_texture_test_support import original_png_approved_from_native_window
 
 
 class WO2OriginalTileAuthority(unittest.TestCase):
@@ -14,22 +15,26 @@ class WO2OriginalTileAuthority(unittest.TestCase):
         picture=Image.new("RGB",(512,257),(20,120,220))
         buf=BytesIO()
         picture.save(buf,format="PNG")
-        self.asset=self.assets.publish(
+        initial=self.assets.publish(
             self.pid,"original_tile_mesh",shape="mesh",size_m=2.,
             points=[[-1,-1,0],[1,-1,0],[1,1,0],[-1,1,0]],
             triangles=[[0,1,2],[0,2,3]],
             mesh_uvs=[[0,0],[1,0],[1,1],[0,1]],
             preview_material={"base_color_rgb":[1,1,1],
-                              "roughness":.5,"metallic":0},
-            texture_png=buf.getvalue())
-        self.descriptor=self.assets.open(self.pid,"original_tile_mesh",1)[0][
-            "data"]["preview_material"]["texture"]
+                              "roughness":.5,"metallic":0})
+        # The historical unrestricted texture_png publisher is now refused.
+        # Drive the REAL installed-native picker/approval path instead, and
+        # keep every original frozen-Take/tile/cache/refusal assertion below.
+        self.asset=original_png_approved_from_native_window(
+            self.index,self.pid,"original_tile_mesh",initial,buf.getvalue())
+        self.assertEqual(self.asset["revision"],2)
+        self.descriptor=self.asset["data"]["preview_material"]["texture"]
         self.scene.publish(self.pid,"tile_scene",prims=[
             {"path":"/World/Actor","role":"actor","position":[0,0,0]},
             {"path":"/World/Camera","role":"camera","position":[0,0,5]},
         ],curves=[],native_schemas=True,asset_bindings=[
             {"path":"/World/Actor","asset_id":"original_tile_mesh",
-             "asset_revision":1}])
+             "asset_revision":2}])
         ExactTimeShotSequence(self.index).publish(
             self.pid,"tile_shots",scene_id="tile_scene",
             scene_revision=1,duration_tick=str(fixture.T),
@@ -45,7 +50,7 @@ class WO2OriginalTileAuthority(unittest.TestCase):
             self.index,native_window=lambda:None,ask_native=lambda _:True)
         self.addCleanup(self.controller.close)
         self.request={
-            "asset_id":"original_tile_mesh","asset_revision":1,
+            "asset_id":"original_tile_mesh","asset_revision":2,
             "asset_document_sha256":self.asset["document_sha256"],
             "texture_sha256":self.descriptor["sha256"],
             "mip_level":0,"tile_x":1,"tile_y":1,
@@ -75,7 +80,7 @@ class WO2OriginalTileAuthority(unittest.TestCase):
         for modified in (
             {**self.request,"texture_sha256":"0"*64},
             {**self.request,"asset_document_sha256":"0"*64},
-            {**self.request,"asset_revision":2},
+            {**self.request,"asset_revision":3},
         ):
             with self.subTest(modified=modified):
                 with self.assertRaises((PermissionError,ValueError)):
