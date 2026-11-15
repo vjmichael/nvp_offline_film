@@ -12,6 +12,7 @@ export default function DirectorCameraActorContinuity({movie}){
   const [actors,setActors]=useState([]);
   const [architecture,setArchitecture]=useState(null);
   const [textures,setTextures]=useState(null);
+  const [pickedMesh,setPickedMesh]=useState(0);
   const [picked,setPicked]=useState(0);
   const [railId,setRailId]=useState('DirectorRail001');
   const [draft,setDraft]=useState(null);
@@ -91,7 +92,8 @@ export default function DirectorCameraActorContinuity({movie}){
          images.project_id!==pid||
          images.original_png_bytes_exposed!==false||
          images.external_texture_paths_allowed!==false||
-         !Array.isArray(images.sources))
+         !Array.isArray(images.sources)||
+         !Array.isArray(images.original_uv_meshes))
         throw Error('Original source architecture/texture native custody mismatch');
       setArchitecture(world);setTextures(images);
     }).catch(e=>{if(active)setError(e.message||'Original source inventory was refused');});
@@ -268,9 +270,10 @@ export default function DirectorCameraActorContinuity({movie}){
     </section>
     <details aria-label="Original environment source inventory">
       <summary>Advanced: original architecture and image sources</summary>
-      <p className="film-muted">This read-only native inventory verifies saved
-        3D source identities and image checksums. It cannot render a film,
-        load private assets in a web browser or approve director changes.</p>
+      <p className="film-muted">Original 3D sources and image checksums are verified
+        through the installed native host. Adding an image requires an OS file
+        picker and a separate director confirmation. This cannot render or
+        approve a film, and the web browser never receives a local image path.</p>
       {!architecture||!textures?
         <p className="film-muted">Original environment source inventory is not available
           from the installed trusted native host.</p>:<>
@@ -292,6 +295,60 @@ export default function DirectorCameraActorContinuity({movie}){
               {t.source_id} · {t.png_sha256.length} source-verified images
             </li>)}
         </ul>
+        {textures.original_uv_meshes.length>0&&
+          typeof native.data_av_import_original_mesh_texture==='function'&&
+          <section aria-label="Add original image to saved UV mesh">
+            <h4>Add image to a saved 3D surface</h4>
+            <p className="film-muted">Choose an existing original UV-mapped mesh.
+              The operating system selects one PNG, and a fresh native
+              confirmation binds it as a new immutable asset revision.
+              Existing Takes and film audio stay unchanged.</p>
+            <label>Original 3D surface
+              <select value={pickedMesh}
+                onChange={e=>setPickedMesh(Number(e.target.value))}>
+                {textures.original_uv_meshes.map((m,i)=>
+                  <option key={m.asset_id+':'+m.revision} value={i}>
+                    {m.asset_id} — revision {m.revision}</option>)}
+              </select>
+            </label>
+            <button type="button" disabled={busy}
+              onClick={()=>action(async()=>{
+                const original=textures.original_uv_meshes[pickedMesh];
+                if(!original||!goodId(original.asset_id)||
+                   !goodSha(original.document_sha256)||
+                   !Number.isSafeInteger(original.revision)||
+                   original.revision<1)
+                  throw Error('Original UV source identity is not valid');
+                const result=await native.data_av_import_original_mesh_texture({
+                  project_id:pid,asset_id:original.asset_id,
+                  source_revision:original.revision,
+                  source_document_sha256:original.document_sha256});
+                if(result?.format!=='nvp.wo2.native_original_texture_import.v1'||
+                   result.original_modified!==false)
+                  throw Error('Native original image import evidence invalid');
+                if(result.status==='CANCELLED'||result.status==='NATIVE_DENIED'){
+                  setNotice('Original image import was cancelled or refused.');
+                  return;
+                }
+                if(result.status!=='ORIGINAL_SOURCE_TEXTURE_BOUND'||
+                   result.asset_id!==original.asset_id||
+                   result.source_revision!==original.revision||
+                   result.source_asset_sha256!==original.document_sha256||
+                   !goodSha(result.original_png_sha256)||
+                   result.native_source_reopened!==true||
+                   result.film_master_approved!==false)
+                  throw Error('Imported image did not match the approved original USD source');
+                const refreshed=await native.film01c_texture_catalog(pid);
+                if(refreshed?.format!=='nvp.conv06.original_texture_metadata_catalog.v1'||
+                   refreshed.project_id!==pid||
+                   !Array.isArray(refreshed.sources)||
+                   !Array.isArray(refreshed.original_uv_meshes)||
+                   refreshed.original_png_bytes_exposed!==false)
+                  throw Error('Imported image source was not independently reopened');
+                setTextures(refreshed);setPickedMesh(0);
+                setNotice('Native-approved original image saved as a new 3D source revision.');
+              })}>Choose PNG and confirm in native window</button>
+          </section>}
       </>}
     </details>
   </details>;
