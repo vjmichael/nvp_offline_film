@@ -19,7 +19,7 @@ from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_temporal_ledger import TemporalLedger,TICKS_PER_SECOND
 from backend.nvp_data_av_source import RecordedSoundSources,SAMPLE_RATE
 from backend.nvp_data_av_scene import FrozenSceneAV
-from backend.nvp_data_av_usd import spatial_audio_at
+from backend.nvp_data_av_usd import spatial_audio_at, spatial_audio_at_precise_time
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 
 T=TICKS_PER_SECOND
@@ -136,6 +136,168 @@ class NativeDigitalTakeAudioTests(unittest.TestCase):
         self.assertFalse(binding["revised_frozen_layer"])
         self.assertEqual(self.index.read_revision(
             self.pid,"spatial_world",1)["document_sha256"],before)
+
+    def test_usd_sound_time_metadata_keeps_subframe_exact_integer_ticks(self):
+        # Sound-event times need not fall on any video frame boundary.
+        event = self.timeline.events_at(
+            self.pid, "sound_events", 1, tick=T//2)[0]
+        self.assertEqual(event["start_tick"], 0)
+        self.assertEqual(event["end_tick"], 2*T)
+        result = spatial_audio_at(
+            self.index, self.pid, "spatial_world", 1,
+            "sound_events", 1, T//2)
+        binding = result["bindings"][0]
+        record, stage = self.scene.open(self.pid, "spatial_world", 1)
+        # The overlay is deliberately transient; reopen cannot expose it.
+        self.assertFalse(stage.GetPrimAtPath(binding["usd_prim_path"]).IsValid())
+        self.assertEqual(binding["film_time_ticks_per_second"], str(T))
+        self.assertEqual(binding["start_tick"], "0")
+        self.assertEqual(binding["end_tick"], str(2*T))
+        self.assertEqual(self.index.read_revision(
+            self.pid, "spatial_world", 1)["document_sha256"],
+            record["document_sha256"])
+
+    def test_spatial_query_filters_non_audio_before_source_budget(self):
+        # Non-audio Film Time events must never hide original sound behind
+        # the database's bounded result window.
+        from unittest.mock import patch
+        original = TemporalLedger.events_at
+        calls = []
+
+        def checked_events(ledger, *args, **kwargs):
+            calls.append(kwargs.get("event_kind"))
+            if kwargs.get("event_kind") is None:
+                raise AssertionError("Unfiltered timeline query is unsafe")
+            return original(ledger, *args, **kwargs)
+
+        with patch.object(TemporalLedger, "events_at", checked_events):
+            result = spatial_audio_at(
+                self.index, self.pid, "spatial_world", 1,
+                "sound_events", 1, T // 2, limit=1)
+        self.assertEqual(calls, ["sound", "dialogue"])
+        self.assertEqual([b["event_id"] for b in result["bindings"]],
+                         ["actor_speaks"])
+
+    def test_usd_spatial_query_rejects_invalid_time_and_budget(self):
+        for tick in (-1, True, 1.5, "0", 2**63):
+            with self.subTest(tick=tick), self.assertRaises(ValueError):
+                spatial_audio_at(self.index, self.pid, "spatial_world", 1,
+                                 "sound_events", 1, tick)
+        for limit in (0, True, 33, 1.5):
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                spatial_audio_at(self.index, self.pid, "spatial_world", 1,
+                                 "sound_events", 1, 0, limit=limit)
+
+    def test_structured_precise_film_time_spatial_sound_query(self):
+        # A non-frame-aligned query must preserve the exact original tick.
+        tick = T // 2 + 1
+        address = {"ticks": str(tick), "ticks_per_second": str(T)}
+        result = spatial_audio_at_precise_time(
+            self.index, self.pid, "spatial_world", 1,
+            "sound_events", 1, address)
+        self.assertEqual(result["queried_film_time"], address)
+        self.assertEqual(result["bindings"][0]["event_id"], "actor_speaks")
+        self.assertEqual(result["bindings"][0]["start_tick"], "0")
+        self.assertEqual(self.index.read_revision(
+            self.pid, "spatial_world", 1)["document_sha256"],
+            self.scene.open(self.pid, "spatial_world", 1)[0]["document_sha256"])
+        invalid = [
+            None, 1, {"ticks": tick, "ticks_per_second": str(T)},
+            {"ticks": "01", "ticks_per_second": str(T)},
+            {"ticks": "-1", "ticks_per_second": str(T)},
+            {"ticks": "1.5", "ticks_per_second": str(T)},
+            {"ticks": "1e3", "ticks_per_second": str(T)},
+            {"ticks": "１２", "ticks_per_second": str(T)},
+            {"ticks": "2" * 30, "ticks_per_second": str(T)},
+            {"ticks": "1", "ticks_per_second": T},
+            {"ticks": "1", "ticks_per_second": "24"},
+            {"ticks": "1", "ticks_per_second": str(T), "fps": 24},
+        ]
+        for bad in invalid:
+            with self.subTest(address=bad), self.assertRaises(ValueError):
+                spatial_audio_at_precise_time(
+                    self.index, self.pid, "spatial_world", 1,
+                    "sound_events", 1, bad)
+
+    def test_audio_window_filters_before_sql_budget(self):
+        # Regression: a crowded scene's non-audio events must not conceal
+        # recorded dialogue by consuming the bounded SQL event window.
+        from unittest.mock import patch
+        original = TemporalLedger.events_in
+        seen = []
+
+        def checked(ledger, *args, **kwargs):
+            seen.append(kwargs.get("event_kinds"))
+            if kwargs.get("event_kinds") != ("sound", "dialogue"):
+                raise AssertionError("Native audio must filter before LIMIT")
+            return original(ledger, *args, **kwargs)
+
+        with patch.object(TemporalLedger, "events_in", checked):
+            result = self.engine("/World/ListenerLeft").audio_window(0, 128)
+        self.assertEqual(result["audible_event_ids"], ["actor_speaks"])
+        self.assertEqual(seen, [("sound", "dialogue")])
+
+    def test_filtered_event_pagination_preserves_unfiltered_history(self):
+        kwargs = dict(start_tick=0, end_tick=T, limit=1)
+        filtered = self.timeline.events_in(
+            self.pid, "sound_events", 1, **kwargs,
+            event_kinds=("sound", "dialogue"))
+        self.assertEqual([e["event_id"] for e in filtered["events"]],
+                         ["actor_speaks"])
+        unfiltered = self.timeline.events_in(
+            self.pid, "sound_events", 1, **kwargs)
+        self.assertEqual(unfiltered["events"], filtered["events"])
+        for invalid in ((), ("sound", "sound"), ("unknown",), "sound",
+                        ("sound", 1)):
+            with self.subTest(kinds=invalid), self.assertRaises(ValueError):
+                self.timeline.events_in(
+                    self.pid, "sound_events", 1, **kwargs,
+                    event_kinds=invalid)
+
+    def test_crowded_original_timeline_keeps_sound_before_cursor_budget(self):
+        # Real immutable original scene/audio/timeline, not a mocked
+        # event store. Camera events must never starve an audible event.
+        camera_events=[{
+            "event_id":f"aaa_camera_{i:03d}",
+            "event_kind":"camera","subject_id":"Actor",
+            "start_tick":0,"end_tick":T,
+            "source_id":"spatial_world","source_revision":1,
+            "payload":{"usd_prim_path":"/World/Actor"}
+        } for i in range(150)]
+        dialogue={
+            "event_id":"actor_speaks","event_kind":"dialogue",
+            "subject_id":"Actor","start_tick":0,"end_tick":2*T,
+            "source_id":"mic_signal","source_revision":1,
+            "payload":{"usd_prim_path":"/World/Actor","gain":1.0}
+        }
+        self.timeline.publish(self.pid,"crowded_sound",
+            camera_events+[dialogue],duration_tick=3*T)
+        first=self.timeline.events_in(self.pid,"crowded_sound",1,
+            start_tick=0,end_tick=T,limit=1)
+        self.assertEqual(first["events"][0]["event_kind"],"camera")
+        clean=self.timeline.events_in(self.pid,"crowded_sound",1,
+            start_tick=0,end_tick=T,limit=1,
+            event_kinds=("sound","dialogue"))
+        self.assertEqual([e["event_id"] for e in clean["events"]],
+                         ["actor_speaks"])
+        self.assertIsNotNone(first["next_cursor"])
+        native=spatial_audio_at(self.index,self.pid,"spatial_world",1,
+            "crowded_sound",1,0,limit=1)
+        self.assertEqual([b["event_id"] for b in native["bindings"]],
+                         ["actor_speaks"])
+        self.assertFalse(native["original_modified"])
+        take=self.takes.freeze(
+            self.pid,"crowded_native_audio_take",
+            scene_id="spatial_world",scene_revision=1,
+            timeline_id="crowded_sound",timeline_revision=1,
+            sample_ticks=[0,T,2*T],creator_event="approved")
+        audience=FrozenSceneAV(
+            self.index,self.pid,"crowded_native_audio_take",
+            expected_take_sha256=take["document_sha256"],
+            listener_path="/World/ListenerLeft")
+        mixed=audience.audio_window(0,128)
+        self.assertEqual(mixed["audible_event_ids"],["actor_speaks"])
+        self.assertEqual(len(mixed["pcm_stereo_s16le"]),128*4)
 
     def test_native_creator_permission_seek_and_stop_are_window_scoped(self):
         bridge=TrustedDesktopCameraBridge(
