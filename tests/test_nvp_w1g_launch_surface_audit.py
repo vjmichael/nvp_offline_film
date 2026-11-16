@@ -18,6 +18,22 @@ class RuntimeLaunchAuditTests(unittest.TestCase):
         self.assertIn("backend/nvp_filming_cgroup_launch.py",
                       receipt["reviewed_legacy_launch_modules"])
 
+    def test_retired_blender_launch_cannot_rejoin_reviewed_release_graph(self):
+        root=Path(__file__).resolve().parents[1]
+        retired="backend/nvp_w1g_legacy_blender_launch.py"
+        self.assertFalse((root/retired).exists())
+        receipt=audit_release_launch_surface(root)
+        self.assertNotIn(retired,receipt["reviewed_legacy_launch_modules"])
+        with TemporaryDirectory() as td:
+            copied=Path(td)
+            shutil.copytree(root/"backend",copied/"backend")
+            (copied/retired).write_text(
+                "import subprocess\\ndef retired_bypass():\\n"
+                "    return subprocess.run(['unowned-blender'])\\n",
+                encoding="utf8")
+            with self.assertRaisesRegex(PermissionError,"Retired uncontrolled Blender"):
+                audit_release_launch_surface(copied)
+
     def test_new_uncontained_subprocess_fails_closed(self):
         repo=Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as td:

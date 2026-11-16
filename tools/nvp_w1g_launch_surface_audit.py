@@ -24,7 +24,6 @@ ALLOWED={
     "backend/nvp_filming_cgroup_launch.py":{"Popen"},
     "backend/nvp_stt_service.py":{"Popen"},
     "backend/nvp_color_ocio.py":{"run"},
-    "backend/nvp_w1g_legacy_blender_launch.py":{"run"},
     "backend/nvp_w1g_owned_subprocess.py":{"run"},
     "backend/nvp_native_frame_index.py":{"Popen"},
     "backend/nvp_audio01f_picture_sound.py":{"Popen"},
@@ -44,10 +43,6 @@ MARKERS={
         "if os.name==\"nt\":",
         "Legacy FFmpeg color subprocess is blocked in Windows production",
     ),
-    "backend/nvp_w1g_legacy_blender_launch.py":(
-        "if os.name!=\"nt\":",
-        "from backend.nvp_w1g_owned_subprocess import run_owned_subprocess",
-    ),
     "backend/nvp_w1g_owned_subprocess.py":(
         "if os.name != \"nt\":",
         "from backend.nvp_worker_containment import launch_contained",
@@ -64,6 +59,9 @@ MARKERS={
         'if sys.platform!="linux" or os.name!="posix":', "guardian=subprocess.Popen",
     ),
 }
+# This historical adapter used a direct Linux subprocess fallback. Its source
+# is retained in Git history, never in an executable release graph.
+RETIRED_LAUNCHER="backend/nvp_w1g_legacy_blender_launch.py"
 OPS=frozenset(("run","Popen","call","check_output","check_call","getoutput",
                "getstatusoutput"))
 ASYNCS=frozenset(("create_subprocess_exec","create_subprocess_shell"))
@@ -77,6 +75,9 @@ def audit_release_launch_surface(root:Path):
     backend=root/"backend"
     if not backend.is_dir() or backend.is_symlink():
         raise RuntimeError("Original runtime source tree is absent or linked")
+    retired=root/RETIRED_LAUNCHER
+    if retired.exists() or retired.is_symlink():
+        raise PermissionError("Retired uncontrolled Blender launcher is not admissible")
     sources=sorted(backend.glob("nvp_*.py"))
     if len(sources)<100:
         raise RuntimeError("Incomplete original production source tree")
