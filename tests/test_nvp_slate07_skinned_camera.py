@@ -352,6 +352,60 @@ class RealCharacterAndLens(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.host.read_camera_workbench_png(self.pid,queued["cache_key"])
 
+    def test_retired_desktop_camera_bridge_rejects_every_legacy_worker_action(self):
+        """DA-06 production interface cannot mint another pre-Take Blender ticket.
+
+        This tests the actual retired desktop surface. The separate trusted
+        NativeSlatePreviewHost test still exercises positive OS-contained
+        picture acceptance, independent consent and journal recovery.
+        """
+        from backend.nvp_slate08b_native_camera_ipc import (
+            TrustedDesktopCameraBridge)
+        created=[]
+        def forbidden_host(_):
+            created.append(True)
+            raise AssertionError("Retired browser camera worker was launched")
+
+        class ConfirmingWindow:
+            calls=0
+            def get_current_url(self):
+                return "http://127.0.0.1:7777/"
+            def create_confirmation_dialog(self,title,message):
+                self.calls+=1
+                raise AssertionError("No retired camera grant may prompt its creator")
+        window=ConfirmingWindow()
+        bridge=TrustedDesktopCameraBridge(
+            self.index,origin="http://127.0.0.1:7777",
+            host_factory=forbidden_host)
+        bridge._attach_window(window)
+        try:
+            flags=bridge.camera_render_capabilities()
+            self.assertTrue(flags["native_data_first_scene"])
+            self.assertTrue(flags["legacy_render_retired"])
+            self.assertFalse(flags["supports_approved_still"])
+            with self.assertRaisesRegex(PermissionError,"retired by DA-06"):
+                bridge.request_camera_still({
+                    "project_id":self.pid,"source_scene_id":"world",
+                    "source_scene_revision":1,
+                    "source_scene_document_sha256":self.original_scene_sha,
+                    "source_tick":T,"camera_path":"/World/Camera",
+                    "lens_settings":lens_settings(
+                        lens="portrait_85",f_stop=1.4),
+                    "source_modified":False,
+                    "frozen_take_created":False,
+                })
+            with self.assertRaises(PermissionError):
+                bridge.poll_camera_still("legacy_ticket")
+            with self.assertRaises(PermissionError):
+                bridge.cancel_camera_still("legacy_ticket")
+            self.assertEqual(window.calls,0)
+            self.assertEqual(created,[])
+            self.assertEqual(self.index.list_objects(self.pid,kind="take"),[])
+            self.assertEqual(self.index.read_revision(
+                self.pid,"world",1)["document_sha256"],self.original_scene_sha)
+        finally:
+            bridge._close()
+
     @unittest.skipUnless(os.environ.get("NVP_NATIVE_BLENDER_EXECUTABLE"),
                          "Installed Blender smoke not configured")
     def test_actual_contained_blender_skin_and_optical_still(self):
