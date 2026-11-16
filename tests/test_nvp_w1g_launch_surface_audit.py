@@ -34,6 +34,37 @@ class RuntimeLaunchAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(PermissionError,"Retired uncontrolled Blender"):
                 audit_release_launch_surface(copied)
 
+    def test_g03_pinned_host_acl_exemption_rejects_arbitrary_new_subprocess(self):
+        # The original SID-grant and low-integrity icacls host operations
+        # cannot license another worker subprocess in this module.
+        repo=Path(__file__).resolve().parents[1]
+        receipt=audit_release_launch_surface(repo)
+        self.assertNotIn("backend/nvp_g03_windows_appcontainer.py",
+                         receipt["reviewed_legacy_launch_modules"])
+        with TemporaryDirectory() as td:
+            root=Path(td)
+            shutil.copytree(repo/"backend",root/"backend")
+            candidate=root/"backend"/"nvp_g03_windows_appcontainer.py"
+            candidate.write_text(candidate.read_text("utf8")+
+                "\nimport subprocess\ndef rogue_appcontainer():\n"
+                "    subprocess.run(['uncontained-worker'])\n",encoding="utf8")
+            with self.assertRaisesRegex(PermissionError,"AppContainer ACL host"):
+                audit_release_launch_surface(root)
+
+    def test_g03_pinned_host_acl_executable_refuses_tampering(self):
+        repo=Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as td:
+            root=Path(td)
+            shutil.copytree(repo/"backend",root/"backend")
+            candidate=root/"backend"/"nvp_g03_windows_appcontainer.py"
+            original=candidate.read_text("utf8")
+            self.assertIn('args=["icacls",str(path)]',original)
+            candidate.write_text(original.replace(
+                'args=["icacls",str(path)]',
+                'args=["powershell",str(path)]'),encoding="utf8")
+            with self.assertRaisesRegex(PermissionError,"AppContainer ACL host"):
+                audit_release_launch_surface(root)
+
     def test_new_uncontained_subprocess_fails_closed(self):
         repo=Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as td:

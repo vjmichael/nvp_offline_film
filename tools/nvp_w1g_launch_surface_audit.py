@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import ast
-from hashlib import sha256
+from hashlib import sha1, sha256
 import json
 from pathlib import Path
 
@@ -62,6 +62,15 @@ MARKERS={
 # This historical adapter used a direct Linux subprocess fallback. Its source
 # is retained in Git history, never in an executable release graph.
 RETIRED_LAUNCHER="backend/nvp_w1g_legacy_blender_launch.py"
+# These EXACT two original Windows icacls operations configure and recover
+# the host-owned AppContainer ACL, not a renderer/worker subprocess.
+# An immutable Git blob attestation prevents extending the exception.
+G03_HOST_ACL_MODULE="backend/nvp_g03_windows_appcontainer.py"
+G03_REVIEWED_BLOB_SHA1="0bb3ace6875f765d9ebe781a46e4f3e4ca9ed112"
+G03_ALLOWED_ACL_SITES=(
+    "subprocess.run(args, capture_output=True, text=True, timeout=120, check=False)",
+    "subprocess.run(['icacls', str(work), '/setintegritylevel', '(OI)(CI)L'], capture_output=True, text=True, timeout=30)",
+)
 OPS=frozenset(("run","Popen","call","check_output","check_call","getoutput",
                "getstatusoutput"))
 ASYNCS=frozenset(("create_subprocess_exec","create_subprocess_shell"))
@@ -89,8 +98,16 @@ def audit_release_launch_surface(root:Path):
             raise RuntimeError("Linked runtime module cannot be reviewed")
         key="backend/"+file.name
         source=file.read_text("utf8")
-        hashes.append(key+":"+sha256(source.encode("utf8")).hexdigest())
+        raw=source.encode("utf8")
+        hashes.append(key+":"+sha256(raw).hexdigest())
+        if key==G03_HOST_ACL_MODULE:
+            # Pin whole original source bytes, not merely an easily preserved
+            # marker, before exempting any host-only ACL command.
+            blob=b"blob "+str(len(raw)).encode("ascii")+b"\0"+raw
+            if sha1(blob).hexdigest()!=G03_REVIEWED_BLOB_SHA1:
+                raise PermissionError("Unreviewed original AppContainer ACL host source")
         tree=ast.parse(source,filename=str(file))
+        g03_host_sites=[]
         aliases={"subprocess":"subprocess","asyncio":"asyncio","os":"os"}
         from_calls={}
         for node in ast.walk(tree):
@@ -120,10 +137,17 @@ def audit_release_launch_surface(root:Path):
                 module=="os" and action in OS_SPAWN)
             if not external:
                 continue
+            if key==G03_HOST_ACL_MODULE and module=="subprocess" and action=="run":
+                # Not a general allowlist: full source blob and the exact two
+                # original call ASTs must match this reviewed host ACL fixture.
+                g03_host_sites.append(ast.unparse(node))
+                continue
             if module!="subprocess" or action not in ALLOWED.get(key,set()):
                 unregistered.append(key+":"+str(node.lineno)+":"+module+"."+action)
                 continue
             seen.setdefault(key,set()).add(action)
+        if key==G03_HOST_ACL_MODULE and tuple(sorted(g03_host_sites))!=tuple(sorted(G03_ALLOWED_ACL_SITES)):
+            raise PermissionError("Unreviewed original AppContainer ACL host launch sites")
     # Fail if an allowed source disappeared, was renamed or lost its explicit
     # platform-level non-Windows boundary; otherwise new Popen would slip in.
     for key,operations in ALLOWED.items():
