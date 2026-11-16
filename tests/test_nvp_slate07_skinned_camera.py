@@ -374,6 +374,14 @@ class RealCharacterAndLens(unittest.TestCase):
                 self.calls+=1
                 raise AssertionError("No retired camera grant may prompt its creator")
         window=ConfirmingWindow()
+        # Inherited facial-rig fixtures deliberately freeze real_face_take
+        # before this denial test. Preserve their Take identity and digest.
+        before_takes=self.index.list_objects(self.pid,kind="take")
+        before_sha={row["object_id"]:self.index.read_revision(
+            self.pid,row["object_id"],row["head_revision"])["document_sha256"]
+            for row in before_takes}
+        if type(self) is RealCharacterAndLens:
+            self.assertEqual(before_takes,[])
         bridge=TrustedDesktopCameraBridge(
             self.index,origin="http://127.0.0.1:7777",
             host_factory=forbidden_host)
@@ -400,7 +408,11 @@ class RealCharacterAndLens(unittest.TestCase):
                 bridge.cancel_camera_still("legacy_ticket")
             self.assertEqual(window.calls,0)
             self.assertEqual(created,[])
-            self.assertEqual(self.index.list_objects(self.pid,kind="take"),[])
+            self.assertEqual(self.index.list_objects(self.pid,kind="take"),
+                             before_takes)
+            for take_id,original_sha in before_sha.items():
+                self.assertEqual(self.index.read_revision(
+                    self.pid,take_id)["document_sha256"],original_sha)
             self.assertEqual(self.index.read_revision(
                 self.pid,"world",1)["document_sha256"],self.original_scene_sha)
         finally:
