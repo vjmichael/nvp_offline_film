@@ -137,7 +137,7 @@ class ExactNativeSupplyIntakeTests(unittest.TestCase):
         for role in ROLES:
             source=SOURCE_ROOT/"native"/(role+".cpp")
             self.assertTrue(source.is_file(),role)
-            self.assertNotIn(b"\\r\\n",source.read_bytes(),role)
+            self.assertNotIn(b"\r\n",source.read_bytes(),role)
 
 
 if __name__ == "__main__":
