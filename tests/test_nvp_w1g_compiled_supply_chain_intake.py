@@ -129,6 +129,16 @@ class ExactNativeSupplyIntakeTests(unittest.TestCase):
             with self.assertRaisesRegex(PermissionError, "compiler source"):
                 original_compiled_native_review_intake(binary_dir, imports)
 
+    def test_original_native_cpp_checkout_lf_not_crlf(self):
+        # The original W1-G C++ worker source is a hashed supply-chain input.
+        attrs=(SOURCE_ROOT/".gitattributes").read_text("utf8").splitlines()
+        self.assertIn("native/*.cpp text eol=lf",attrs)
+        self.assertIn("native/*.h text eol=lf",attrs)
+        for role in ROLES:
+            source=SOURCE_ROOT/"native"/(role+".cpp")
+            self.assertTrue(source.is_file(),role)
+            self.assertNotIn(b"\\r\\n",source.read_bytes(),role)
+
 
 if __name__ == "__main__":
     unittest.main()
