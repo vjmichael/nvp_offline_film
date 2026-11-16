@@ -14,6 +14,13 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact original kernel source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -22,6 +29,13 @@ jobs:
           set -euo pipefail
           git rev-parse HEAD
           python -m compileall -q backend/nvp_worker_linux_cgroup.py backend/nvp_worker_linux_launcher.py backend/nvp_worker_cgroup_guardian.py tests/test_nvp_sec06_linux_ancestor_migration.py
+      - name: Require original nonempty ancestor-migration negative suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          pattern=test_nvp_sec06_linux_ancestor_migration.py
+          test -f "tests/$pattern" || { echo "::error::Original SEC-06 kernel test missing"; exit 1; }
+          python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('Original SEC06 kernel negative cases:',n); sys.exit(0 if n else 2)" "$pattern"
       - name: Require actual cgroup-v2 and systemd
         run: |
           set -euo pipefail

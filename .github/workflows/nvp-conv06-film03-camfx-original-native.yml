@@ -47,6 +47,9 @@ on:
       - 'tests/test_nvp_usd_film02m_modular_buildings.py'
       - 'tests/test_nvp_usd_film01c_lazy_resolver.py'
       - 'tests/test_nvp_conv06_trusted_director_desktop.py'
+      - 'tests/test_nvp_conv03_shared_security_convergence.py'
+      - 'tests/test_nvp_webview_ipc_surface.py'
+      - 'tools/nvp_desktop_alpha.py'
       - 'tests/test_nvp_conv06_wo2_readback_contract.py'
       - 'tests/test_nvp_conv06_original_architecture_cells.py'
       - 'tools/nvp_prod06c_fixture.py'
@@ -80,6 +83,17 @@ jobs:
         os: [ubuntu-24.04, windows-2025]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify original exact branch-head checkout (not PR merge ref)
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          echo "CONV06_EXPECTED_SOURCE_HEAD=$expected"
+          echo "CONV06_ACTUAL_CHECKOUT_HEAD=$actual"
+          test "$actual" = "$expected"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -113,6 +127,8 @@ jobs:
             test_nvp_cam_fx05_staged_rail_source.py
             test_nvp_conv06_private_cycles_source_contract.py
             test_nvp_conv06_no_legacy_blender_fallback.py
+            test_nvp_conv03_shared_security_convergence.py
+            test_nvp_webview_ipc_surface.py
             test_nvp_conv06_trusted_director_desktop.py
             test_nvp_conv06_wo2_readback_contract.py
             test_nvp_conv06_film03_worker_source_contract.py
@@ -136,6 +152,8 @@ jobs:
             test_rig_motion.py
           )
           for f in "${files[@]}"; do
+            test -f "tests/$f" || { echo "::error::Missing original CONV-06 source test: $f"; exit 1; }
+            python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('CONV06 original test cases:',n,sys.argv[1]); sys.exit(0 if n else 2)" "$f"
             python -m unittest discover -s tests -p "$f" -v
           done
       - name: Original no-FFmpeg active application dependency audit
@@ -144,5 +162,10 @@ jobs:
       - name: Preserve source head identity for later Windows/Linux reconciliation
         shell: bash
         run: |
-          echo "CONV06_ACCEPTANCE_HEAD=${GITHUB_SHA}"
+          actual="$(git rev-parse HEAD)"
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$actual" = "$expected"
+          echo "CONV06_ACCEPTANCE_HEAD=$actual"
+          echo "CONV06_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          echo "CONV06_GITHUB_EVENT_SHA=${GITHUB_SHA}"
           echo "Native OS/real Blender/installed picture-and-sound gates remain separate."

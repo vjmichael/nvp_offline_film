@@ -157,6 +157,44 @@ class CrossBranchNativeSecurityConvergence(TestCase):
                 self.assertIn("Test-Path",source)
 
 
+    def test_remaining_original_kernel_and_capture_gates_refuse_zero_tests(self):
+        workflows=Path(__file__).resolve().parents[1]/".github"/"workflows"
+        expected={
+            "nvp-sec06-hosted-delegation-probe.yml":
+                ("test_nvp_sec06_linux_ancestor_migration.py", "test -f"),
+            "nvp-p1a-device-producer-source.yml":
+                ("test_nvp_p1a_physical_device_preflight.py", ".is_file()"),
+            "nvp-conv06-film03-camfx-original-native.yml":
+                ("test_nvp_conv06_no_legacy_blender_fallback.py", "test -f"),
+            "nvp-data-av01-native.yml":
+                ("test_nvp_no_ffmpeg_contract.py", "test -f"),
+        }
+        for name,(negative,admission) in expected.items():
+            with self.subTest(workflow=name):
+                text=(workflows/name).read_text(encoding="utf-8")
+                self.assertIn("countTestCases()",text)
+                self.assertIn(negative,text)
+                self.assertIn(admission,text)
+        delegated=(Path(__file__).resolve().parents[1]/"tools"/
+                   "nvp_sec06_delegated_matrix.py").read_text(encoding="utf-8")
+        self.assertIn('Path("tests") / pattern',delegated)
+        self.assertIn("countTestCases()",delegated)
+        self.assertIn("check=True",delegated)
+
+    def test_original_camera_and_data_av_ci_pin_pr_head_not_merge_sha(self):
+        workflows=Path(__file__).resolve().parents[1]/".github"/"workflows"
+        for name in ("nvp-conv06-film03-camfx-original-native.yml",
+                     "nvp-data-av01-native.yml"):
+            with self.subTest(workflow=name):
+                source=(workflows/name).read_text(encoding="utf-8")
+                self.assertIn(
+                    "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+                    source)
+                self.assertIn("test \"$actual\" = \"$expected\"",source)
+                self.assertIn('git rev-parse HEAD',source)
+                self.assertNotIn('CONV06_ACCEPTANCE_HEAD=${GITHUB_SHA}',source)
+
+
 if __name__=="__main__":
     import unittest
     unittest.main()

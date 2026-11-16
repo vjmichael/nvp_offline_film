@@ -43,6 +43,14 @@ def main() -> int:
     print("SEC-06 kernel host subgroup:", host, flush=True)
     for pattern in REQUIRED:
         print("SEC-06 native OS fixture:", pattern, flush=True)
+        if not (Path("tests") / pattern).is_file():
+            raise RuntimeError("Missing independent SEC-06 original kernel test: "+pattern)
+        subprocess.run(
+            [sys.executable, "-c",
+             "import sys,unittest; n=unittest.TestLoader().discover("
+             "'tests',pattern=sys.argv[1]).countTestCases(); "
+             "print('SEC-06 original cases:',n,sys.argv[1]); "
+             "sys.exit(0 if n else 2)", pattern], check=True)
         subprocess.run([sys.executable, "-m", "unittest", "discover", "-s",
                         "tests", "-p", pattern, "-v"], check=True)
     # The integrated P1-A original ADC producer must be admitted by the

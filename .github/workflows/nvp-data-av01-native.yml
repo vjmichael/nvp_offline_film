@@ -32,6 +32,7 @@ on:
       - 'tools/nvp_data_av_installed_acceptance.py'
       - 'tools/nvp_desktop_alpha.py'
       - 'tests/test_nvp_data_av_native.py'
+      - 'tests/test_nvp_webview_ipc_surface.py'
       - '.github/workflows/nvp-data-av01-native.yml'
       - 'docs/NVP_DATA_AV01_NATIVE_MIGRATION.md'
   workflow_dispatch:
@@ -48,6 +49,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source head (never synthetic PR merge)
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          echo "NVP_DATA_AV_ACCEPTANCE_HEAD=$actual"
+          echo "NVP_DATA_AV_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          test "$actual" = "$expected"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -55,6 +67,7 @@ jobs:
         run: |
           python tools/nvp_no_ffmpeg_contract.py
           test -f tests/test_nvp_no_ffmpeg_contract.py
+          python -c "import unittest,sys; n=unittest.TestLoader().discover('tests',pattern='test_nvp_no_ffmpeg_contract.py').countTestCases(); print('Original zero-FFmpeg negative cases:',n); sys.exit(0 if n else 2)"
           python -m unittest discover -s tests -p 'test_nvp_no_ffmpeg_contract.py' -v
 
   native-frozen-source:
@@ -69,6 +82,17 @@ jobs:
         python: ['3.11','3.13']
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source head (never synthetic PR merge)
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          echo "NVP_DATA_AV_ACCEPTANCE_HEAD=$actual"
+          echo "NVP_DATA_AV_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          test "$actual" = "$expected"
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -83,6 +107,9 @@ jobs:
           set -euo pipefail
           python -m compileall -q backend/nvp_data_av_source.py backend/nvp_data_av_scene.py backend/nvp_data_av_usd.py backend/nvp_data_av_desktop.py backend/nvp_slate08b_native_camera_ipc.py tools/nvp_desktop_alpha.py tools/nvp_data_av_installed_acceptance.py tests/test_nvp_data_av_native.py
           python -m unittest discover -s tests -p 'test_nvp_data_av_native.py' -v
+          test -f tests/test_nvp_webview_ipc_surface.py
+          python -c "import unittest,sys; n=unittest.TestLoader().discover('tests',pattern='test_nvp_webview_ipc_surface.py').countTestCases(); print('Native installed-boundary source regressions:',n); sys.exit(0 if n else 2)"
+          python -m unittest discover -s tests -p 'test_nvp_webview_ipc_surface.py' -v
           python -m unittest discover -s tests -p 'test_nvp_exact_time_shots.py' -v
           python -m unittest discover -s tests -p 'test_nvp_data_first_filming.py' -v
           python -m unittest discover -s tests -p 'test_nvp_imported_audio.py' -v
@@ -131,6 +158,17 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source head (never synthetic PR merge)
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          echo "NVP_DATA_AV_ACCEPTANCE_HEAD=$actual"
+          echo "NVP_DATA_AV_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          test "$actual" = "$expected"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -145,6 +183,17 @@ jobs:
     needs: [zero-ffmpeg-policy, native-react]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source head (never synthetic PR merge)
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          echo "NVP_DATA_AV_ACCEPTANCE_HEAD=$actual"
+          echo "NVP_DATA_AV_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          test "$actual" = "$expected"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -297,6 +346,17 @@ jobs:
     name: Genuine hashed Qwen GGUF -> unapproved canonical USD camera advice
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify exact source head (never synthetic PR merge)
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          echo "NVP_DATA_AV_ACCEPTANCE_HEAD=$actual"
+          echo "NVP_DATA_AV_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          test "$actual" = "$expected"
       - uses: actions/checkout@v4
         with:
           repository: ggml-org/llama.cpp

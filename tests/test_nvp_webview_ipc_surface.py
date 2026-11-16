@@ -171,6 +171,27 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         self.assertFalse(any("document.body.textContent.includes('EXT. NATIVE" in s
                              for s in source_strings))
 
+    def test_installed_resume_waits_for_real_saved_movie_phase_mount(self):
+        # The original Windows installed failure was an async race: clicking
+        # the movie card starts an HTTP request; the React working-phase nav
+        # is not present synchronously. Never bypass the UI or fake source.
+        path=Path(__file__).resolve().parents[1]/"tools"/"nvp_desktop_alpha.py"
+        source=path.read_text(encoding="utf-8")
+        smoke=source.split("def run_visible_window_smoke():",1)[1].split(
+            "def run_g03_window_smoke():",1)[0]
+        after_movie_click=smoke.split(
+            'raise RuntimeError("Director cannot open saved frozen source")',
+            1)[1]
+        before_script_click=after_movie_click.split(
+            "opened_script=window.evaluate_js(",1)[0]
+        self.assertIn("wait_js(",before_script_click)
+        self.assertIn(".film-film-head h1",before_script_click)
+        self.assertIn("window_original_film_director_phases_ready",
+                      before_script_click)
+        self.assertIn("Saved original movie did not mount",before_script_click)
+        self.assertIn("textarea.line-numbered-input",after_movie_click)
+        self.assertIn("window_native_source_sound_verified",after_movie_click)
+
     def test_reject_untrusted_bridge_object(self):
         with self.assertRaises(TypeError):
             NativeWebviewIPCSurface(self.native_window)

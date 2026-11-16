@@ -413,6 +413,15 @@ def run_visible_window_smoke():
                     "if(!b)return false;b.click();return true})()")
                 if not chosen:
                     raise RuntimeError("Director cannot open saved frozen source")
+                # openMovie waits for the real HTTP project read before
+                # React mounts the working filmmaker navigation. Clicking
+                # the movie card is not evidence that the transition finished.
+                wait_js(
+                    "Boolean(document.querySelector('nav.film-steps') && "
+                    "document.querySelector('.film-film-head h1')?.textContent"
+                    ".includes('SLATE-08B Window Acceptance'))",
+                    25,"Saved original movie did not mount its director phases")
+                _smoke_checkpoint("window_original_film_director_phases_ready")
                 # Movie resume opens the last filmmaking phase (normally
                 # Scenes). A textarea's value is not document.body.textContent:
                 # choose the real Script phase and verify the original source
