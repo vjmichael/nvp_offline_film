@@ -1,11 +1,5 @@
 name: NVP AUDIO-01K3 real Windows cinema encode
 on:
-  pull_request:
-    paths:
-      - 'backend/nvp_audio01k3_*'
-      - 'tools/nvp_audio01k3_*'
-      - 'tests/test_audio01k3_*'
-      - '.github/workflows/nvp-audio01k3-windows-real.yml'
   workflow_dispatch:
 permissions:
   contents: read

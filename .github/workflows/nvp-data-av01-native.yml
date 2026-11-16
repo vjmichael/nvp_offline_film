@@ -34,7 +34,8 @@ on:
       - 'backend/nvp_slate08b_native_camera_ipc.py'
       - 'frontend/src/DataFirstAVPanel*'
       - 'frontend/src/App.jsx'
-      - 'frontend/src/FilmmakerHome.test.jsx src/DirectorSceneLibrary.movie.test.jsx'
+      - 'frontend/src/FilmmakerHome.test.jsx'
+      - 'frontend/src/DirectorSceneLibrary.movie.test.jsx'
       - 'tools/nvp_data_av_installed_acceptance.py'
       - 'tools/nvp_desktop_alpha.py'
       - 'tests/test_nvp_data_av_native.py'
@@ -121,6 +122,15 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_imported_audio.py' -v
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_decisions.py' -v
+      - name: Install real G03 Windows protected-film test dependencies
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Match original G03 native/installed acceptance. Do not substitute
+          # fake DPAPI, a mock cryptography provider, or a source-test skip.
+          python -m pip install --only-binary=:all: 'pywin32>=306' 'cryptography>=43,<49'
+          python -c "import win32crypt; from cryptography.hazmat.primitives.ciphers import Cipher; print('Real Windows DPAPI and AES-GCM bindings present')"
       - name: PLAN-03/04 original whole-movie source, stale-reply and no-partial-publication
         shell: bash
         run: |
