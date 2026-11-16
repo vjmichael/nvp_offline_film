@@ -55,6 +55,13 @@ on:
       - 'tools/nvp_prod06c_fixture.py'
       - 'backend/nvp_blender_worker.py'
       - 'backend/nvp_usd_film01i_ninecam_take.py'
+      - 'backend/nvp_usd_film01o_original_camera_roll_source.py'
+      - 'backend/nvp_usd_film01p_source_multicam_edl.py'
+      - 'backend/nvp_usd_film01q_selected_view_edit.py'
+      - 'backend/nvp_usd_film01r_quality.py'
+      - 'tests/test_nvp_usd_film01op_contract.py'
+      - 'tests/test_nvp_usd_film01q_selected_contract.py'
+      - 'tests/test_nvp_usd_film01oq_native_source.py'
       - 'backend/nvp_usd_film01k_blender_animation_build.py'
       - 'tests/test_nvp_usd_film01i_ninecam_take.py'
       - 'backend/nvp_p1f_sustained_delivery.py'
@@ -145,6 +152,11 @@ jobs:
             test_nvp_no_ffmpeg_contract.py
             test_nvp_convergence_camera_reel_native.py
             test_nvp_usd_film01i_ninecam_take.py
+            # Historical original 01O/P and 01Q typed refusals, plus real
+            # 720-frame OpenUSD/FilmIndex source evidence. No fake Cycles pass.
+            test_nvp_usd_film01op_contract.py
+            test_nvp_usd_film01q_selected_contract.py
+            test_nvp_usd_film01oq_native_source.py
             test_nvp_conv11_worker_receipt_reopen_native.py
             test_nvp_openusd_shot_overrides_native.py
             test_nvp_p1f_multishot_recovery.py
