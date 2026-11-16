@@ -68,7 +68,11 @@ function server(projectList=[snapshot]) {
   else if(url==='/api/projects/'+ID+'/protect')body={locked:true};
   else if(url==='/api/projects/'+ID+'/screenplay')body=created||MOVIE;
   else if(url==='/api/creative/models')body={state:'unavailable'};
-  else body=readOriginalSubresource(url,created||MOVIE)||{};
+  else {
+   const source=readOriginalSubresource(url,created||MOVIE);
+   if(source===null)throw new Error('Unexpected filmmaker API request: '+url);
+   body=source;
+  }
   return {ok:true,json:async()=>body};
  });
  vi.stubGlobal('fetch',handler);
@@ -128,7 +132,7 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
      json:async()=>({detail:'Original saved source read was rejected'})};
    if(url==='/api/creative/models')return {ok:true,
      json:async()=>({state:'unavailable'})};
-   return {ok:true,json:async()=>({})};
+   throw new Error('Unexpected original movie rejection fixture request: '+url);
   });
   render(<FilmmakerHome/>);
   fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
@@ -218,9 +222,9 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
     if(url==='/api/projects')return {ok:true,json:async()=>[original,other]};
     if(url==='/api/projects/'+ID)return {ok:true,json:async()=>MOVIE};
     if(url==='/api/projects/'+another)return {ok:true,json:async()=>({...MOVIE,id:another,title:'Other Movie'})};
-    const original=url.startsWith('/api/projects/'+another+'/')
+    const movieForRequest=url.startsWith('/api/projects/'+another+'/')
       ?{...MOVIE,id:another,title:'Other Movie'}:MOVIE;
-    const source=readOriginalSubresource(url,original);
+    const source=readOriginalSubresource(url,movieForRequest);
     if(source)return {ok:true,json:async()=>source};
     throw new Error('Unexpected request '+url);
   });
@@ -265,7 +269,11 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
     else if(url.startsWith('/api/projects/'+ID+'/live/film/'))
       return {ok:false,status:409,json:async()=>({
         detail:'Approve the original scene before filming'})};
-    else data=readOriginalSubresource(url,secure)||{};
+    else {
+      const source=readOriginalSubresource(url,secure);
+      if(source===null)throw new Error('Unexpected encrypted film API request: '+url);
+      data=source;
+    }
     return {ok:true,json:async()=>data};
   }));
   render(<FilmmakerHome/>);
@@ -280,7 +288,7 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
   fireEvent.click(screen.getByRole('button',{name:'Next →'}));
   await waitFor(()=>expect(sent.some(x=>x.url==='/api/projects/encrypted'&&x.method==='POST')).toBe(true));
   expect(sent.some(x=>x.url==='/api/projects'&&x.method==='POST')).toBe(false);
-  await waitFor(()=>expect(screen.getByText(/Encrypted movie/)).toBeTruthy());
+  await waitFor(()=>expect(screen.getByText(/This movie is encrypted/)).toBeTruthy());
   fireEvent.click(within(screen.getByRole('navigation',{name:'Filmmaking steps'}))
     .getByRole('button',{name:/Film Scenes/}));
   await waitFor(()=>expect(screen.getByRole('alert').textContent)
