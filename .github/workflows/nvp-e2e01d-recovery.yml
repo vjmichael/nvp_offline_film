@@ -64,9 +64,33 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install ffmpeg -y --no-progress
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Join-Path $env:ChocolateyInstall 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append
+          $ErrorActionPreference = 'Stop'
+          # The original 2026-11-16 Windows/3.13 job hit Chocolatey's
+          # transient upstream HTTP 504 and silently reached the real-media
+          # tests without either binary. Never mock/skip the crash matrix.
+          $chocoBin = Join-Path $env:ChocolateyInstall 'bin'
+          $env:PATH = "$chocoBin;$env:PATH"
+          $verified = $false
+          for ($attempt=1; $attempt -le 3; $attempt++) {
+            choco install ffmpeg -y --no-progress
+            $installExit = $LASTEXITCODE
+            $verified = ($installExit -eq 0)
+            foreach ($tool in @('ffmpeg','ffprobe')) {
+              $actual = Get-Command $tool -ErrorAction SilentlyContinue
+              if (-not $actual) { $verified = $false; break }
+              & $actual.Source -hide_banner -version | Select-Object -First 1
+              if ($LASTEXITCODE -ne 0) { $verified = $false; break }
+            }
+            if ($verified) { break }
+            if ($attempt -lt 3) {
+              Write-Warning "Real FFmpeg/FFprobe acquisition attempt $attempt failed; retrying"
+              Start-Sleep -Seconds (5 * $attempt)
+            }
+          }
+          if (-not $verified) {
+            throw 'Genuine FFmpeg and FFprobe required for unmodified AUDIO-01K crash assertions'
+          }
+          $chocoBin | Out-File -FilePath $env:GITHUB_PATH -Append
       - name: Real ProRes PCM24 AUDIO-01K fsync/rename/FilmIndex hard-kill matrix
         shell: bash
         run: |
