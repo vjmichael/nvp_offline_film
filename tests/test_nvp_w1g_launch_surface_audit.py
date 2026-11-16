@@ -46,6 +46,23 @@ class RuntimeLaunchAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(PermissionError,"Unregistered"):
                 audit_release_launch_surface(root)
 
+    def test_legacy_color_ffmpeg_windows_refusal_precedes_spawn(self):
+        # A marker anywhere in source is not a process boundary: preserve
+        # the original Windows denial in the actual _run control flow.
+        root=Path(__file__).resolve().parents[1]
+        tree=ast.parse((root/"backend"/"nvp_color_ocio.py").read_text("utf8"))
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef)
+                and n.name=="_run")
+        guard=next(n for n in fn.body if isinstance(n,ast.If))
+        self.assertEqual(ast.unparse(guard.test),"os.name == 'nt'")
+        self.assertTrue(any(isinstance(n,ast.Raise) for n in guard.body))
+        calls=[n for n in ast.walk(fn) if isinstance(n,ast.Call)
+               and isinstance(n.func,ast.Attribute)
+               and isinstance(n.func.value,ast.Name)
+               and n.func.value.id=="subprocess" and n.func.attr=="run"]
+        self.assertEqual(len(calls),1)
+        self.assertLess(guard.lineno,calls[0].lineno)
+
     def test_retired_webm_stt_windows_popen_remains_denied(self):
         # Do not import the legacy CUDA/Whisper engine just to test its guard.
         root=Path(__file__).resolve().parents[1]

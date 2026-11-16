@@ -222,7 +222,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --collect-all _sounddevice_data --hidden-import tools.nvp_native_device_producer_worker --hidden-import tools.nvp_p1b_physical_device_acceptance --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
@@ -291,6 +291,30 @@ jobs:
           $leftovers=@(Get-CimInstance Win32_Process -Filter "Name = 'NVP.exe'" |
             Where-Object { $_.ExecutablePath -eq $installed })
           if ($leftovers.Count -ne 0) { throw 'Installed native source smoke left NVP.exe running' }
+          # P1-A installed native worker dependency/receipt check is a
+          # separate real NVP.exe process, not a claim of physical ADC capture.
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-p1a-producer-bundle.txt'
+          Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
+          $producer=Start-Process -FilePath $installed -ArgumentList '--smoke-producer-bundle' -PassThru
+          if (-not $producer.WaitForExit(120000)) {
+            $producer.Refresh()
+            if (-not $producer.HasExited) {
+              $producer.Kill($true)
+              if (-not $producer.WaitForExit(10000)) { throw 'Timed-out installed P1-A producer could not be stopped' }
+            }
+            throw 'Installed protected producer import smoke timed out; no acceptance'
+          }
+          if ($producer.ExitCode -ne 0) { throw "Installed P1-A producer bundle failed (exit $($producer.ExitCode))" }
+          if (-not (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH)) {
+            throw 'Installed P1-A producer original receipt missing'
+          }
+          $producerReport=Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw
+          if (-not $producerReport.Contains('NVP_SMOKE_STAGE producer_bundle_verified_no_device_opened')) {
+            throw 'Installed P1-A dependency verification never completed'
+          }
+          $producerLeftovers=@(Get-CimInstance Win32_Process -Filter "Name = 'NVP.exe'" |
+            Where-Object { $_.ExecutablePath -eq $installed })
+          if ($producerLeftovers.Count -ne 0) { throw 'Installed P1-A probe left a native process running' }
           # Independently observe the ACTUAL installed WebView2/React/IPC
           # failure; the previous receipt proved native USD/PCM but not UI.
           # Use a separate throwaway CI diagnostic so a prior smoke cannot

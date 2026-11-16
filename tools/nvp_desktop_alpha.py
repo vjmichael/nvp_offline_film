@@ -1255,6 +1255,8 @@ def main(argv=None):
                         help=argparse.SUPPRESS)
     parser.add_argument("--smoke-legacy-migration",action="store_true",
                         help="Audit and non-destructively encrypt a synthetic legacy film")
+    parser.add_argument("--smoke-producer-bundle",action="store_true",
+                        help="Check installed protected microphone worker dependencies without opening a device")
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(args)
@@ -1265,7 +1267,7 @@ def main(argv=None):
             args.smoke_live_worker,args.smoke_capture_denied,
             args.g03_physical_capture_owner,args.smoke_legacy_migration,
             args.g03_candidate_readback,args.g03_candidate_reconstruction,
-            args.smoke_data_av))>1:
+            args.smoke_data_av,args.smoke_producer_bundle))>1:
         parser.error("Choose only one installed-app smoke mode")
     if args.g03_protected_scene_worker:
         from tools.nvp_g03_protected_scene_worker import worker_entry
@@ -1296,6 +1298,21 @@ def main(argv=None):
     if args.smoke_live_create or args.smoke_live_reopen:
         return run_g03_live_installed_smoke(
             "create" if args.smoke_live_create else "reopen")
+    if args.smoke_producer_bundle:
+        # Import-only installed provenance check; no device capture and no
+        # implied authorization to open or publish original microphone PCM.
+        from tools.nvp_native_device_producer_worker import Recorder
+        from tools.nvp_p1b_physical_device_acceptance import inspect_original_pcm
+        from backend.nvp_device_producer_custody import SupervisedNativeDevice
+        import miniaudio
+        import sounddevice
+        if not (callable(Recorder) and callable(inspect_original_pcm)
+                and callable(SupervisedNativeDevice)
+                and hasattr(miniaudio,"CaptureDevice")
+                and hasattr(sounddevice,"RawInputStream")):
+            raise RuntimeError("Installed original ADC native adapters unavailable")
+        _smoke_checkpoint("producer_bundle_verified_no_device_opened")
+        return 0
     if args.smoke_data_av:
         _smoke_checkpoint("before_native_acceptance_import")
         from tools.nvp_data_av_installed_acceptance import run_installed_data_av_smoke
@@ -1352,6 +1369,12 @@ def installed_smoke_entry():
     """Report packaged --windowed smoke exceptions through an opt-in CI file."""
     try:
         _smoke_checkpoint("entry")
+        # Trusted native launcher owns this role; dispatch before FastAPI,
+        # WebView2 and any GUI/native project initialization. The worker's
+        # own parser verifies exact spool, source scope and bounded capture.
+        if len(sys.argv)>=2 and sys.argv[1]=="--device-producer-worker":
+            from tools.nvp_native_device_producer_worker import main as producer_main
+            return producer_main(sys.argv[2:])
         return main()
     except Exception:
         import traceback

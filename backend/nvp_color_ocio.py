@@ -94,6 +94,12 @@ def _ffmpeg_bin(override=None):
 
 
 def _run(args, *, timeout=120, input_bytes=None, label):
+    # The retained historical decoder/export adapter is NOT an authorized
+    # Windows filmmaker process. Block before any FFmpeg child creation.
+    # Native OpenUSD/PCM and first-party final output stay FFmpeg-free.
+    import os
+    if os.name=="nt":
+        raise RuntimeError("Legacy FFmpeg color subprocess is blocked in Windows production")
     try:
         p = subprocess.run(args, input=input_bytes, capture_output=True,
                            timeout=timeout, check=False)
