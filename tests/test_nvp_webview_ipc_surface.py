@@ -6,6 +6,7 @@ Introspection must not traverse live authority, SQLite or COM objects.
 """
 import ast
 import inspect
+import re
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -47,6 +48,17 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         expected={
             "camera_render_capabilities",
             "request_camera_still","poll_camera_still","cancel_camera_still",
+            # CONV-12 installed movie mounts this original native director
+            # panel. No browser/window/FilmIndex references may be exposed.
+            "camfx03_camera_sources","camfx03_draft_catalog",
+            "film03_actor_catalog","film02md_architecture_catalog",
+            "film01c_texture_catalog","film03_actor_profile",
+            "camfx03_draft_create","camfx03_draft_reopen",
+            "camfx03_draft_save","camfx03_draft_undo",
+            "camfx03_draft_publish","camfx03_draft_discard",
+            "camfx03_draft_recover_publish",
+            "film03_actor_profile_publish",
+            "data_av_import_original_mesh_texture",
             "data_av_import_original_audio","data_av_freeze_timed_take",
             "data_av_catalog","data_av_begin","data_av_audio_window",
             "data_av_scene_at","data_av_stop",
@@ -72,7 +84,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_film_stage_chunk_poll","data_av_film_stage_chunk_cancel",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),47)
+        self.assertEqual(len(names),62)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)
@@ -83,6 +95,64 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         for name in ("window","index","origin","studio","api",
                      "delegate","get_current_url","create_confirmation_dialog"):
             self.assertFalse(hasattr(self.api,name),name)
+
+    def test_every_mounted_original_director_call_has_an_explicit_native_proxy(self):
+        # The installed React panel mounts even when its Advanced <details>
+        # is collapsed. A missing callable crashes the entire WebView2 React
+        # root after a successful HTTP film open. Catch missing methods in
+        # the original source acceptance rather than waiting for NSIS.
+        path=Path(__file__).resolve().parents[1]/"frontend"/"src"/(
+            "DirectorCameraActorContinuity.jsx")
+        code=path.read_text(encoding="utf-8")
+        called=set(re.findall(r"\\bnative\\.([a-z][a-z0-9_]*)\\s*\\(",code))
+        required={
+            "camfx03_camera_sources","camfx03_draft_catalog",
+            "film03_actor_catalog","film02md_architecture_catalog",
+            "film01c_texture_catalog","film03_actor_profile",
+            "camfx03_draft_create","camfx03_draft_reopen",
+            "camfx03_draft_save","camfx03_draft_undo",
+            "camfx03_draft_publish","camfx03_draft_discard",
+            "camfx03_draft_recover_publish",
+            "film03_actor_profile_publish",
+            "data_av_import_original_mesh_texture",
+        }
+        self.assertEqual(called,required)
+        installed=(Path(__file__).resolve().parents[1]/"tools"/
+                   "nvp_desktop_alpha.py").read_text(encoding="utf-8")
+        self.assertIn("window_original_director_ipc_surface_verified",installed)
+        self.assertIn("missing_native_director_methods",installed)
+        for name in sorted(required):
+            self.assertIn(name,installed,
+                          "Installed WebView2 must check all original methods")
+            self.assertTrue(callable(getattr(self.api,name,None)),name)
+            self.assertEqual(
+                inspect.signature(getattr(self.api,name)),
+                inspect.signature(getattr(self.trusted,name)),name)
+        # Do not expose a direct rail publication bypass, private handles,
+        # OS prompts, model grants, or a conventional FFmpeg/still worker.
+        for denied in ("camfx02_publish","window","index","origin",
+                       "create_confirmation_dialog","_grant","_approve",
+                       "film03_run_actor_voice_candidate"):
+            if not denied.startswith("_"):
+                self.assertFalse(hasattr(self.api,denied),denied)
+
+    def test_original_director_ipc_remains_origin_and_custody_bound(self):
+        self.native_window.url="http://outside.example/"
+        for name,arg in (
+            ("camfx03_camera_sources",("a"*32,)),
+            ("camfx03_draft_catalog",("a"*32,)),
+            ("film03_actor_catalog",("a"*32,)),
+            ("film02md_architecture_catalog",("a"*32,)),
+            ("film01c_texture_catalog",("a"*32,)),
+            ("film03_actor_profile",("a"*32,"ActorAAA")),
+            ("camfx03_draft_publish",({},)),
+            ("film03_actor_profile_publish",({},)),
+            ("data_av_import_original_mesh_texture",({},)),
+        ):
+            with self.subTest(name=name):
+                with self.assertRaises(PermissionError):
+                    getattr(self.api,name)(*arg)
+        self.assertEqual(self.native_window.prompt_count,0)
 
     def test_delegation_keeps_native_window_authorization(self):
         result=self.api.camera_render_capabilities()
@@ -115,7 +185,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         self.addCleanup(host._close)
         host._attach_window(FakeWindow())
         self.assertIs(host._original_capture().native_pcm_auditor,auditor)
-        # Exposing 34 deliberately reviewed UI methods must never traverse
+        # Exposing the reviewed UI methods must never traverse
         # the protected worker, runtime directory or model/grant state.
         ui=NativeWebviewIPCSurface(host)
         self.assertFalse(hasattr(ui,"native_capture_auditor"))

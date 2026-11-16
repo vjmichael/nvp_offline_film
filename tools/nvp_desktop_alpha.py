@@ -395,6 +395,26 @@ def run_visible_window_smoke():
                 wait_js("window.__nvpBridgeCheck==='PASSED'",15,
                         "Native camera host bridge did not answer in WebView2")
                 _smoke_checkpoint("window_native_camera_ipc_verified")
+                # The recovered Advanced original camera/ActorID panel is
+                # mounted in React even when its <details> is collapsed.
+                # Verify the REAL installed pywebview proxy exposes every
+                # reviewed callable before opening a saved movie. Preserve
+                # the original film/read/Script/PCM assertions below.
+                missing_native_director_methods=window.evaluate_js(
+                    "(()=>{const required=['camfx03_camera_sources','camfx03_draft_catalog','film03_actor_catalog',"
+                    "'film02md_architecture_catalog','film01c_texture_catalog','film03_actor_profile',"
+                    "'camfx03_draft_create','camfx03_draft_reopen','camfx03_draft_save',"
+                    "'camfx03_draft_undo','camfx03_draft_publish','camfx03_draft_discard',"
+                    "'camfx03_draft_recover_publish','film03_actor_profile_publish','data_av_import_original_mesh_texture'];"
+                    "return required.filter(name=>"
+                    "typeof window.pywebview?.api?.[name]!=='function')})()")
+                if (type(missing_native_director_methods) is not list or
+                        missing_native_director_methods):
+                    raise RuntimeError(
+                        "Installed original camera/ActorID bridge lacks "
+                        "reviewed callable methods: "+
+                        repr(missing_native_director_methods))
+                _smoke_checkpoint("window_original_director_ipc_surface_verified")
                 # Real UI opens a project, but no technical tabs are restored.
                 selected=window.evaluate_js(
                     "(()=>{let d=document.querySelector('div[role=\"dialog\"]');"

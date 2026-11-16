@@ -37,6 +37,58 @@ class NativeWebviewIPCSurface:
     def cancel_camera_still(self, ticket_id):
         return self._delegate.cancel_camera_still(ticket_id)
 
+    # CONV-12: the recovered original camera/ActorID director panel mounts
+    # inside the ACTUAL installed WebView2. Do not expose the full trusted
+    # bridge (its public window/FilmIndex graph deadlocks pywebview). Forward
+    # ONLY these 15 reviewed methods consumed by the original director UI.
+    # Project/origin checks, native dialogs, one-use creator authorization,
+    # durable rail journals and source custody stay on the delegate.
+    # This never grants a Take, film master, PNG path or browser authority.
+    def camfx03_camera_sources(self, project_id):
+        return self._delegate.camfx03_camera_sources(project_id)
+
+    def camfx03_draft_catalog(self, project_id):
+        return self._delegate.camfx03_draft_catalog(project_id)
+
+    def film03_actor_catalog(self, project_id):
+        return self._delegate.film03_actor_catalog(project_id)
+
+    def film02md_architecture_catalog(self, project_id):
+        return self._delegate.film02md_architecture_catalog(project_id)
+
+    def film01c_texture_catalog(self, project_id):
+        return self._delegate.film01c_texture_catalog(project_id)
+
+    def film03_actor_profile(self, project_id, actor_id):
+        return self._delegate.film03_actor_profile(project_id, actor_id)
+
+    def camfx03_draft_create(self, request):
+        return self._delegate.camfx03_draft_create(request)
+
+    def camfx03_draft_reopen(self, request):
+        return self._delegate.camfx03_draft_reopen(request)
+
+    def camfx03_draft_save(self, request):
+        return self._delegate.camfx03_draft_save(request)
+
+    def camfx03_draft_undo(self, request):
+        return self._delegate.camfx03_draft_undo(request)
+
+    def camfx03_draft_publish(self, request):
+        return self._delegate.camfx03_draft_publish(request)
+
+    def camfx03_draft_discard(self, request):
+        return self._delegate.camfx03_draft_discard(request)
+
+    def camfx03_draft_recover_publish(self, request):
+        return self._delegate.camfx03_draft_recover_publish(request)
+
+    def film03_actor_profile_publish(self, request):
+        return self._delegate.film03_actor_profile_publish(request)
+
+    def data_av_import_original_mesh_texture(self, request):
+        return self._delegate.data_av_import_original_mesh_texture(request)
+
     # Source PCM and digital takes. The JS caller never provides native paths.
     def data_av_import_original_audio(self, project_id, source_id):
         return self._delegate.data_av_import_original_audio(project_id, source_id)
