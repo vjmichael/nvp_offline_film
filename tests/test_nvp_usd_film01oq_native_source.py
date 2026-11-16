@@ -112,6 +112,26 @@ class NativeOriginalSelectedCameraSource(unittest.TestCase):
         self.assertEqual(self.index.read_revision(
             self.pid,self.take_id,1)["document_sha256"],self.original_take_sha)
 
+    def test_director_camera_rig_is_session_only(self):
+        # An absent original namespace must be accepted, never turned into
+        # an invalid-prim exception or a persistent source-world mutation.
+        with self.bank_writer.open_source_views(
+                self.pid, self.bank_id, 1) as view:
+            rig = view["stage"].GetPrimAtPath("/World/NVPDirectorCameraRig")
+            self.assertTrue(rig and rig.IsDefined())
+            self.assertEqual(len(view["camera_paths"]), 9)
+
+        from backend.nvp_usd_film01_world import OpenUSDWorldComposer
+        take = self.index.read_revision(self.pid, self.take_id, 1)["data"]
+        with OpenUSDWorldComposer(self.index).open(
+                self.pid, take["world_id"], take["world_revision"]) as world:
+            world.load([take["original_scene_takes"][0]["set"]])
+            rig = world.stage.GetPrimAtPath("/World/NVPDirectorCameraRig")
+            self.assertFalse(rig and rig.IsDefined())
+        self.assertEqual(self.index.read_revision(
+            self.pid, self.take_id, 1)["document_sha256"],
+            self.original_take_sha)
+
     def test_director_refusal_cannot_publish_new_source_edit(self):
         denied=OriginalSelectedViewEdit(
             self.index,verify_director_action=lambda *_:False)
