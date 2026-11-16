@@ -891,14 +891,13 @@ class G04Preproduction:
                         (1 if decision=="accept" else 0)}
         return self._execute(pid,change,mutate=True)
 
-    def generate(self,pid,scene_id):
-        """One scene at a time. The model proposes; NVP owns all authority."""
-        if not isinstance(scene_id,str) or not SCENE_ID.fullmatch(scene_id):
-            raise ValueError("Choose a scene first")
-        before=self.view(pid)
-        scene=next((x for x in before["scenes"] if x["id"]==scene_id),None)
-        if scene is None:raise KeyError("Scene no longer exists")
-        selected,writer=self._local_writer()
+    @staticmethod
+    def _suggest_scene(before,scene,selected,writer):
+        """Shared source-cited, strictly unapproved model reply verifier.
+
+        Never inserts into SQLite or grants director/native worker authority.
+        A movie-wide caller must validate EVERY reply before one transaction.
+        """
         snippet=scene["script_excerpt"][:7000]
         context={
             "film_idea":before["bible"]["story"][:1600],
@@ -945,6 +944,8 @@ class G04Preproduction:
                 receipt.get("selected_model_id")!=selected or
                 receipt.get("provider_completion_finish_reason")!="stop"):
             raise ValueError("AI scene suggestions were not completed")
+        if type(raw) is not str or len(raw)>12000:
+            raise ValueError("AI scene output exceeds the bounded proposal contract")
         try:
             parsed=json.loads(raw)
         except (ValueError,TypeError) as exc:
@@ -978,6 +979,17 @@ class G04Preproduction:
             elif quote:
                 raise ValueError("AI claimed an unverified source quote")
             checked.append((kind,content.strip(),lineno,quote))
+        return checked,_json(receipt)
+
+    def generate(self,pid,scene_id):
+        """One scene at a time. The model proposes; NVP owns all authority."""
+        if not isinstance(scene_id,str) or not SCENE_ID.fullmatch(scene_id):
+            raise ValueError("Choose a scene first")
+        before=self.view(pid)
+        scene=next((x for x in before["scenes"] if x["id"]==scene_id),None)
+        if scene is None:raise KeyError("Scene no longer exists")
+        selected,writer=self._local_writer()
+        checked,receipt_json=self._suggest_scene(before,scene,selected,writer)
         # Long inference never holds the SQLite writer lock. A changed movie
         # or revised idea scene is explicitly refused before publication.
         def commit(db,movie):
@@ -1003,6 +1015,86 @@ class G04Preproduction:
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (uuid.uuid4().hex,pid,scene_id,kind,content,lineno,quote,
                      scene["source_sha256"],scene["script_revision"],selected,
-                     _json(receipt),_clock(),_clock()))
+                     receipt_json,_clock(),_clock()))
             return self._view(db,movie)
+        return self._execute(pid,commit,mutate=True)
+
+    def propose_movie_breakdown(self,pid,expected_screenplay_revision):
+        """PLAN-03/04: review the entire ORIGINAL screenplay, atomically.
+
+        All scenes are exact source-derived identities, bounded to 1-8. The
+        model cannot choose source scenes or approve its own suggestions.
+        Every response is verified off-lock; a single BEGIN IMMEDIATE checks
+        the whole original and saves ONLY unapproved proposals, or none.
+        The same host-owned G04 service supports ordinary and sealed films.
+        """
+        if (type(expected_screenplay_revision) is not int or
+                expected_screenplay_revision<0):
+            raise ValueError("An exact screenplay revision is required")
+        before=self.view(pid)
+        scenes=before["scenes"]
+        if (before["screenplay_revision"]!=expected_screenplay_revision):
+            raise RuntimeError("Screenplay changed; reopen before proposing")
+        if (before["mode"]!="script" or not 1<=len(scenes)<=8 or
+                any(s["origin"]!="script_derived" or
+                    not s["script_source_sha256"] or
+                    s["script_lines"] is None for s in scenes)):
+            raise ValueError("A whole-movie breakdown needs 1-8 saved screenplay scenes")
+
+        source_identity=[(s["id"],s["source_sha256"],
+                          s["script_source_sha256"],s["notes_revision"],
+                          s["script_lines"]) for s in scenes]
+        original_bible_sha=_sha(_json(before["bible"]))
+        selected,writer=self._local_writer()
+        prepared=[]
+        # No SQLite write or partial proposal publication during inference.
+        for scene in scenes:
+            checked,receipt_json=self._suggest_scene(before,scene,selected,writer)
+            prepared.append((scene,checked,receipt_json))
+
+        def commit(db,movie):
+            current=self._view(db,movie)
+            current_identity=[(s["id"],s["source_sha256"],
+                               s["script_source_sha256"],s["notes_revision"],
+                               s["script_lines"]) for s in current["scenes"]]
+            if (current["mode"]!="script" or
+                    current["screenplay_revision"]!=expected_screenplay_revision or
+                    current["screenplay_sha256"]!=before["screenplay_sha256"] or
+                    current_identity!=source_identity or
+                    _sha(_json(current["bible"]))!=original_bible_sha):
+                raise RuntimeError(
+                    "Film or approved source changed during whole-movie review; "
+                    "no scene suggestions were saved")
+            stamp=_clock()
+            for scene,checked,receipt_json in prepared:
+                for kind,content,lineno,quote in checked:
+                    duplicate=db.execute("""SELECT 1 FROM g04_proposals
+                        WHERE project_id=? AND scene_id=? AND category=?
+                        AND value=? AND source_sha256=? AND
+                        screenplay_revision=? AND
+                        status IN ('proposed','accepted') LIMIT 1""",
+                        (pid,scene["id"],kind,content,scene["source_sha256"],
+                         expected_screenplay_revision)).fetchone()
+                    if duplicate is not None:
+                        continue
+                    db.execute("""INSERT INTO g04_proposals
+                        (id,project_id,scene_id,category,value,evidence_line,
+                        evidence_quote,source_sha256,screenplay_revision,model_id,
+                        model_receipt_json,created_at,updated_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (uuid.uuid4().hex,pid,scene["id"],kind,content,
+                         lineno,quote,scene["source_sha256"],
+                         expected_screenplay_revision,selected,receipt_json,
+                         stamp,stamp))
+            result=self._view(db,movie)
+            result["movie_breakdown"]={
+                "status":"UNAPPROVED_PROPOSAL",
+                "scene_count":len(scenes),
+                "source_screenplay_sha256":before["screenplay_sha256"],
+                "source_scene_ids":[s["id"] for s in scenes],
+                "creator_approval_granted":False,
+                "native_worker_authorized":False,
+                "original_source_modified":False,
+                "partial_publication_performed":False}
+            return result
         return self._execute(pid,commit,mutate=True)

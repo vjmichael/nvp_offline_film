@@ -7,6 +7,11 @@ on:
   pull_request:
     paths:
       - 'backend/nvp_data_av_*.py'
+      - 'backend/nvp_g04_preproduction.py'
+      - 'backend/nvp_api.py'
+      - 'frontend/src/DirectorSceneLibrary.jsx'
+      - 'frontend/src/DirectorSceneLibrary.movie.test.jsx'
+      - 'tests/test_nvp_g04_movie_breakdown.py'
       - 'backend/nvp_exact_time_shots.py'
       - 'frontend/src/ExactFilmTimeShotPanel.jsx'
       - 'tests/test_nvp_exact_time_shots.py'
@@ -29,7 +34,7 @@ on:
       - 'backend/nvp_slate08b_native_camera_ipc.py'
       - 'frontend/src/DataFirstAVPanel*'
       - 'frontend/src/App.jsx'
-      - 'frontend/src/FilmmakerHome.test.jsx'
+      - 'frontend/src/FilmmakerHome.test.jsx src/DirectorSceneLibrary.movie.test.jsx'
       - 'tools/nvp_data_av_installed_acceptance.py'
       - 'tools/nvp_desktop_alpha.py'
       - 'tests/test_nvp_data_av_native.py'
@@ -116,6 +121,14 @@ jobs:
           python -m unittest discover -s tests -p 'test_nvp_imported_audio.py' -v
           python -m unittest discover -s tests -p 'test_nvp_final_2d_native.py' -v
           python -m unittest discover -s tests -p 'test_nvp_native_color_decisions.py' -v
+      - name: PLAN-03/04 original whole-movie source, stale-reply and no-partial-publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_g04_preproduction.py backend/nvp_api.py tests/test_nvp_g04_movie_breakdown.py
+          test -f tests/test_nvp_g04_movie_breakdown.py
+          python -c "import unittest,sys; n=unittest.TestLoader().discover('tests',pattern='test_nvp_g04_movie_breakdown.py').countTestCases(); print('PLAN-03/04 source-bound negative cases:',n); sys.exit(0 if n>=14 else 2)"
+          python -m unittest discover -s tests -p 'test_nvp_g04_movie_breakdown.py' -v
       - name: PLAN-02-B original microphone, durable recovery and independent native ADC clock
         shell: bash
         run: |

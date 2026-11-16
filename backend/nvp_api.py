@@ -381,6 +381,9 @@ class G04SuggestionDecision(BaseModel):
     expected_screenplay_revision: int = Field(ge=0)
     approved_value: str | None = Field(default=None,max_length=1500)
 
+class G04WholeMovieBreakdown(BaseModel):
+    expected_screenplay_revision: int = Field(ge=0)
+
 def _director_preproduction(project_id: str, request: Request):
     secured=live_films().exists(project_id)
     return G04Preproduction(studio,
@@ -441,6 +444,19 @@ def g04_assign_speaker(project_id:str,scene_id:str,request:Request,
         project_id,scene_id,payload.source_cue,
         payload.expected_screenplay_revision,
         actor_id=payload.actor_id,new_name=payload.new_name))
+
+@app.post("/api/projects/{project_id}/preproduction/movie/suggestions")
+@app.post("/api/projects/{project_id}/live/preproduction/movie/suggestions")
+def g04_suggest_whole_movie(project_id:str,request:Request,
+                            payload:G04WholeMovieBreakdown):
+    """One original whole-movie proposal batch, NEVER model approval."""
+    try:
+        return run(lambda:_director_preproduction(project_id,request)
+            .propose_movie_breakdown(
+                project_id,payload.expected_screenplay_revision))
+    except LocalModelUnavailable:
+        raise HTTPException(status_code=503,
+            detail="AI assistance is unavailable. You can review your scenes manually.")
 
 @app.post("/api/projects/{project_id}/preproduction/scenes/{scene_id}/suggestions")
 @app.post("/api/projects/{project_id}/live/preproduction/scenes/{scene_id}/suggestions")

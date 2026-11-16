@@ -145,6 +145,12 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
     update(()=>action(base+'/scenes/'+encodeURIComponent(selected.id)+'/suggestions','POST'),
       'Here are some ideas to review. Nothing has been added to your film without your approval.');
   }
+  function askWholeMovieAI() {
+    if(data?.mode!=='script'||!data?.scenes?.length||data.scenes.length>8)return;
+    update(()=>action(base+'/movie/suggestions','POST',{
+      expected_screenplay_revision:data.screenplay_revision
+    }),'All scene ideas are ready for your review. Nothing was approved or filmed.');
+  }
   function restoreNotes(revision) {
     if(!selected)return;
     if(!window.confirm('Restore an earlier version of your scene details? Your current version will remain in the history.'))return;
@@ -216,6 +222,11 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
         </div>
         {data.mode==='idea'&&<button className="film-secondary director-add-scene"
           onClick={addScene} disabled={busy}>+ Add next scene</button>}
+        {data.mode==='script'&&data.scenes?.length>=1&&
+          data.scenes.length<=8&&<button
+          className="film-secondary director-add-scene"
+          onClick={askWholeMovieAI} disabled={busy||!aiReady||hasNotes}>
+          Suggest Ideas for All Scenes</button>}
         <details className="director-bible">
           <summary>Production Bible</summary>
           <p className="film-muted">The creative details that guide your film.</p>
