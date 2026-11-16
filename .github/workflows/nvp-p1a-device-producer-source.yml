@@ -4,6 +4,9 @@ name: NVP P1-A device-producer source checks
 # Dispatch on nvp/mainline-convergence-20261113 and verify exact source SHA.
 # An unprovisioned kernel or missing OS custody is NOT acceptance.
 on:
+  push:
+    branches:
+      - nvp/mainline-convergence-20261113
   workflow_dispatch:
 permissions:
   contents: read

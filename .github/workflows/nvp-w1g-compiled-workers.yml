@@ -6,6 +6,9 @@ name: NVP W1-G five compiled native first-party worker capability slices
 # These native binary artifacts are UNSIGNED developer candidates, NOT a
 # creator-authorized, redistributable, EFS-accepted or complete NVP film release.
 on:
+  push:
+    branches:
+      - nvp/mainline-convergence-20261113
   workflow_dispatch:
 # Preserve every submitted original native-source/compiled evidence result.
 # Manual candidate runs queue; do not auto-cancel a frozen source run.

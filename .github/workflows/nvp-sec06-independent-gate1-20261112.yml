@@ -4,6 +4,9 @@ name: NVP Gate 1 replacement and independent SEC-06 (no installation authority)
 # Dispatch on nvp/mainline-convergence-20261113 and verify exact source SHA.
 # An unprovisioned kernel or missing OS custody is NOT acceptance.
 on:
+  push:
+    branches:
+      - nvp/mainline-convergence-20261113
   workflow_dispatch:
 # Independent acceptance must run to completion; never cancel a kernel probe
 # because another revision was pushed. Each run is source-SHA isolated.

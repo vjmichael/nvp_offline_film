@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nvp/slate08b-trusted-desktop-optics-20261106
+      - nvp/mainline-convergence-20261113
   pull_request:
     paths:
       - "backend/nvp_slate08b_native_camera_ipc.py"

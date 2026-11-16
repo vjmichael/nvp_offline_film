@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - nvp/slate08b-trusted-desktop-optics-20261106
+      - nvp/mainline-convergence-20261113
   workflow_dispatch:
 
 permissions:

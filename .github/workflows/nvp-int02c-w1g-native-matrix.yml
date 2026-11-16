@@ -5,6 +5,9 @@ name: NVP INT-02C / W1-G exact-head native Cycles and worker matrix
 # An unprovisioned kernel or missing OS custody is NOT acceptance.
 # Isolated integration branch only. No release, merge, or physical-human approval.
 on:
+  push:
+    branches:
+      - nvp/mainline-convergence-20261113
   workflow_dispatch:
 # Keep independently submitted original same-SHA acceptance intact.
 # New manually requested groups queue; an earlier run is never auto-cancelled.
@@ -22,6 +25,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Assert immutable W1-G source SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_SHA" || { echo "Wrong source SHA: $actual expected $EXPECTED_SHA"; exit 1; }
+          echo "W1-G source SHA verified: $actual"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -79,6 +90,14 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - name: Assert immutable W1-G source SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_SHA" || { echo "Wrong source SHA: $actual expected $EXPECTED_SHA"; exit 1; }
+          echo "W1-G source SHA verified: $actual"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -130,6 +149,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Assert immutable W1-G source SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_SHA" || { echo "Wrong source SHA: $actual expected $EXPECTED_SHA"; exit 1; }
+          echo "W1-G source SHA verified: $actual"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -180,6 +207,14 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - name: Assert immutable W1-G source SHA
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_SHA" || { echo "Wrong source SHA: $actual expected $EXPECTED_SHA"; exit 1; }
+          echo "W1-G source SHA verified: $actual"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
