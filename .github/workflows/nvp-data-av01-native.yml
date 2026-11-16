@@ -29,6 +29,7 @@ on:
       - 'backend/nvp_slate08b_native_camera_ipc.py'
       - 'frontend/src/DataFirstAVPanel*'
       - 'frontend/src/App.jsx'
+      - 'frontend/src/FilmmakerHome.test.jsx'
       - 'tools/nvp_data_av_installed_acceptance.py'
       - 'tools/nvp_desktop_alpha.py'
       - 'tests/test_nvp_data_av_native.py'
@@ -174,7 +175,7 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeCameraRailPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx
+      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeCameraRailPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx src/FilmmakerHome.test.jsx
 
   installed-windows-native:
     name: Real packaged / installed Windows NVP.exe with OpenUSD and PCM (no FFmpeg)

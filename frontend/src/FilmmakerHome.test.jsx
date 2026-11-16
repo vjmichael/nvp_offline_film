@@ -75,6 +75,26 @@ describe('G03 filmmaker shell (not an AI/render acceptance test)',()=>{
     .toContain('postproduction.html');
  });
 
+ it('reports an original movie read failure instead of inventing navigation',async()=>{
+  const {handler}=server();
+  handler.mockImplementation(async url=>{
+   if(url==='/api/status')return {ok:true,json:async()=>({status:'ready'})};
+   if(url==='/api/projects')return {ok:true,json:async()=>[snapshot]};
+   if(url==='/api/projects/'+ID)return {ok:false,status:409,
+     json:async()=>({detail:'Original saved source read was rejected'})};
+   if(url==='/api/creative/models')return {ok:true,
+     json:async()=>({state:'unavailable'})};
+   return {ok:true,json:async()=>({})};
+  });
+  render(<FilmmakerHome/>);
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:'Resume Working'}));
+  fireEvent.click(await screen.findByRole('button',{name:/Forest Documentary.*Resume movie/i}));
+  await waitFor(()=>expect(screen.getByRole('alert').textContent)
+    .toContain('Original saved source read was rejected'));
+  expect(screen.queryByRole('navigation',{name:'Filmmaking steps'})).toBeNull();
+  expect(screen.getByRole('heading',{name:'Resume Working'})).toBeTruthy();
+ });
+
  it('switches between two saved movies without reusing the previous scene',async()=>{
   const B='b'.repeat(32);
   const second={...MOVIE,id:B,title:'Coastal Documentary',idea:'Waves by the coast',

@@ -192,6 +192,29 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         self.assertIn("textarea.line-numbered-input",after_movie_click)
         self.assertIn("window_native_source_sound_verified",after_movie_click)
 
+    def test_installed_navigation_failure_captures_bounded_real_browser_evidence(self):
+        # A missing phase after an actual film click must remain a native
+        # acceptance failure, with enough state to distinguish failed HTTP
+        # loading from a broken React mount on the installed executable.
+        path=Path(__file__).resolve().parents[1]/"tools"/"nvp_desktop_alpha.py"
+        source=path.read_text(encoding="utf-8")
+        smoke=source.split("def run_visible_window_smoke():",1)[1].split(
+            "def run_g03_window_smoke():",1)[0]
+        for marker in (
+            "window_original_film_navigation_diagnostic",
+            "movieReadRequests", "movieReadStatus", "rootChildren",
+            "phaseNav", "savedHeadingMatches", "resumeCards",
+            "firstAlert", "windowErrors",
+            "window.__nvpMovieRuntimeErrors",
+        ):
+            self.assertIn(marker,smoke)
+        # The smoke must observe, not replace the installed React/HTTP APIs.
+        self.assertNotIn("window.fetch=",smoke)
+        self.assertIn("window_original_film_director_phases_ready",smoke)
+        self.assertIn("textarea.line-numbered-input",smoke)
+        self.assertIn("window_native_source_sound_verified",smoke)
+        self.assertIn("raise RuntimeError(",smoke)
+
     def test_reject_untrusted_bridge_object(self):
         with self.assertRaises(TypeError):
             NativeWebviewIPCSurface(self.native_window)

@@ -407,6 +407,17 @@ def run_visible_window_smoke():
                     "Boolean([...document.querySelectorAll('button.film-movie-card')]"
                     ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance')))",
                     25,"Original film missing from director project list")
+                # Native installed diagnostic ONLY: observe real browser errors
+                # without replacing fetch, bypassing React, exposing film bytes,
+                # or declaring a film opened before its director UI is visible.
+                window.evaluate_js(
+                    "window.__nvpMovieRuntimeErrors=[];"
+                    "window.addEventListener('error',e=>{"
+                    "let a=window.__nvpMovieRuntimeErrors;"
+                    "if(a.length<3)a.push(String(e.message||'window error').slice(0,180))});"
+                    "window.addEventListener('unhandledrejection',e=>{"
+                    "let a=window.__nvpMovieRuntimeErrors;"
+                    "if(a.length<3)a.push(String(e.reason?.message||'rejected promise').slice(0,180))})")
                 chosen=window.evaluate_js(
                     "(()=>{let b=[...document.querySelectorAll('button.film-movie-card')]"
                     ".find(x=>x.textContent.includes('SLATE-08B Window Acceptance'));"
@@ -416,11 +427,40 @@ def run_visible_window_smoke():
                 # openMovie waits for the real HTTP project read before
                 # React mounts the working filmmaker navigation. Clicking
                 # the movie card is not evidence that the transition finished.
-                wait_js(
-                    "Boolean(document.querySelector('nav.film-steps') && "
-                    "document.querySelector('.film-film-head h1')?.textContent"
-                    ".includes('SLATE-08B Window Acceptance'))",
-                    25,"Saved original movie did not mount its director phases")
+                try:
+                    wait_js(
+                        "Boolean(document.querySelector('nav.film-steps') && "
+                        "document.querySelector('.film-film-head h1')?.textContent"
+                        ".includes('SLATE-08B Window Acceptance'))",
+                        25,"Saved original movie did not mount its director phases")
+                except RuntimeError as error:
+                    # Report *only* bounded structural/browser-error evidence.
+                    # No screenplay, media, cookies, native paths, or auth grants
+                    # are returned to the CI log. Do not turn failure into pass.
+                    try:
+                        diagnosis=window.evaluate_js(
+                            "(()=>{const h=document.querySelector('.film-film-head h1');"
+                            "const nav=document.querySelector('nav.film-steps');"
+                            "const alerts=[...document.querySelectorAll('[role=alert]')]"
+                            ".map(x=>(x.textContent||'').slice(0,180));"
+                            "const net=performance.getEntriesByType('resource')"
+                            ".filter(x=>x.name.includes('/api/projects/"+project["id"]+"'));"
+                            "const last=net.length?net[net.length-1]:null;"
+                            "return {phaseNav:Boolean(nav),"
+                            "savedHeadingMatches:Boolean(h&&h.textContent.includes('SLATE-08B Window Acceptance')),"
+                            "resumeCards:document.querySelectorAll('button.film-movie-card').length,"
+                            "alertCount:alerts.length,firstAlert:alerts[0]||'',"
+                            "movieReadRequests:net.length,movieReadStatus:last?.responseStatus||0,"
+                            "rootChildren:document.querySelector('#root')?.children.length??0,"
+                            "windowErrors:(window.__nvpMovieRuntimeErrors||[]).slice(0,3)};"
+                            "})()")
+                    except Exception as probe_error:
+                        diagnosis={"probe":"unavailable",
+                                   "error_type":type(probe_error).__name__}
+                    _smoke_checkpoint("window_original_film_navigation_diagnostic")
+                    raise RuntimeError(
+                        "Saved original movie did not mount its director phases; "
+                        "installed browser state: "+repr(diagnosis)) from error
                 _smoke_checkpoint("window_original_film_director_phases_ready")
                 # Movie resume opens the last filmmaking phase (normally
                 # Scenes). A textarea's value is not document.body.textContent:
