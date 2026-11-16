@@ -1,4 +1,7 @@
 """DA-03 native OpenUSD filming capture with exact sound event provenance."""
+from hashlib import sha256
+from unittest.mock import patch
+import copy
 import unittest
 
 import test_nvp_data_av_native as fixture
@@ -45,6 +48,146 @@ class NativeCapturedSpatialSoundTests(unittest.TestCase):
                 "pcm_chunks":[self.original[:24000],self.original[24000:]],
             }]
         )
+
+    def native_audit(self,request):
+        # Test-only native kernel receipt: not real OS custody or signing.
+        entry=request["recordings"][0]
+        payload=b"".join(entry["pcm_chunks"])
+        source_sha=sha256(payload).hexdigest()
+        return {
+            "format":"nvp.w1g.original_microphone_worker_audit.v1",
+            "project_id":request["project_id"],"take_id":request["take_id"],
+            "source_id":entry["source_id"],"scene_id":request["scene_id"],
+            "scene_document_sha256":self.shots["scene_document_sha256"],
+            "camera_timeline_document_sha256":self.shots["document_sha256"],
+            "subject_id":entry["subject_id"],"emitter_path":entry["usd_prim_path"],
+            "start_tick":str(entry["start_tick"]),
+            "end_tick":str(entry["end_tick"]),
+            "original_pcm_sha256":source_sha,
+            "sample_count":len(payload)//2,"window_count":1,
+            "native_worker_receipts":[{
+                "job_id":"w1g_"+"a"*24,"first_sample":0,
+                "sample_count":len(payload)//2,
+                "window_pcm_sha256":source_sha,
+                "worker_result_sha256":"b"*64,
+                "native_worker_binary_sha256":"c"*64,
+                "native_worker_plan_sha256":"d"*64,
+                "os_custody_receipt_sha256":"e"*64,
+                "original_native_kernel_custody_verified":True,
+            }],
+            "all_window_results_and_os_custody_verified":True,
+            "device_capture_implemented_by_compiled_worker":False,
+            "immutable_take_published":False,
+            "physical_microphone_hardware_accepted":False,
+        }
+
+    def test_compiled_worker_attestation_is_immutable_take_and_timeline_data(self):
+        request=self.payload()
+        audit=self.native_audit(request)
+        request["native_capture_audits"]=[audit]
+        receipt=self.capture.capture(**request)
+        self.assertEqual(receipt["native_capture_attested_source_count"],1)
+        native_take=self.index.read_revision(self.pid,"FilmedTake",1)["data"]
+        self.assertEqual(native_take["native_original_capture_attestations"],[audit])
+        self.assertEqual(native_take["original_camera_timeline_id"],
+                         "FilmingCameraTimeline")
+        self.assertEqual(native_take["original_camera_timeline_revision"],1)
+        verified=OpenUSDTakeCapture(
+            self.index,verify_creator_action=lambda event,scope:False
+        ).verify_take(self.pid,"FilmedTake")
+        self.assertTrue(verified["native_capture_attestations_verified"])
+        # Original sound and distinct scene are immutable. No flattening.
+        event=next(x for x in TemporalLedger(self.index).events_in(
+            self.pid,"FilmingSoundTimeline",1,start_tick=0,end_tick=3*T
+            )["events"] if x["source_id"]=="NewRecordedSpeech")
+        self.assertEqual(event["payload"]["native_capture_audit_sha256"],
+                         __import__("backend.nvp_p1a_take_provenance",
+                             fromlist=["audit_sha256"]).audit_sha256(audit))
+        self.assertFalse(native_take["rendered_frames"])
+
+    def test_native_window_provenance_survives_independent_studio_restart(self):
+        from backend.nvp_studio import Studio
+        from backend.nvp_film_index import FilmIndex
+        req=self.payload()
+        req["native_capture_audits"]=[self.native_audit(req)]
+        receipt=self.capture.capture(**req)
+        original=self.index.read_revision(self.pid,"FilmedTake",1)
+        self.assertIn({
+            "object_id":"FilmingCameraTimeline","revision":1,"role":"camera"
+        },original["dependencies"])
+        independent=FilmIndex(Studio(self.studio.db_path))
+        reopened=OpenUSDTakeCapture(
+            independent,verify_creator_action=lambda event,scope:False
+        ).verify_take(self.pid,"FilmedTake")
+        self.assertTrue(reopened["native_capture_attestations_verified"])
+        self.assertEqual(reopened["take_document_sha256"],
+                         receipt["take_document_sha256"])
+
+    def test_incomplete_or_forged_native_windows_denied_before_publication(self):
+        request=self.payload()
+        audit=self.native_audit(request)
+        bads=[]
+        zero_window=copy.deepcopy(audit)
+        zero_window["native_worker_receipts"][0]["first_sample"]=1
+        bads.append(zero_window)
+        wrong_scene=copy.deepcopy(audit)
+        wrong_scene["scene_document_sha256"]="0"*64
+        bads.append(wrong_scene)
+        short_capture=copy.deepcopy(audit)
+        short_capture["native_worker_receipts"][0]["sample_count"]-=1
+        bads.append(short_capture)
+        fake_custody=copy.deepcopy(audit)
+        fake_custody["native_worker_receipts"][0][
+            "original_native_kernel_custody_verified"]=False
+        bads.append(fake_custody)
+        for bad in bads:
+            with self.subTest(reason=bad):
+                with self.assertRaises(PermissionError):
+                    self.capture.capture(**{
+                        **request,"native_capture_audits":[bad]})
+                for name in ("NewRecordedSpeech","FilmingSoundTimeline","FilmedTake"):
+                    with self.assertRaises(KeyError):
+                        self.index.read_revision(self.pid,name,1)
+
+    def test_reopen_recomputes_every_native_window_sha_not_just_receipt_hash(self):
+        from backend.nvp_p1a_take_provenance import audit_sha256
+        request=self.payload()
+        request["native_capture_audits"]=[self.native_audit(request)]
+        self.capture.capture(**request)
+        original_read=self.index.read_revision
+        def forged_receipt(project_id,identity,revision):
+            record=original_read(project_id,identity,revision)
+            if identity!="FilmedTake":
+                return record
+            corrupt=copy.deepcopy(record)
+            att=corrupt["data"]["native_original_capture_attestations"]
+            att[0]["native_worker_receipts"][0]["window_pcm_sha256"]="0"*64
+            # Even if an attacker recomputes the embedded attestation
+            # document hash, the actual original PCM window must be checked.
+            corrupt["data"]["native_original_capture_attestations_sha256"]=(
+                audit_sha256(att))
+            return corrupt
+        with patch.object(self.index,"read_revision",side_effect=forged_receipt):
+            with self.assertRaisesRegex(PermissionError,"window digest"):
+                OpenUSDTakeCapture(
+                    self.index,verify_creator_action=lambda event,scope:False
+                ).verify_take(self.pid,"FilmedTake")
+
+    def test_attested_take_reader_refuses_corrupt_original_pcm_blob(self):
+        request=self.payload()
+        request["native_capture_audits"]=[self.native_audit(request)]
+        self.capture.capture(**request)
+        original=self.index.get_blob
+        def corrupt_blob(project_id,digest):
+            payload=original(project_id,digest)
+            if len(payload)==24000:
+                return payload[:-2]+bytes((0,0))
+            return payload
+        with patch.object(self.index,"get_blob",side_effect=corrupt_blob):
+            with self.assertRaises(PermissionError):
+                OpenUSDTakeCapture(
+                    self.index,verify_creator_action=lambda event,scope:False
+                ).verify_take(self.pid,"FilmedTake")
 
     def test_shared_device_iterator_refused_before_pcm_consumption(self):
         req=self.payload()
