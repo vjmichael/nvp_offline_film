@@ -36,7 +36,7 @@ jobs:
           python -m pip install -r requirements-foundation.txt
           mkdir -p "$RUNNER_TEMP/nvp-cinema" "$RUNNER_TEMP/nvp-cinema/bin"
           curl --fail --location --retry 3 --connect-timeout 20 \
-            'https://dcpomatic.com/dl?id=ubuntu-24.04-x86-cli&version=2.18.51' \
+            'https://www.dcpomatic.com/dl?id=ubuntu-24.04-x86-cli&version=2.18.51' \
             --output "$RUNNER_TEMP/nvp-cinema/dcpomatic-cli.deb"
           dpkg-deb --info "$RUNNER_TEMP/nvp-cinema/dcpomatic-cli.deb"
           package_version="$(dpkg-deb -f "$RUNNER_TEMP/nvp-cinema/dcpomatic-cli.deb" Version)"
