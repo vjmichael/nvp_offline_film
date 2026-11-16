@@ -104,7 +104,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         path=Path(__file__).resolve().parents[1]/"frontend"/"src"/(
             "DirectorCameraActorContinuity.jsx")
         code=path.read_text(encoding="utf-8")
-        called=set(re.findall(r"\\bnative\\.([a-z][a-z0-9_]*)\\s*\\(",code))
+        called=set(re.findall(r"\bnative\.([a-z][a-z0-9_]*)\s*\(",code))
         required={
             "camfx03_camera_sources","camfx03_draft_catalog",
             "film03_actor_catalog","film02md_architecture_catalog",
