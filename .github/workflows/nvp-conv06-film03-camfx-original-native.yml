@@ -58,6 +58,11 @@ on:
       - 'backend/nvp_usd_film01o_original_camera_roll_source.py'
       - 'backend/nvp_usd_film01p_source_multicam_edl.py'
       - 'backend/nvp_usd_film01q_selected_view_edit.py'
+      - 'backend/nvp_usd_film01q_selected_view_host.py'
+      - 'backend/nvp_usd_film01q_protected_source.py'
+      - 'tools/nvp_usd_film01q_blender_selected_views.py'
+      - 'tools/nvp_usd_film01m_camera_ray_mask.py'
+      - 'tests/test_nvp_usd_film01q_protected_native_host.py'
       - 'backend/nvp_usd_film01r_quality.py'
       - 'tests/test_nvp_usd_film01op_contract.py'
       - 'tests/test_nvp_usd_film01q_selected_contract.py'
@@ -157,6 +162,9 @@ jobs:
             test_nvp_usd_film01op_contract.py
             test_nvp_usd_film01q_selected_contract.py
             test_nvp_usd_film01oq_native_source.py
+            # Protected 90x8 worker authority, source pinning, cancellation,
+            # interruption and retry refusals; not a fake Cycles acceptance.
+            test_nvp_usd_film01q_protected_native_host.py
             test_nvp_conv11_worker_receipt_reopen_native.py
             test_nvp_openusd_shot_overrides_native.py
             test_nvp_p1f_multishot_recovery.py

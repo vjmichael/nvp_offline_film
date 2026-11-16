@@ -44,11 +44,14 @@ def file_sha(path):
     return h.hexdigest()
 
 
-def original_camera_roll_source(index:FilmIndex,pid,bank_id,*,revision,folder):
+def original_camera_roll_source(index:FilmIndex,pid,bank_id,*,revision,folder,
+                                protected_source=False):
     """Capture source-verified full performance + virtual cameras ONCE."""
     from pxr import Sdf,Usd,UsdGeom
     if not isinstance(index,FilmIndex):
         raise TypeError("Authoritative original FilmIndex required")
+    if type(protected_source) is not bool:
+        raise TypeError("Protected USD source storage policy must be explicit")
     bank=DirectorCameraBank(index,verify_director_action=lambda *_:False)
     doc=bank.verify(pid,bank_id,revision)
     if not 1<=doc["camera_count"]<=96 or doc["source_duration_ticks"]<30*T:
@@ -60,6 +63,9 @@ def original_camera_roll_source(index:FilmIndex,pid,bank_id,*,revision,folder):
         raise FileExistsError("Do not overwrite derived camera source evidence")
     target.mkdir(parents=True,mode=0o700)
     try:
+        if protected_source:
+            from backend.nvp_w1g_encrypted_source import require_efs_stage
+            require_efs_stage(target)
         with bank.open_source_views(pid,bank_id,revision) as view:
             stage=view["stage"]
             cameras=view["camera_paths"]
