@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 import struct
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 
 from backend.nvp_blender_acceptance import blender_available
 from backend.nvp_digital_capture import DigitalCapture, run_frozen_take_acceptance
@@ -294,7 +295,7 @@ class PresentationPipeline:
              str(render_py),"--","--take",str(take),"--plan",str(plan),
              "--out",str(rendered)]
         try:
-            process=subprocess.run(cmd,cwd=working,capture_output=True,
+            process=run_owned_subprocess(cmd,cwd=working,capture_output=True,
                                    text=True,timeout=timeout,check=False)
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError("Blender presentation timed out; no output published") from exc
@@ -322,7 +323,7 @@ class PresentationPipeline:
             info=check_frame(raw,pixel_contract,_png_info)
             if pixel_contract==PIXEL_EXR:
                 try:
-                    result=subprocess.run([
+                    result=run_owned_subprocess([
                         decoder,"-nostdin","-v","error","-xerror",
                         "-i",str(rendered/frame["filename"]),"-frames:v","1",
                         "-f","null","-"],capture_output=True,text=True,

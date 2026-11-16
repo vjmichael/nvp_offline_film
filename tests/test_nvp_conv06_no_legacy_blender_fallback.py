@@ -56,5 +56,33 @@ class NoLegacyWorkerFallback(unittest.TestCase):
             self.assertEqual(list(Path(tmp).iterdir()),[],
                              "Unapproved Blender acceptance leaked original bytes")
 
+
+    def test_historical_w1g_owned_launch_dispositions(self):
+        # Historical-source guard, not physical kernel acceptance.
+        import ast
+        from tools.nvp_no_ffmpeg_contract import violations
+        for filename in ["nvp_audio01f_picture_sound.py","nvp_audio01h_loudness.py","nvp_audio01i_mastering.py","nvp_audio01j_final_av.py","nvp_audio02b_loudness_qc.py","nvp_cinema_essence.py","nvp_color_mastering.py","nvp_source_window_decode.py","nvp_source_media_inventory.py","nvp_presentation_pipeline.py","nvp_grade_advanced.py","nvp_grade_curves.py","nvp_grade_workspace.py","nvp_full_motion.py","nvp_indexed_preview.py","nvp_longform_review.py","nvp_native_frame_index.py"]:
+            with self.subTest(original_source=filename):
+                source=(ROOT/"backend"/filename).read_text("utf8")
+                self.assertIn(
+                    "from backend.nvp_w1g_owned_subprocess import run_owned_subprocess",
+                    source)
+                tree=ast.parse(source)
+                direct_runs = [
+                    node.lineno for node in ast.walk(tree)
+                    if isinstance(node,ast.Call)
+                    and isinstance(node.func,ast.Attribute)
+                    and isinstance(node.func.value,ast.Name)
+                    and node.func.value.id=="subprocess"
+                    and node.func.attr=="run"
+                ]
+                self.assertEqual(direct_runs,[],
+                    "Historical Windows Job execution must not use bare subprocess.run")
+                if filename in ("nvp_audio01f_picture_sound.py","nvp_native_frame_index.py"):
+                    self.assertIn('if os.name == "nt":',source)
+        self.assertEqual(violations(),[],
+            "Historical custody restoration must not import FFmpeg into active NVP")
+
+
 if __name__=="__main__":
     unittest.main()

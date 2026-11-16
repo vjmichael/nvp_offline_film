@@ -11,6 +11,7 @@ import math
 from pathlib import Path
 import re
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import wave
 
 RATE = 48000
@@ -52,7 +53,7 @@ def analyze_wav(path, *, ffmpeg="ffmpeg", expected_samples=None, timeout=120):
                "-i", str(src), "-map", "0:a:0", "-af",
                "loudnorm=I=-23:TP=-2:LRA=7:print_format=json",
                "-f", "null", "-"]
-    done = subprocess.run(command, capture_output=True,
+    done = run_owned_subprocess(command, capture_output=True,
                           stdin=subprocess.DEVNULL, timeout=timeout,
                           check=False)
     if done.returncode:

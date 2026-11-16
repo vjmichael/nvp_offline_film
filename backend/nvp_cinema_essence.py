@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 
 from backend.nvp_cinema_duration import validate_duration_contract
 
@@ -30,7 +31,7 @@ def _binary(name, override):
 
 def _run(args, timeout, label):
     try:
-        result = subprocess.run(
+        result = run_owned_subprocess(
             args, capture_output=True, text=True, check=False, timeout=timeout
         )
     except subprocess.TimeoutExpired as exc:
@@ -54,7 +55,7 @@ def _prove_black_tail(media, source_frames, padded_frames, raster, decode, timeo
     if expected_bytes > 150 * 1024 * 1024:
         raise RuntimeError("DCP black-tail audit exceeds bounded memory budget")
     try:
-        result = subprocess.run(
+        result = run_owned_subprocess(
             [
                 decode, "-nostdin", "-v", "error", "-xerror", "-i", str(media),
                 "-map", "0:v:0", "-vf", "select=gte(n\\," + str(source_frames) + ")",

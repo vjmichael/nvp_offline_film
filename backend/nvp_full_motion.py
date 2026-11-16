@@ -17,6 +17,7 @@ import math
 from pathlib import Path
 import shutil
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 from backend.nvp_digital_capture import DigitalCapture
@@ -76,7 +77,7 @@ def _codec_receipt(profile, expected):
 def _run(command, *, timeout, action):
     """No shell expansion or user-generated Python; refuse unsuccessful jobs."""
     try:
-        result = subprocess.run(command,capture_output=True,text=True,
+        result = run_owned_subprocess(command,capture_output=True,text=True,
                                 timeout=timeout,check=False)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"{action} timed out; no motion presentation published") from exc

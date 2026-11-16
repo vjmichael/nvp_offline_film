@@ -11,6 +11,7 @@ import hashlib
 import math
 from pathlib import Path
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 from backend.nvp_grade_advanced import (
@@ -121,7 +122,7 @@ class CurveGradeWorkspace(AdvancedGradeWorkspace):
                      "-i","pipe:0","-frames:v","1","-pix_fmt","rgb24",
                      "-f","image2pipe","-vcodec","png","pipe:1"]
                 try:
-                    result=subprocess.run(cmd,input=rgb48,capture_output=True,
+                    result=run_owned_subprocess(cmd,input=rgb48,capture_output=True,
                                           timeout=45,check=False)
                 except (OSError,subprocess.TimeoutExpired) as exc:
                     raise RuntimeError("Curve preview encoder did not finish") from exc

@@ -14,6 +14,7 @@ import re
 import sqlite3
 import stat
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 SCHEMA_VERSION = 1
@@ -124,7 +125,7 @@ class NVPFrameIndex:
         cmd = [str(self.ffprobe), "-v", "error", "-select_streams", "v:0",
                "-show_entries", "stream=index,time_base,start_pts,codec_name",
                "-show_streams", "-of", "json", str(source)]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        result = run_owned_subprocess(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 timeout=60, check=False)
         if result.returncode != 0 or len(result.stdout) > MAX_STREAM_METADATA:
             raise RuntimeError("Native stream header inspection failed")
@@ -191,14 +192,32 @@ class NVPFrameIndex:
                            "-show_frames", "-show_entries",
                            "frame=key_frame,best_effort_timestamp,pts,pkt_pos",
                            "-of", "compact=p=0:nk=0", str(source)]
-                proc = subprocess.Popen(command, stdout=subprocess.PIPE,
-                                        stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+                # On Windows the full FFprobe scan must finish under the
+                # release-wide Job slot before the indexed bytes are parsed.
+                # Keep output disk-backed; no unowned stdout pipe or RAM cache.
+                owned_output = None
+                if os.name == "nt":
+                    owned_output = tempfile.TemporaryFile(mode="w+b")
+                    try:
+                        completed = run_owned_subprocess(
+                            command, stdout=owned_output, stderr=subprocess.DEVNULL,
+                            stdin=subprocess.DEVNULL, timeout=120)
+                        owned_output.seek(0)
+                    except BaseException:
+                        owned_output.close()
+                        raise
+                    proc = None
+                    stream = owned_output
+                else:
+                    proc = subprocess.Popen(command, stdout=subprocess.PIPE,
+                                            stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+                    stream = proc.stdout
                 count = 0
                 previous = None
                 keyframes = 0
                 try:
                     while True:
-                        line = proc.stdout.readline(MAX_LINE + 1)
+                        line = stream.readline(MAX_LINE + 1)
                         if not line:
                             break
                         item = _parse_record(line.decode("ascii", "strict"))
@@ -214,14 +233,14 @@ class NVPFrameIndex:
                         keyframes += key
                         if count >= MAX_FRAMES:
                             raise RuntimeError("Indexed source exceeds 64-bit frame range")
-                    code = proc.wait(timeout=120)
+                    code = completed.returncode if proc is None else proc.wait(timeout=120)
                     if code != 0 or not count or not keyframes:
                         raise RuntimeError("FFprobe frame scan incomplete or missing keyframes")
                 finally:
-                    if proc.poll() is None:
+                    if proc is not None and proc.poll() is None:
                         proc.kill()
                         proc.wait(timeout=15)
-                    proc.stdout.close()
+                    stream.close()
                 if stamp(source) != before:
                     raise RuntimeError("Original changed during frame indexing")
                 header = {"schema": SCHEMA_VERSION, "project": project,

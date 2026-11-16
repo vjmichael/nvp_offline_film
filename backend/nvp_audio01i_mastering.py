@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 
 from backend.nvp_audio01i_fault_matrix import crash_after
 from backend.nvp_audio01h_mix_decision import FORMAT as DECISION_FORMAT
@@ -36,7 +37,7 @@ def sha_file(path):
 
 
 def _run(args,timeout=180):
-    result=subprocess.run(args,stdin=subprocess.DEVNULL,capture_output=True,
+    result=run_owned_subprocess(args,stdin=subprocess.DEVNULL,capture_output=True,
                           check=False,timeout=timeout)
     if result.returncode:
         raise RuntimeError("Native mastering failed: "+

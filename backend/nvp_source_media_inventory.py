@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import tempfile
 
 from backend.nvp_external_media_catalog import ExternalMediaCatalog, _read_and_hash
@@ -112,7 +113,7 @@ def ffprobe_media(path, *, ffprobe="ffprobe", timeout=60):
     # This is a disk-backed, bounded *read*; final output size is checked
     # before parsing. It is not a process-level disk quota.
     with tempfile.TemporaryFile() as report:
-        completed = subprocess.run(
+        completed = run_owned_subprocess(
             args, stdout=report, stderr=subprocess.DEVNULL,
             timeout=timeout, check=False)
         size = report.seek(0, os.SEEK_END)

@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import wave
 
 from backend.nvp_b14_edited_movie import verify_edited_technical_mov
@@ -43,7 +45,7 @@ def _canonical(value):
 
 
 def _run(command, *, stdout=None, timeout=600):
-    done=subprocess.run(command,stdout=stdout or subprocess.PIPE,
+    done=run_owned_subprocess(command,stdout=stdout or subprocess.PIPE,
                         stderr=subprocess.PIPE,stdin=subprocess.DEVNULL,
                         timeout=timeout,check=False)
     if done.returncode!=0:
@@ -97,10 +99,34 @@ def _decoded_sha(movie, stream, ffmpeg):
         unit=4
     else:
         raise ValueError("Unrecognized stream")
-    proc=subprocess.Popen([ffmpeg,"-nostdin","-hide_banner","-v","error",
-                           "-xerror","-i",str(movie),*args,"pipe:1"],
-                          stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE)
+    command=[ffmpeg,"-nostdin","-hide_banner","-v","error",
+             "-xerror","-i",str(movie),*args,"pipe:1"]
+    # The original Windows decoder is a release-owned Job; output is spooled
+    # to disk and hashed after verified tree exit, never an unowned pipe.
+    if os.name == "nt":
+        with tempfile.TemporaryFile(mode="w+b") as out, tempfile.TemporaryFile(mode="w+b") as err:
+            result=run_owned_subprocess(
+                command,stdin=subprocess.DEVNULL,stdout=out,stderr=err,timeout=180)
+            if result.returncode:
+                err.seek(0)
+                raise RuntimeError("Decoded technical movie stream failed: "+
+                                   err.read(8192).decode("utf8","replace")[-800:])
+            out.seek(0)
+            digest=hashlib.sha256()
+            count=0
+            while True:
+                block=out.read(1024*1024)
+                if not block:
+                    break
+                count+=len(block)
+                if count>2*1024*1024*1024:
+                    raise RuntimeError("Technical preview decode exceeds 2GiB bound")
+                digest.update(block)
+            if count%unit:
+                raise RuntimeError("Decoded PCM bytes have incomplete samples")
+            return digest.hexdigest(),count
+    proc=subprocess.Popen(command,stdin=subprocess.DEVNULL,
+                          stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     sha=hashlib.sha256()
     count=0
     try:
