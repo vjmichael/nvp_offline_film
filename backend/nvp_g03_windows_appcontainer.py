@@ -74,13 +74,38 @@ def _api():
 def _acl(path,sid,permission,recursive=False,remove=False):
     if not re.fullmatch(r"S-1-15-2-(?:[0-9]+-){5,9}[0-9]+",sid):
         raise AppContainerFailure("Untrusted AppContainer SID")
-    args=["icacls",str(path)]
+    args=["icacls.exe",str(path)]
     args += ["/remove:g","*"+sid] if remove else ["/grant","*"+sid+":"+permission]
     if recursive:
         args.append("/T")
-    r=subprocess.run(args,capture_output=True,text=True,timeout=120,check=False)
-    if r.returncode or "Failed processing" in r.stdout:
-        raise AppContainerFailure("Native AppContainer DACL operation failed")
+    r=subprocess.run(args,capture_output=True,text=True,errors="replace",
+                     timeout=120,check=False)
+    if r.returncode or "Failed processing" in r.stdout or r.stderr.strip():
+        # Preserve the actual Windows failing object and error; a denied ACL
+        # must never turn into an unsandboxed or more broadly granted launch.
+        operation="remove" if remove else "grant "+permission
+        message=" ".join((r.stderr+" "+r.stdout).split())[:900]
+        raise AppContainerFailure(
+            f"Native AppContainer DACL operation failed ({operation}, "
+            f"path={path}, exit={r.returncode}): {message}")
+
+def _grant_scoped_access(work,roots,files,sid,grants):
+    """Only exact reviewed runtime objects and this one disposable workspace.
+
+    Do not grant RX on Program Files, user profile, or ancestors of the
+    film. Normal Windows traversal and pre-existing OS permissions apply.
+    If traversal/access is denied, native launch fails closed rather than
+    taking ownership of a system directory or granting broad access.
+    Register cleanup before each potentially partial recursive ACL operation.
+    """
+    for root in roots:
+        grants.append((root,True))
+        _acl(root,sid,"(OI)(CI)RX",recursive=True)
+    for file in files:
+        grants.append((file,False))
+        _acl(file,sid,"R")
+    grants.append((work,False))
+    _acl(work,sid,"(OI)(CI)M")
 
 def _paths(command,cwd,code_roots,code_files):
     if sys.platform!="win32":
@@ -249,19 +274,9 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
             raise AppContainerFailure("Not a package SID")
         profile_folder=_profile_folder(userenv,sid)
         baseline=_profile_inventory(profile_folder)
-        # Traverse-only on ancestors; recursive RX ONLY for trusted binary
-        # distributions and exact read access ONLY for a vetted worker script.
-        for root in roots:
-            _acl(root,sid,"(OI)(CI)RX",recursive=True);grants.append((root,True))
-        for file in files:
-            _acl(file,sid,"R");grants.append((file,False))
-        visited=set()
-        for item in [work]+[x.parent for x in roots+files]:
-            for folder in [item]+list(item.parents):
-                if folder==folder.parent or folder in visited:continue
-                visited.add(folder)
-                _acl(folder,sid,"(OI)(CI)M" if folder==work else "RX")
-                grants.append((folder,False))
+        # No ACL mutation on protected machine or creator ancestors.
+        # Exactly the reviewed runtime and one disposable job receive grants.
+        _grant_scoped_access(work,roots,files,sid,grants)
         # Workspace is disposable and writable only for this package SID.
         # It must carry low mandatory integrity as AppContainer is Low-IL.
         integrity=subprocess.run(["icacls",str(work),"/setintegritylevel",

@@ -195,7 +195,13 @@ class RealProtectedSelected720Windows(unittest.TestCase):
                     started=True
                     break
                 time.sleep(.1)
-            self.assertTrue(started,"Real AppContainer Blender did not begin a kernel-owned job")
+            if not started:
+                if done.done():
+                    terminal=done.result()
+                    self.fail("Real AppContainer Blender never started: "+
+                              str(terminal.get("error") or terminal))
+                self.supervisor.cancel(op.job_id)
+                self.fail("Real AppContainer Blender did not begin a kernel-owned job within the deadline")
             self.assertTrue(self.supervisor.cancel("conv12_cancel_probe"))
             status=done.result(timeout=60)
         self.assertEqual(status["state"],"CANCELLED")

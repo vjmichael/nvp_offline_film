@@ -83,6 +83,46 @@ class WindowsPrivateBlenderBridgeContract(unittest.TestCase):
         self.assertIn('require_linux_cgroup_v2=True',source)
         self.assertIn('prove_private_kernel_boundary(self.supervisor.root)',source)
 
+    def test_native_acl_is_limited_to_reviewed_runtime_and_one_job(self):
+        from backend.nvp_g03_windows_appcontainer import _grant_scoped_access
+        sid="S-1-15-2-1-2-3-4-5-6-7"
+        grants=[]
+        reviewed_file=self.binary_root/"reviewed.dll"
+        with patch("backend.nvp_g03_windows_appcontainer._acl") as acl:
+            _grant_scoped_access(self.job,[self.binary_root],
+                                 [reviewed_file],sid,grants)
+        self.assertEqual([c.args[0] for c in acl.call_args_list],
+                         [self.binary_root,reviewed_file,self.job])
+        self.assertEqual(grants,[(self.binary_root,True),
+                                 (reviewed_file,False),(self.job,False)])
+        self.assertEqual([c.args[2] for c in acl.call_args_list],
+                         ["(OI)(CI)RX","R","(OI)(CI)M"])
+        self.assertNotIn(self.program_files,[c.args[0] for c in acl.call_args_list])
+        self.assertNotIn(self.root,[c.args[0] for c in acl.call_args_list])
+
+    def test_failed_recursive_acl_is_registered_for_cleanup_and_not_ignored(self):
+        from backend.nvp_g03_windows_appcontainer import (
+            _grant_scoped_access,AppContainerFailure)
+        grants=[]
+        with patch("backend.nvp_g03_windows_appcontainer._acl",
+                   side_effect=AppContainerFailure("denied")):
+            with self.assertRaisesRegex(AppContainerFailure,"denied"):
+                _grant_scoped_access(self.job,[self.binary_root],[],
+                                     "S-1-15-2-1-2-3-4-5-6-7",grants)
+        self.assertEqual(grants,[(self.binary_root,True)])
+
+    def test_acl_denial_includes_original_path_and_native_diagnostic(self):
+        from backend.nvp_g03_windows_appcontainer import _acl,AppContainerFailure
+        from types import SimpleNamespace
+        failure=SimpleNamespace(returncode=5,stdout="",stderr="Access is denied.")
+        with patch("backend.nvp_g03_windows_appcontainer.subprocess.run",
+                   return_value=failure):
+            with self.assertRaises(AppContainerFailure) as observation:
+                _acl(self.binary_root,"S-1-15-2-1-2-3-4-5-6-7","RX")
+        self.assertIn(str(self.binary_root),str(observation.exception))
+        self.assertIn("exit=5",str(observation.exception))
+        self.assertIn("Access is denied.",str(observation.exception))
+
     def test_supervisor_dispatch_requires_real_appcontainer_not_plain_job(self):
         node=ast.parse(textwrap.dedent(
             inspect.getsource(worker.BlenderWorkerSupervisor._run_worker)))
