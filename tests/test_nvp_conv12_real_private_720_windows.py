@@ -36,6 +36,55 @@ RUN_REAL = (
 )
 
 
+def _fixture_failure_logs(root,job_id):
+    """Bounded failure diagnostics for this generated CI fixture ONLY.
+
+    Never expose private production-worker logs, never read arbitrary files,
+    and never emit interpreted workflow command lines. The original exception
+    still fails the entire acceptance and evidence upload remains success-only.
+    """
+    root=Path(root).resolve(strict=True)
+    task=root/job_id
+    if (task.is_symlink() or not task.is_dir() or
+            task.resolve().parent!=root):
+        return {"worker_logs":"unavailable"}
+    result={}
+    for name in ("worker_stdout.log","worker_stderr.log"):
+        path=task/name
+        try:
+            if (path.is_symlink() or not path.is_file() or
+                    path.resolve().parent!=task.resolve()):
+                result[name]="unavailable"
+                continue
+            with path.open("rb") as stream:
+                size=stream.seek(0,os.SEEK_END)
+                stream.seek(max(0,size-8192))
+                tail=stream.read(8192).decode("utf8",errors="replace")
+            result[name]={"bytes":size,"truncated":size>8192,"tail":tail}
+        except OSError:
+            result[name]="unavailable"
+    return result
+
+
+class FixtureDiagnosticContract(unittest.TestCase):
+    def test_fixed_logs_bounded_and_missing_log_handled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            task=root/"fixture"
+            task.mkdir()
+            (task/"worker_stdout.log").write_bytes(b"x"*9000+b"END")
+            (task/"source.usda").write_bytes(b"DO NOT READ SOURCE")
+            report=_fixture_failure_logs(root,"fixture")
+            self.assertTrue(report["worker_stdout.log"]["truncated"])
+            self.assertEqual(report["worker_stdout.log"]["bytes"],9003)
+            self.assertEqual(len(report["worker_stdout.log"]["tail"]),8192)
+            self.assertTrue(report["worker_stdout.log"]["tail"].endswith("END"))
+            self.assertEqual(report["worker_stderr.log"],"unavailable")
+            self.assertNotIn("source.usda",report)
+            self.assertEqual(_fixture_failure_logs(root,"absent"),
+                             {"worker_logs":"unavailable"})
+
+
 @unittest.skipUnless(RUN_REAL,"Requires genuine Windows EFS/AppContainer and pinned Blender")
 class RealProtectedSelected720Windows(unittest.TestCase):
     @classmethod
@@ -233,9 +282,26 @@ class RealProtectedSelected720Windows(unittest.TestCase):
         expected_job_hashes=[]
         for start in range(0,720,8):
             approved=self._tokens(start,1)
-            completed=self.host.run_chunk(
-                self.pid,self.edit_id,revision=1,start=start,
-                attempt=1,**approved)
+            diagnostic_job=chunk_job_id(
+                self_plan["plan"]["edit_document_sha256"],start,1,
+                self_plan["plan"]["render_profile_sha256"])
+            try:
+                completed=self.host.run_chunk(
+                    self.pid,self.edit_id,revision=1,start=start,
+                    attempt=1,**approved)
+            except Exception:
+                # The production supervisor retains these encrypted logs
+                # locally, but fixture teardown would otherwise erase the
+                # traceback before the CI operator can diagnose exit 70.
+                try:
+                    report=_fixture_failure_logs(self.worker_root,diagnostic_job)
+                    print("CONV12_FIXTURE_NATIVE_RENDER_FAILURE "+
+                          json.dumps({"start_frame":start,"job_id":diagnostic_job,
+                                      **report},ensure_ascii=True),flush=True)
+                except Exception as diagnostic_error:
+                    print("CONV12_FIXTURE_DIAGNOSTIC_UNAVAILABLE "+
+                          type(diagnostic_error).__name__,flush=True)
+                raise
             self.assertEqual(completed["state"],
                              "REVERIFIED_NATIVE_SELECTED_FRAMES")
             self.assertEqual(completed["native_selected_views_rendered"],8)
