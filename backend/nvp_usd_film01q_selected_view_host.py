@@ -143,6 +143,7 @@ class ReviewedSelectedViewFilm:
             "render_resolution_y":planned["plan"]["render_profile"]["resolution_y"],
             "render_samples":planned["plan"]["render_profile"]["samples"],
             "attempt":attempt,"native_rendered_frames":CHUNK,
+            "native_blender_version":self.supervisor.blender_version.removeprefix("Blender "),
             "passed":True}
         if any(receipt.get(k)!=v for k,v in fields.items()):
             raise RuntimeError("Native edited film audit does not match source plan")

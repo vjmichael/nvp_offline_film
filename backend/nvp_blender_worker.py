@@ -62,6 +62,35 @@ def _safe_relative(root: Path, name: str, *, must_exist: bool = False) -> Path:
     return resolved
 
 
+def _windows_private_blender_code_root(binary: Path, jobdir: Path,
+                                       script: str, inputs: Mapping[str,str]) -> Path:
+    """Allow a source worker only inside an HKLM-provisioned Program Files binary root.
+
+    A user-controlled path or ProgramFiles environment variable cannot grant
+    a lowbox SID recursive read to an arbitrary personal-data directory.
+    The existing G03 AppContainer launcher grants only this fixed runtime root
+    and the one disposable EFS job directory. Absence of the OS boundary fails.
+    """
+    if sys.platform!="win32" or os.name!="nt":
+        raise RuntimeError("Windows private Blender requires genuine native Windows")
+    import winreg
+    from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion") as key:
+        trusted=winreg.QueryValueEx(key,"ProgramFilesDir")[0]
+    program_files=Path(trusted).resolve(strict=True)
+    root=binary.resolve(strict=True).parent
+    work=Path(jobdir).resolve(strict=True)
+    if (not program_files.is_dir() or not root.is_dir() or
+        root==program_files or not root.is_relative_to(program_files) or
+        work==root or work.is_relative_to(root) or
+        root.is_relative_to(work)):
+        raise PermissionError("Private Blender runtime must be installed below HKLM Program Files")
+    names=tuple(dict.fromkeys((script,*inputs)))
+    verify_efs_inputs(work,names=names)
+    return root
+
+
 @dataclass(frozen=True)
 class BlenderOperation:
     job_id: str
@@ -429,11 +458,22 @@ class BlenderWorkerSupervisor:
                 raise RuntimeError("Idempotency ID reused for different Blender operation")
             raise RuntimeError("Blender job already registered; never rerun or overwrite an existing attempt")
         jobdir,script,script_args=self._validate(op)
+        windows_root=None
         if op.require_private_isolation:
-            from backend.nvp_worker_private_sandbox import private_os_preflight
-            private_os_preflight()
-        self.probe(strict_linux_cgroup=op.require_linux_cgroup_v2,
-                   memory_limit_mb=op.memory_limit_mb)
+            if sys.platform=="win32" and os.name=="nt":
+                windows_root=_windows_private_blender_code_root(
+                    self.binary,jobdir,op.script,op.inputs)
+            else:
+                from backend.nvp_worker_private_sandbox import private_os_preflight
+                private_os_preflight()
+        if windows_root is not None:
+            # Never execute even a version probe of native Blender outside
+            # the actual lowbox; the verified worker audit supplies version.
+            if sha_file(self.binary)!=self.binary_sha256:
+                raise RuntimeError("Pinned private Blender executable changed")
+        else:
+            self.probe(strict_linux_cgroup=op.require_linux_cgroup_v2,
+                       memory_limit_mb=op.memory_limit_mb)
         with self._lock,self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             exists=db.execute("SELECT spec_sha256,state FROM worker_jobs WHERE job_id=?",(op.job_id,)).fetchone()
@@ -466,10 +506,28 @@ class BlenderWorkerSupervisor:
             self._running[op.job_id]=token
         try:
             with log.open("wb") as stdout, err.open("wb") as stderr:
-                proc=launch_contained(command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
-                                      memory_mb=op.memory_limit_mb,
-                                      linux_cgroup_tree_required=op.require_linux_cgroup_v2,
-                                      private_isolation_required=op.require_private_isolation)
+                if windows_root is not None:
+                    # A Windows Job alone is NOT private file/network isolation.
+                    # Use the existing G03 no-capability AppContainer, bound to
+                    # W1-G's shared release slot, source journal and kernel Job.
+                    with open(os.devnull,"rb") as worker_stdin:
+                        proc=launch_contained(
+                            command,cwd=str(jobdir),stdin=worker_stdin,
+                            stdout=stdout,stderr=stderr,
+                            memory_mb=op.memory_limit_mb,
+                            linux_cgroup_tree_required=False,
+                            private_isolation_required=False,
+                            windows_appcontainer_required=True,
+                            appcontainer_code_roots=(str(windows_root),))
+                    if getattr(proc,"sandbox_identity",None)!=(
+                            "windows-appcontainer-with-zero-network-capabilities"):
+                        raise RuntimeError("Native private Blender lacks proved Windows AppContainer identity")
+                else:
+                    proc=launch_contained(
+                        command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
+                        memory_mb=op.memory_limit_mb,
+                        linux_cgroup_tree_required=op.require_linux_cgroup_v2,
+                        private_isolation_required=op.require_private_isolation)
                 self._transition(op.job_id,"RUNNING",worker_pid=proc.pid)
                 if self.activity is not None:
                     self.activity.update(self._activity_id(op.job_id),

@@ -54,6 +54,7 @@ on:
       - 'tests/test_nvp_conv06_original_architecture_cells.py'
       - 'tools/nvp_prod06c_fixture.py'
       - 'backend/nvp_blender_worker.py'
+      - 'tests/test_nvp_blender_windows_private_contract.py'
       - 'backend/nvp_usd_film01i_ninecam_take.py'
       - 'backend/nvp_usd_film01o_original_camera_roll_source.py'
       - 'backend/nvp_usd_film01p_source_multicam_edl.py'
@@ -92,7 +93,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025]
+        # Owner suspended Linux NVP development and acceptance (2026-11-16).
+        # Preserve Linux source/tests; restore host validation only by owner order.
+        os: [windows-2025]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -165,6 +168,8 @@ jobs:
             # Protected 90x8 worker authority, source pinning, cancellation,
             # interruption and retry refusals; not a fake Cycles acceptance.
             test_nvp_usd_film01q_protected_native_host.py
+            # Windows-only AppContainer bridge source policy and no-fallback.
+            test_nvp_blender_windows_private_contract.py
             test_nvp_conv11_worker_receipt_reopen_native.py
             test_nvp_openusd_shot_overrides_native.py
             test_nvp_p1f_multishot_recovery.py
