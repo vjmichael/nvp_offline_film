@@ -78,6 +78,8 @@ on:
       - 'backend/nvp_p2_longform_source_plan.py'
       - 'backend/nvp_openusd_shot_overrides.py'
       - 'tests/test_nvp_convergence_camera_reel_native.py'
+      - 'backend/nvp_wo3_*.py'
+      - 'tests/test_nvp_wo3_*.py'
       - '.github/workflows/nvp-conv06-film03-camfx-original-native.yml'
   workflow_dispatch:
 permissions:
@@ -175,6 +177,13 @@ jobs:
             test_nvp_p1f_multishot_recovery.py
             test_nvp_p1def_p2_native.py
             test_rig_motion.py
+            # Historical WO3 source restoration; not native codec acceptance.
+            test_nvp_wo3_dcp_structure.py
+            test_nvp_wo3_codec_bundle_provenance.py
+            test_nvp_wo3_atomic_publish.py
+            test_nvp_wo3_export_recovery.py
+            test_nvp_wo3_crash_publish_process.py
+            test_nvp_wo3_j2k_header_contract.py
           )
           for f in "${files[@]}"; do
             test -f "tests/$f" || { echo "::error::Missing original CONV-06 source test: $f"; exit 1; }
