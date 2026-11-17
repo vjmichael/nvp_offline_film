@@ -146,7 +146,8 @@ def run():
                 "apply_unit_conversion_scale","set_frame_range"):
         if key in props:opts[key]=True
     if "merge_parent_xform" in props:opts["merge_parent_xform"]=False
-    bpy.ops.wm.usd_import(**opts)
+    if bpy.ops.wm.usd_import(**opts)!={"FINISHED"}:
+        raise RuntimeError("Native USD import did not finish")
     scene=bpy.context.scene
     scene.frame_start=1
     scene.frame_end=720
@@ -200,8 +201,9 @@ def run():
         scene.frame_set(i+1)
         bpy.context.view_layer.update()
         position=[float(camera.matrix_world.translation[k]) for k in range(3)]
-        if any(abs(a-b)>.01 for a,b in zip(
-                position,frame["source_camera_position_m"])):
+        if not all(math.isfinite(a) and math.isfinite(b) and
+                   abs(a-b)<=.01 for a,b in zip(
+                       position,frame["source_camera_position_m"])):
             raise RuntimeError("Original virtual viewpoint motion changed")
         original_actors=original["original_actor_positions"]
         for actor in original_actors:
@@ -211,7 +213,8 @@ def run():
             if len(found)!=1:
                 raise RuntimeError("Original ActorID not imported uniquely")
             pos=[float(found[0].matrix_world.translation[k]) for k in range(3)]
-            if any(abs(a-b)>.01 for a,b in zip(pos,actor["position_m"])):
+            if not all(math.isfinite(a) and math.isfinite(b) and
+                       abs(a-b)<=.01 for a,b in zip(pos,actor["position_m"])):
                 raise RuntimeError("Blender changed original performer at EDL frame")
         scene.camera=camera
         name=f"frame_{i:04d}.png"
@@ -223,7 +226,8 @@ def run():
             if (frame["camera_ray_exclusions"] and
                 masked["masked_mesh_object_count"]==0):
                 raise RuntimeError("Requested wall-primary-ray mask did not apply")
-            bpy.ops.render.render(write_still=True)
+            if bpy.ops.render.render(write_still=True)!={"FINISHED"}:
+                raise RuntimeError("Native Cycles frame render did not finish")
         _plain_entry(picture)
         if picture.stat().st_size<100:
             raise RuntimeError("Native original-source selected view pixel missing")

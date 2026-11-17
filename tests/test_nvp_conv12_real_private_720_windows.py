@@ -22,7 +22,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from backend.nvp_blender_worker import BlenderOperation, BlenderWorkerSupervisor,sha_file
+from backend.nvp_blender_worker import (
+    BlenderOperation, BlenderWorkerSupervisor,sha_file,canonical_blender_version)
 from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
 from backend.nvp_usd_film01p_source_multicam_edl import even_camera_coverage_edl
 from backend.nvp_usd_film01q_selected_view_edit import OriginalSelectedViewEdit
@@ -162,9 +163,7 @@ class RealProtectedSelected720Windows(unittest.TestCase):
             # Version query is performed before creating any derived film source.
             probe=subprocess.run([str(binary),"-b","--version"],
                 capture_output=True,text=True,timeout=35,check=True)
-            cls.version=probe.stdout.splitlines()[0]
-            if not cls.version.startswith("Blender "):
-                raise RuntimeError("Genuine installed Blender version unavailable")
+            cls.version=canonical_blender_version(probe.stdout)
             cls.binary=binary
             cls.binary_sha=sha_file(binary)
             cls.worker_root=cls.fixture.root/"conv12_windows_private_workers"

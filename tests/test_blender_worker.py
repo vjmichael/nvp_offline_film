@@ -16,7 +16,8 @@ import time
 import unittest
 
 from backend.nvp_blender_worker import (
-    BlenderOperation, BlenderWorkerSupervisor, sha_file,
+    BlenderOperation, BlenderWorkerSupervisor, sha_file, _safe_relative,
+    canonical_blender_version,
 )
 
 
@@ -145,6 +146,61 @@ class BlenderWorkerTests(unittest.TestCase):
         self.assertIn("orphan cleanup not proven",status["error"])
         with self.assertRaisesRegex(RuntimeError,"No successfully verified"):
             recovered.verify_completed(op.job_id)
+
+    def test_exact_blender_version_banner_matches_api_not_build_suffix(self):
+        transcript=("Blender 5.3.0 (hash 02f0899d78e3 built 2026-11-10 01:33:43)\n"
+                    "Blender 5.3.0\n\tbuild date: 2026-11-10\n")
+        self.assertEqual(canonical_blender_version(transcript),"Blender 5.3.0")
+        self.assertEqual(canonical_blender_version(transcript.splitlines()[0]),"Blender 5.3.0")
+        self.assertEqual(canonical_blender_version("Blender 5.3.0"),"Blender 5.3.0")
+        for text in ("Blender 5.3.0\nBlender 5.2.3", "Blender 5.3.0 fabricated",
+                     ""):
+            with self.subTest(text=text),self.assertRaises(RuntimeError):
+                canonical_blender_version(text)
+
+    def test_prepared_crash_is_interrupted_not_replayable(self):
+        op=self.job("prepared_crash")
+        with patch.object(self.sup,"probe",return_value={}),patch(
+                "backend.nvp_blender_worker.launch_contained",side_effect=self.simulated_worker):
+            self.assertEqual(self.sup.run(op)["state"],"SUCCEEDED")
+        self.sup._transition(op.job_id,"PREPARED")
+        reopened=self.make_supervisor()
+        self.assertEqual(reopened.recover_interrupted(),[op.job_id])
+        self.assertEqual(reopened.inspect(op.job_id)["state"],"INTERRUPTED")
+        with self.assertRaisesRegex(RuntimeError,"already registered"):
+            reopened.run(op)
+
+    def test_custody_is_closed_before_output_validation(self):
+        op=self.job("close_before_audit")
+        owner=self
+        class ClosingProc(MockProc):
+            def close(self):
+                # A remaining writer that is reaped by close must not be
+                # able to mutate the output after its accepted hash.
+                (owner.root/op.job_id/"result.json").write_text(
+                    '{"passed":false}',"utf8")
+        def worker(cmd,**kwargs):
+            self.simulated_worker(cmd,**kwargs)
+            return ClosingProc()
+        with patch.object(self.sup,"probe",return_value={}),patch(
+                "backend.nvp_blender_worker.launch_contained",side_effect=worker):
+            result=self.sup.run(op)
+        self.assertEqual(result["state"],"FAILED")
+        self.assertIsNone(result["outputs"])
+        self.assertIn("passed=true",result["error"])
+
+    def test_reparse_and_alternate_stream_paths_refused(self):
+        from types import SimpleNamespace
+        import stat
+        op=self.job("reparse")
+        root=self.root/op.job_id
+        for name in ("source.json:alternate","..",""):
+            with self.subTest(name=name),self.assertRaises(ValueError):
+                _safe_relative(root,name)
+        with patch.object(Path,"lstat",return_value=SimpleNamespace(
+                st_mode=stat.S_IFDIR,st_file_attributes=0x400)):
+            with self.assertRaisesRegex(ValueError,"reparse"):
+                _safe_relative(root,"source.json")
 
     def test_invalid_worker_outputs_fail_closed(self):
         op=self.job("broken_output")

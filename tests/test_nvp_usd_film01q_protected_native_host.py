@@ -151,6 +151,39 @@ class ProtectedSelectedChunkContract(unittest.TestCase):
         self.assertEqual(self.supervisor.cancelled,
             chunk_job_id("a"*64,0,1,"f"*64))
 
+    def test_gather_uses_verified_snapshot_not_mutated_audit(self):
+        # Simulate a mutation after independent verification, not native pixels.
+        # The gather path must use only already verified snapshot rows.
+        from backend.nvp_usd_film01q_selected_view_host import FRAMES, CHUNK
+        root=self.supervisor.root
+        planned=self.host.source_plan()[2]
+        planned["plan"]["render_profile"]["name"]="technical_smoke"
+        rows=[]
+        for start in range(0,FRAMES,CHUNK):
+            ident=chunk_job_id("a"*64,start,1,"f"*64)
+            job=root/ident
+            job.mkdir()
+            per_chunk=[]
+            for i in range(start,start+CHUNK):
+                name=f"frame_{i:04d}.png"
+                data=f"synthetic-copy-contract-{i}".encode()
+                (job/name).write_bytes(data)
+                per_chunk.append({"frame":i,"rendered_png_file":name,
+                    "rendered_png_sha256":sha256(data).hexdigest()})
+            # Malicious second-read would try a different path.
+            (job/"audit.json").write_bytes(canonical(
+                {"selected_view_frames":[{"rendered_png_file":"../outside"}]}))
+            rows.append({"job_id":ident,"verified_receipt_rows":per_chunk})
+        def verified(*args,**kwargs):
+            self.assertTrue(kwargs["include_receipt"])
+            return rows[args[-2]//CHUNK]
+        self.host._verify_completed=verified
+        target=root/"gathered"
+        result=self.host.gather("project1","edit1",revision=1,
+                               output_directory=target,director_event="reviewed")
+        self.assertEqual(result["native_verified_frames"],FRAMES)
+        self.assertEqual(len(list(target.glob("frame_????.png"))),FRAMES)
+
     def test_unverified_worker_receipt_not_accepted(self):
         self.supervisor.verify_completed=lambda *_: (_ for _ in ()).throw(
             RuntimeError("No successfully verified worker output"))

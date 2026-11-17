@@ -15,7 +15,7 @@ from pathlib import Path
 import shutil
 
 from backend.nvp_blender_worker import (
-    BlenderOperation,BlenderWorkerSupervisor,sha_file)
+    BlenderOperation,BlenderWorkerSupervisor,sha_file,canonical_blender_version)
 from backend.nvp_film_index import FilmIndex,_id
 from backend.nvp_usd_film01r_quality import reviewed_quality,quality_hash
 from backend.nvp_usd_film01q_protected_source import ProtectedOriginalSelectedSource
@@ -100,7 +100,7 @@ class ReviewedSelectedViewFilm:
             "attempt":attempt}
 
     def _verify_completed(self,job_id,source_dir,source,planned,
-                          start,attempt):
+                          start,attempt,*,include_receipt=False):
         state=self.supervisor.verify_completed(job_id)
         job=self.supervisor.root/job_id
         if job.is_symlink() or any((job/name).is_symlink() for name in
@@ -126,9 +126,15 @@ class ReviewedSelectedViewFilm:
             file_sha(job/QUALITY_HELPER)!=file_sha(
                 Path(__file__).resolve().parent/QUALITY_HELPER)):
             raise PermissionError("Original source/native worker script was replaced")
-        receipt=json.loads((job/AUDIT).read_text("utf8"))
+        # Bind the exact subsequently used audit bytes to the independently
+        # verified durable worker output, not to a second mutable read.
+        audit_bytes=(job/AUDIT).read_bytes()
+        outputs=state["outputs"]
+        if sha256(audit_bytes).hexdigest()!=outputs[AUDIT]["sha256"]:
+            raise RuntimeError("Native audit changed after supervisor verification")
+        receipt=json.loads(audit_bytes)
         fields={
-            "format":AUDIT_FORMAT,"passed":True,
+            "format":AUDIT_FORMAT,
             "source_manifest_sha256":spec["source_manifest_sha256"],
             "source_usd_sha256":spec["original_usd_sha256"],
             "plan_sha256":spec["plan_sha256"],
@@ -143,10 +149,21 @@ class ReviewedSelectedViewFilm:
             "render_resolution_y":planned["plan"]["render_profile"]["resolution_y"],
             "render_samples":planned["plan"]["render_profile"]["samples"],
             "attempt":attempt,"native_rendered_frames":CHUNK,
-            "native_blender_version":self.supervisor.blender_version.removeprefix("Blender "),
-            "passed":True}
-        if any(receipt.get(k)!=v for k,v in fields.items()):
-            raise RuntimeError("Native edited film audit does not match source plan")
+            "native_blender_version":canonical_blender_version(
+                self.supervisor.blender_version).removeprefix("Blender "),
+            "passed":True,
+            "full_original_camera_rolls_rendered":False,
+            "director_picture_reviewed":False}
+        mismatches=[k for k,v in fields.items() if receipt.get(k)!=v]
+        for key,expected in (("passed",True),
+                             ("full_original_camera_rolls_rendered",False),
+                             ("director_picture_reviewed",False)):
+            if receipt.get(key) is not expected and key not in mismatches:
+                mismatches.append(key)
+        if mismatches:
+            # Names only: useful diagnosis without exposing creator source.
+            raise RuntimeError("Native edited film audit does not match source plan: "+
+                               ", ".join(mismatches))
         rows=receipt.get("selected_view_frames")
         if type(rows) is not list or len(rows)!=CHUNK:
             raise RuntimeError("Native cycles outputs do not cover selected eight frames")
@@ -165,6 +182,7 @@ class ReviewedSelectedViewFilm:
                 row.get("primary_ray_excluded_prims")!=frame[
                     "camera_ray_exclusions"] or
                 row.get("rendered_png_file")!=filename or
+                row.get("rendered_png_sha256")!=outputs[filename]["sha256"] or
                 row.get("rendered_png_sha256")!=file_sha(picture) or
                 row.get("actual_blender_cycles_pixels") is not True or
                 row.get("original_actors_and_camera_position_reverified") is not True or
@@ -182,7 +200,8 @@ class ReviewedSelectedViewFilm:
             "native_selected_views_rendered":CHUNK,
             "camera_ids":[x["camera_id"] for x in planned[
                 "plan"]["frames"][start:start+CHUNK]],
-            "journal_state":state["state"]}
+            "journal_state":state["state"],
+            **({"verified_receipt_rows":rows} if include_receipt else {})}
 
     def run_chunk(self,pid,edit_id,*,revision,start,attempt=1,
                   director_event,native_execution_event):
@@ -378,7 +397,8 @@ class ReviewedSelectedViewFilm:
                 planned["plan"]["edit_document_sha256"],start,attempt,
                 planned["plan"]["render_profile_sha256"])
             checked.append(self._verify_completed(
-                ident,source_dir,source,planned,start,attempt))
+                ident,source_dir,source,planned,start,attempt,
+                include_receipt=True))
         directory=Path(output_directory)
         approval={
             "operation":"nvp.film01q.export_verified_source_selected_picture.v1",
@@ -396,10 +416,12 @@ class ReviewedSelectedViewFilm:
         try:
             for chunk in checked:
                 job=self.supervisor.root/chunk["job_id"]
-                audit=json.loads((job/AUDIT).read_text("utf8"))
-                for frame in audit["selected_view_frames"]:
+                for frame in chunk["verified_receipt_rows"]:
                     file=frame["rendered_png_file"]
-                    shutil.copyfile(job/file,directory/file)
+                    # Exact names and hashes already bound to journal and
+                    # immutable plan, not a late mutable receipt read.
+                    with (job/file).open("rb") as inp, (directory/file).open("xb") as out:
+                        shutil.copyfileobj(inp,out)
                     if file_sha(directory/file)!=frame["rendered_png_sha256"]:
                         raise RuntimeError("Selected original frame changed while gathering")
                     receipt.append({**frame,

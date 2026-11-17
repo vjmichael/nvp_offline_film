@@ -20,6 +20,7 @@ import os
 import re
 import signal
 import sqlite3
+import stat
 import subprocess
 from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
 import sys
@@ -38,6 +39,30 @@ ALLOWED_ARGS = frozenset({"--output","--manifest","--audit","--render","--take",
 TERMINAL = frozenset({"SUCCEEDED","FAILED","CANCELLED","TIMED_OUT","INTERRUPTED"})
 
 
+def canonical_blender_version(stdout: str) -> str:
+    """Normalize only Blender's recognized version/build banner.
+
+    Blender 5.3 may emit both a decorated startup banner and the ordinary
+    --version line. The worker Python API reports only the version. Require
+    every recognized banner to agree; the executable SHA remains independent.
+    """
+    versions=set()
+    for line in stdout.splitlines():
+        candidate=line.strip()
+        if not candidate.startswith("Blender "):
+            continue
+        match=re.fullmatch(
+            r"(Blender \d+\.\d+\.\d+(?: (?:Alpha|Beta|Release Candidate))?)"
+            r"(?: \(hash [0-9a-fA-F]{7,64} built [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\))?",
+            candidate)
+        if match is None:
+            raise RuntimeError("Unrecognized pinned Blender version banner")
+        versions.add(match.group(1))
+    if len(versions)!=1:
+        raise RuntimeError("Missing or inconsistent pinned Blender version banner")
+    return versions.pop()
+
+
 def sha_file(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as handle:
@@ -46,13 +71,31 @@ def sha_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _reject_link_entry(path: Path):
+    """Reject symlinks and all Windows reparse entries, including junctions."""
+    try:
+        info=path.lstat()
+    except FileNotFoundError:
+        return
+    if (stat.S_ISLNK(info.st_mode) or
+        getattr(info,"st_file_attributes",0)&
+            getattr(stat,"FILE_ATTRIBUTE_REPARSE_POINT",0x400)):
+        raise ValueError("Worker file or directory is symlinked or reparse-linked")
+
+
 def _safe_relative(root: Path, name: str, *, must_exist: bool = False) -> Path:
     if not isinstance(name,str) or not name or len(name)>240 or "\x00" in name:
         raise ValueError("Invalid worker file name")
     raw=Path(name)
-    if raw.is_absolute() or any(p in ("..","") for p in raw.parts):
+    if (raw.is_absolute() or raw.drive or raw.root or not raw.parts or
+        any(p in ("..","") or ":" in p for p in raw.parts)):
         raise ValueError("Worker file must be relative to its approved job directory")
-    resolved=(root/raw).resolve()
+    _reject_link_entry(root)
+    path=root
+    for piece in raw.parts:
+        path=path/piece
+        _reject_link_entry(path)
+    resolved=path.resolve()
     if not resolved.is_relative_to(root):
         raise ValueError("Worker file escapes approved directory through symlink")
     if must_exist and (not resolved.is_file() or (root/raw).is_symlink()):
@@ -210,7 +253,11 @@ class BlenderWorkerSupervisor:
         if hashlib.sha256(row[0].encode()).hexdigest()!=status["spec_sha256"]:
             raise RuntimeError("Worker job specification changed")
         spec=BlenderOperation(**json.loads(row[0]))
-        jobdir=(self.root/job_id).resolve()
+        jobdir=self.root/job_id
+        _reject_link_entry(jobdir)
+        jobdir=jobdir.resolve(strict=True)
+        if jobdir.parent!=self.root:
+            raise PermissionError("Recovered worker directory escaped its supervisor")
         self._check_inputs(spec,jobdir)
         fresh=self._audit_outputs(spec,jobdir)
         if fresh!=status["outputs"]:
@@ -291,10 +338,11 @@ class BlenderWorkerSupervisor:
             not 1<=len(op.outputs)<=12 or len(op.inputs)>32):
             raise ValueError("Invalid bounded Blender job inputs or outputs")
         jobdir=self.root/op.job_id
-        if jobdir.is_symlink():
-            raise ValueError("Worker job directory is a symlink")
+        _reject_link_entry(jobdir)
         jobdir.mkdir(exist_ok=True)
-        jobdir=jobdir.resolve()
+        jobdir=jobdir.resolve(strict=True)
+        if jobdir.parent!=self.root:
+            raise PermissionError("Worker job directory escaped its supervisor")
         # Source and script are immutable during process execution.
         script=_safe_relative(jobdir,op.script,must_exist=True)
         if sha_file(script)!=op.script_sha256:
@@ -382,10 +430,10 @@ class BlenderWorkerSupervisor:
     def cancel(self, job_id: str):
         with self._lock:
             token=self._running.get(job_id)
-        if token is None:
-            return False
-        token.set()
-        return True
+            if token is None or self.inspect(job_id)["state"] in TERMINAL:
+                return False
+            token.set()
+            return True
 
     @exclusive_worker_host
     def recover_interrupted(self):
@@ -399,7 +447,7 @@ class BlenderWorkerSupervisor:
             if self._running:
                 raise RuntimeError("Cannot recover while this supervisor owns live processes")
             with self._connect() as db:
-                records=db.execute("SELECT job_id FROM worker_jobs WHERE state IN ('RUNNING','CANCEL_REQUESTED')").fetchall()
+                records=db.execute("SELECT job_id FROM worker_jobs WHERE state IN ('PREPARED','RUNNING','CANCEL_REQUESTED')").fetchall()
             for (job_id,) in records:
                 self._transition(job_id,"INTERRUPTED",
                     error="Host restarted while worker running; output is untrusted; orphan cleanup not proven")
@@ -502,10 +550,19 @@ class BlenderWorkerSupervisor:
         command+=["-t","2","--python-exit-code","70","--python",str(script),"--"]+script_args
         token=threading.Event()
         proc=None
+        close_attempted=False
+
+        def close_native():
+            nonlocal close_attempted
+            if proc is not None and not close_attempted:
+                close_attempted=True
+                if hasattr(proc,"close"):
+                    proc.close()
+
         with self._lock:
             self._running[op.job_id]=token
         try:
-            with log.open("wb") as stdout, err.open("wb") as stderr:
+            with log.open("xb") as stdout, err.open("xb") as stderr:
                 if windows_root is not None:
                     # A Windows Job alone is NOT private file/network isolation.
                     # Use the existing G03 no-capability AppContainer, bound to
@@ -540,11 +597,13 @@ class BlenderWorkerSupervisor:
                     if token.is_set():
                         self._transition(op.job_id,"CANCEL_REQUESTED")
                         self._terminate_tree(proc)
+                        close_native()
                         self._transition(op.job_id,"CANCELLED",exit_code=proc.returncode,
                                          error="Explicit creator/host cancellation")
                         return self.inspect(op.job_id)
                     if time.monotonic()-started>op.timeout_seconds:
                         self._terminate_tree(proc)
+                        close_native()
                         self._transition(op.job_id,"TIMED_OUT",exit_code=proc.returncode,
                                          error="Pinned Blender operation exceeded time budget")
                         return self.inspect(op.job_id)
@@ -555,6 +614,7 @@ class BlenderWorkerSupervisor:
                         pressure_count=pressure_count+1 if critical else 0
                         if pressure_count>=2:
                             self._terminate_tree(proc)
+                            close_native()
                             self._transition(op.job_id,"CANCELLED",
                                 exit_code=proc.returncode,
                                 error=critical+"; NVP released its managed worker")
@@ -562,6 +622,9 @@ class BlenderWorkerSupervisor:
                     time.sleep(.1)
                     self._transition(op.job_id,"RUNNING",progress=log.stat().st_size)
                 rc=proc.wait(timeout=10)
+                # Prove descendant cleanup before any file audit or terminal
+                # cancellation/success. Primary-process exit is insufficient.
+                close_native()
                 if token.is_set():
                     self._transition(op.job_id,"CANCELLED",exit_code=rc,
                                      error="Cancellation requested before output acceptance")
@@ -573,18 +636,17 @@ class BlenderWorkerSupervisor:
                         "Rechecking source hashes, output media and native worker cleanup")
                 self._check_inputs(op,jobdir)
                 audited=self._audit_outputs(op,jobdir)
-                # Before writing a durable success record, require *all*
-                # backend containment handles to close/verify cleanup.
-                # Linux cgroups kill detached descendants; Windows closing
-                # a kill-on-close Job Object also reaps any grandchildren.
-                if hasattr(proc,"close"):
-                    proc.close()
-                self._transition(op.job_id,"SUCCEEDED",exit_code=0,outputs=audited,
-                                 progress=log.stat().st_size)
-                return self.inspect(op.job_id)
+                with self._lock:
+                    if token.is_set():
+                        self._transition(op.job_id,"CANCELLED",exit_code=rc,
+                                         error="Cancellation requested during output verification")
+                    else:
+                        self._transition(op.job_id,"SUCCEEDED",exit_code=0,outputs=audited,
+                                         progress=log.stat().st_size)
+                    return self.inspect(op.job_id)
         except Exception as exc:
             cleanup_error=None
-            if proc is not None:
+            if proc is not None and not close_attempted:
                 try:
                     if proc.poll() is None:
                         self._terminate_tree(proc)
@@ -595,6 +657,11 @@ class BlenderWorkerSupervisor:
                         self._terminate_tree(proc)
                     except Exception as final_cleanup_exc:
                         cleanup_error=type(final_cleanup_exc).__name__+": "+str(final_cleanup_exc)
+            try:
+                close_native()
+            except Exception as close_exc:
+                detail=type(close_exc).__name__+": "+str(close_exc)
+                cleanup_error=(cleanup_error+"; " if cleanup_error else "")+detail
             failure=type(exc).__name__+": "+str(exc)
             if cleanup_error:
                 failure+="; OS containment cleanup unproven: "+cleanup_error
@@ -603,16 +670,10 @@ class BlenderWorkerSupervisor:
                 error=failure[:2000])
             return self.inspect(op.job_id)
         finally:
-            if proc is not None and hasattr(proc,"close"):
-                try:
-                    proc.close()
-                except Exception as close_exc:
-                    # Fail closed if handle/guardian cleanup fails *after* a
-                    # result was recorded. Never leave SUCCEEDED authoritative.
-                    current=self.inspect(op.job_id)
-                    if current["state"]=="SUCCEEDED":
-                        self._transition(op.job_id,"FAILED",
-                            error="OS containment final close failed: "+
-                            type(close_exc).__name__+": "+str(close_exc))
-            with self._lock:
-                self._running.pop(op.job_id,None)
+            try:
+                # BaseException paths also release kernel custody. No double
+                # close: some native wrappers invalidate their owner handle.
+                close_native()
+            finally:
+                with self._lock:
+                    self._running.pop(op.job_id,None)
