@@ -8,6 +8,10 @@ on:
       - 'backend/nvp_production_*.py'
       - 'tests/test_nvp_production_*.py'
       - 'tests/test_nvp_wo4_*.py'
+      - 'backend/nvp_wo5_*.py'
+      - 'tests/test_nvp_wo5_*.py'
+      - 'backend/nvp_wo3_native_codecs.py'
+      - 'tests/test_nvp_wo3_protected_contract.py'
       - 'backend/nvp_film_index.py'
       - 'backend/nvp_openusd_take.py'
       - 'backend/nvp_w1g_encrypted_source.py'
@@ -19,6 +23,10 @@ on:
       - 'backend/nvp_production_*.py'
       - 'tests/test_nvp_production_*.py'
       - 'tests/test_nvp_wo4_*.py'
+      - 'backend/nvp_wo5_*.py'
+      - 'tests/test_nvp_wo5_*.py'
+      - 'backend/nvp_wo3_native_codecs.py'
+      - 'tests/test_nvp_wo3_protected_contract.py'
       - '.github/workflows/nvp-wo4-native-mastering.yml'
 permissions:
   contents: read
@@ -62,10 +70,12 @@ jobs:
           }
           python -m unittest discover -s tests -p test_nvp_wo4_native_bundle.py -v
           if ($LASTEXITCODE -ne 0) { throw 'WO4 native bundle inventory failed' }
-          foreach ($f in @('original_short','original_feature','codec_binding')) {
+          foreach ($f in @('original_short','original_feature','codec_binding','finished_playback')) {
             python -m unittest discover -s tests -p ("test_nvp_wo5_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO5 source custody suite failed: $f" }
           }
+          python -m unittest discover -s tests -p test_nvp_wo3_protected_contract.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Protected playback command denial failed' }
           python tools/nvp_no_ffmpeg_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }

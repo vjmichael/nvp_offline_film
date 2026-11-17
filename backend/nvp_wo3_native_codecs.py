@@ -56,6 +56,24 @@ def _sha(value):
     return value
 
 
+def _playback_range(args):
+    """Exact bounded historical CineCert range grammar, fixed staged names."""
+    a=list(args)
+    def integer(value):
+        return (type(value) is str and bool(re.fullmatch(r"0|[1-9][0-9]{0,3}",value)))
+    if (len(a) not in (6,8) or a[0]!="-f" or a[2]!="-d" or
+            not integer(a[1]) or not integer(a[3])):
+        return None
+    first,count=int(a[1]),int(a[3])
+    if not 0<=first<7200 or first+count>7200:
+        return None
+    if len(a)==8 and a[4:]==["-b",str(16*1024*1024),"picture.mxf","p_"] and 1<=count<=4:
+        return "picture.mxf",first,count
+    if len(a)==6 and a[4:]==["sound.mxf","audio"] and 1<=count<=24:
+        return "sound.mxf",first,count
+    return None
+
+
 def _approved_arguments(product,args):
     """Finite original WO3 CLI grammars, not an arbitrary codec command API."""
     if (type(args) not in (list,tuple) or
@@ -85,8 +103,9 @@ def _approved_arguments(product,args):
                a[3:6]==["-p","24","-d"] and count(a[6]) and
                a[7:] in (["source_j2c","picture.mxf"],["source.wav","sound.mxf"]))
     elif product=="ASDCP-asdcp_unwrap":
-        valid=(len(a)==4 and a[0]=="-d" and count(a[1]) and
-               a[2:] in (["picture.mxf","p_"],["sound.mxf","audio"]))
+        valid=((len(a)==4 and a[0]=="-d" and count(a[1]) and
+               a[2:] in (["picture.mxf","p_"],["sound.mxf","audio"])) or
+               _playback_range(a) is not None)
     if not valid:
         raise PermissionError("Only finite historical WO3 codec arguments")
     return a
@@ -153,14 +172,27 @@ class ProtectedCodecAuthority:
             raise PermissionError("Codec is not in the reviewed installed roster")
 
     @contextmanager
-    def stage(self,source_sha):
+    def stage(self,source_sha,*,playback_inputs=None):
         source_sha=_sha(source_sha)
+        if playback_inputs is not None:
+            if (type(playback_inputs) is not dict or set(playback_inputs)!={"picture.mxf","sound.mxf","frames","picture_sha256"} or
+                type(playback_inputs["frames"]) is not int or not 3<=playback_inputs["frames"]<=7200):
+                raise PermissionError("Exact bounded approved playback inputs required")
+            if (type(playback_inputs["picture_sha256"]) not in (tuple,list) or
+                    len(playback_inputs["picture_sha256"])!=playback_inputs["frames"]):
+                raise PermissionError("Complete exact playback frame ledger required")
+            playback_inputs={"picture.mxf":_sha(playback_inputs["picture.mxf"]),
+                             "sound.mxf":_sha(playback_inputs["sound.mxf"]),
+                             "frames":playback_inputs["frames"],
+                             "picture_sha256":[_sha(x) for x in playback_inputs["picture_sha256"]]}
         job="wo3_"+secrets.token_hex(16)
         root=self.runtime/job
         scope={"operation":"nvp.wo3.protected_stage.v1","job_id":job,
                "project_id":self.project_id,"source_sha256":source_sha,
                "codec_manifest_sha256":self.pin}
-        if self.cancel() or self.approve_stage(dict(scope)) is not True:
+        if playback_inputs is not None:
+            scope["playback_inputs"]=playback_inputs
+        if self.cancel() or self.approve_stage(json.loads(json.dumps(scope))) is not True:
             raise PermissionError("Independent source staging approval refused")
         root.mkdir(mode=0o700)
         require_efs_stage(root)
@@ -245,6 +277,19 @@ class ProtectedCodecAuthority:
                 if self._stages.get(root)!=registration:
                     raise PermissionError("Codec staging authority expired")
             before=self._snapshot(root)
+            selected=_playback_range(args) if codec.product=="ASDCP-asdcp_unwrap" else None
+            sealed=scope.get("playback_inputs")
+            if selected is not None and (sealed is None or selected[1]+selected[2]>sealed["frames"]):
+                raise PermissionError("Bounded seek needs live exact indexed playback scope")
+            if sealed is not None:
+                if (any(before.get(name)!=sealed[name] for name in ("picture.mxf","sound.mxf")) or
+                    (selected is None and codec.product!="OpenJPEG-opj_decompress")):
+                    raise PermissionError("Sealed playback inputs changed or operation not read-only")
+                if codec.product=="OpenJPEG-opj_decompress":
+                    match=re.fullmatch(r"p_([0-9]{6})\.j2c",args[1])
+                    if (match is None or int(match[1])>=sealed["frames"] or
+                        before.get(args[1])!=sealed["picture_sha256"][int(match[1])]):
+                        raise PermissionError("Playback decode input differs from indexed frame")
             # Reject output collisions before any native write, including
             # conservative case-insensitive names on Windows.
             names={name.casefold() for name in before}
@@ -253,7 +298,8 @@ class ProtectedCodecAuthority:
             elif codec.product=="ASDCP-asdcp_wrap":
                 expected={args[-1]}
             elif codec.product=="ASDCP-asdcp_unwrap":
-                expected=({"p_%06d.j2c"%i for i in range(int(args[1]))}
+                first,count=(selected[1],selected[2]) if selected is not None else (0,int(args[1]))
+                expected=({"p_%06d.j2c"%i for i in range(first,first+count)}
                           if args[-1]=="p_" else {"audio"})
             else:
                 expected=set()
@@ -309,6 +355,10 @@ class ProtectedCodecAuthority:
             after=self._snapshot(root)
             if any(after.get(name)!=value for name,value in before.items()):
                 raise RuntimeError("Native codec mutated sealed inputs")
+            if selected is not None and selected[0]=="picture.mxf" and any(
+                after.get("p_%06d.j2c"%n)!=sealed["picture_sha256"][n]
+                for n in range(selected[1],selected[1]+selected[2])):
+                raise PermissionError("Unwrapped native picture differs from indexed frame ledger")
             if set(after)-set(before)!=expected|{out.name,err.name}:
                 raise RuntimeError("Native codec omitted or added unapproved stage outputs")
             if max(out.stat().st_size,err.stat().st_size)>MAX_LOG_BYTES:
@@ -342,11 +392,11 @@ class ApprovedCodecBinary:
             raise PermissionError("Native codec license-reviewed binary changed")
         return True
 
-    def stage(self,source_sha):
+    def stage(self,source_sha,*,playback_inputs=None):
         if not isinstance(self.authority,ProtectedCodecAuthority):
             raise PermissionError("Trusted protected codec authority required")
         self.authority.verify_codec(self)
-        return self.authority.stage(source_sha)
+        return self.authority.stage(source_sha,playback_inputs=playback_inputs)
 
     def run(self,args,*,cwd,timeout=MAX_PROCESS_SECONDS,include_stdout=False):
         self.check()

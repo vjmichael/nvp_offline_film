@@ -34,6 +34,7 @@ ENTRYPOINTS=(
     "backend/nvp_wo5_original_short.py",
     "backend/nvp_wo5_original_feature.py",
     "backend/nvp_wo5_codec_binding.py",
+    "backend/nvp_wo5_finished_playback.py",
     "backend/nvp_wo4_loudness_stream.py",
     "backend/nvp_wo4_master_delivery.py",
     "backend/nvp_wo4_picture_spool.py",

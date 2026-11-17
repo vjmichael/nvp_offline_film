@@ -32,6 +32,21 @@ class ProtectedWO3Contract(unittest.TestCase):
             with self.subTest(args=args),self.assertRaises(PermissionError):
                 _approved_arguments("OpenJPEG-opj_decompress",args)
 
+    def test_finished_playback_range_grammar_is_bounded_and_fixed(self):
+        role="ASDCP-asdcp_unwrap"
+        for args in (["-f","22","-d","4","-b","16777216","picture.mxf","p_"],
+                     ["-f","24","-d","2","sound.mxf","audio"]):
+            self.assertEqual(_approved_arguments(role,args),args)
+        for args in (["-f","0","-d","5","-b","16777216","picture.mxf","p_"],
+                     ["-f","7199","-d","2","sound.mxf","audio"],
+                     ["-f","00","-d","1","sound.mxf","audio"],
+                     ["-f","0","-d","25","sound.mxf","audio"],
+                     ["-f","0","-d","1","../sound.mxf","audio"],
+                     ["-f","0","-d","1","sound.mxf","other"],
+                     ["-f","0","-d","1","-b","99999999","picture.mxf","p_"]):
+            with self.subTest(args=args),self.assertRaises(PermissionError):
+                _approved_arguments(role,args)
+
     def test_hash_length_alone_is_not_sha(self):
         with self.assertRaises(PermissionError):
             _sha("g"*64)

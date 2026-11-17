@@ -20,6 +20,8 @@ from backend.nvp_wo4_feature_journal import FeatureJournal,ASSEMBLY_FORMAT
 from backend.nvp_wo5_original_short import inspect_indexed_reel,inspect_original_single_reel_readiness
 from backend.nvp_wo5_original_feature import inspect_indexed_feature,inspect_original_feature_readiness
 from backend.nvp_wo5_codec_binding import pinned_codec_pair
+from backend.nvp_wo5_finished_playback import FinishedFilmPlayer
+import base64
 from backend.nvp_wo4_pcm_stream import stream_master_pcm24_candidate
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
@@ -230,6 +232,64 @@ class NativePictureCheckpointRecovery(unittest.TestCase):
         self.assertEqual(len({h for r in full["reels"] for h in r["decoded_frame_sha256"]}),6)
         self.assertTrue(all(r["pcm24_48000_sample_exact"] for r in full["reels"]))
         self.assertFalse(full["production_dcp_accepted"])
+        def playback_factory(pid,cancel):
+            host=factory(pid,cancel)[0].authority
+            return pinned_codec_pair(bundle,manifest,host.pin,authority=host,project_id=pid,check_cancel=cancel)
+        approved=[False]
+        revoked=[False]
+        player=FinishedFilmPlayer(f.index,reopened,codec_factory=playback_factory,
+            native_window=lambda:True,ask_native=lambda scope:approved[0],host_revoked=lambda:revoked[0])
+        self.addCleanup(player.close)
+        self.assertEqual(player.begin(f.pid,fid)["status"],"DENIED")
+        approved[0]=True
+        opened=player.begin(f.pid,fid)
+        self.assertEqual(opened["frame_count"],6)
+        self.assertFalse(opened["continuous_real_time_playback_verified"])
+        ticket=opened["session_id"]
+        with self.assertRaises(PermissionError):
+            player.begin(f.pid,fid)
+        with self.assertRaises(PermissionError):
+            player.frame("wrong-ticket",0)
+        with self.assertRaises(ValueError):
+            player.frame(ticket,6)
+        first=player.window(ticket,0,2)
+        tail=player.window(ticket,2,4)
+        self.assertEqual(tail["frame_count"],1)
+        # Active reel input handle denies external writes; preview is not a
+        # plaintext scratch proxy or a mutable stat-only source binding.
+        with self.assertRaises((OSError,PermissionError)):
+            with (Path(published["destination"])/"picture_0000.mxf").open("r+b"):
+                pass
+        second=player.window(ticket,3,3)
+        selected=first["frames"]+tail["frames"]+second["frames"]
+        self.assertEqual([x["frame_index"] for x in selected],list(range(6)))
+        self.assertEqual([x["audio_start_sample"] for x in selected],[2000*i for i in range(6)])
+        self.assertEqual([x["decoded_xyz12_sha256"] for x in selected],
+                         [h for reel in full["reels"] for h in reel["decoded_frame_sha256"]])
+        self.assertEqual([x["source_pcm24_sha256"] for x in selected],
+                         [sha256(pcm[i*12000:(i+1)*12000]).hexdigest() for i in range(3)]+
+                         [sha256(pcm_b[i*12000:(i+1)*12000]).hexdigest() for i in range(3)])
+        self.assertTrue(all(base64.b64decode(x["picture_png_base64"]).startswith(b"\x89PNG\r\n\x1a\n")
+                            and len(base64.b64decode(x["stereo_pcm16_base64"]))==8000 for x in selected))
+        seek=player.frame(ticket,1)
+        self.assertEqual(seek["decoded_xyz12_sha256"],selected[1]["decoded_xyz12_sha256"])
+        self.assertEqual(player.stop(ticket)["status"],"STOPPED")
+        self.assertIsNone(player._active)
+        self.assertIsNone(player._pcm_cache)
+        with self.assertRaises(PermissionError):
+            player.frame(ticket,0)
+        single_review=player.begin(f.pid,uid,single_reel=True)
+        single_frame=player.frame(single_review["session_id"],2)
+        self.assertEqual(single_frame["decoded_xyz12_sha256"],selected[2]["decoded_xyz12_sha256"])
+        revoked[0]=True
+        with self.assertRaises(PermissionError):
+            player.frame(single_review["session_id"],0)
+        player.close()
+        self.assertIsNone(player._active)
+        print("WO5_PROTECTED_FINISHED_AV_PLAYBACK_PASS",{"frames":6,"reels":2,
+              "nonzero_range_seek":True,"pcm24_per_frame_sha_exact":True,
+              "independent_xyz12_matches":True,"single_reel":True,"native_write_denial":True,
+              "not_continuous_realtime_or_installed_playback":True},flush=True)
         print("WO4_PROTECTED_FEATURE_RESTART_PILOT",{"reels":2,"unique_decoded_frames":6,
             "first_checkpoint_reused":True,"full_pcm_exact":True,"indexed":True,
             "production_dcp_accepted":False},flush=True)
