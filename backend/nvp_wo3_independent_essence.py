@@ -19,13 +19,52 @@ import wave
 
 from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
 from backend.nvp_wo3_j2k_audit import inspect_j2k_header,PROFILES
-from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,common_codec_authority,_sha,MAX_STAGE_BYTES
+from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,common_codec_authority,_sha as _validate_sha256,MAX_STAGE_BYTES
 from backend.nvp_wo3_dcp_structure import _asset_file,_linked_entry
 
 FORMAT="nvp.wo3.native_full_essence_roundtrip.v1"
 MAX_REEL_FRAMES=7200
 
-def _sha(blob):return hashlib.sha256(blob).hexdigest()
+def _hash_bytes(blob):
+    return hashlib.sha256(blob).hexdigest()
+
+
+def _approved_digest_ledger(picture, sound, expected_frames):
+    if type(picture) is not list:
+        raise PermissionError("Expected original frame and sound SHA ledger required")
+    # Snapshot before validation; never re-read a mutable caller list after approval.
+    picture = tuple(picture)
+    if len(picture) != expected_frames:
+        raise PermissionError("Expected original frame and sound SHA ledger required")
+    for digest in picture:
+        _validate_sha256(digest)
+    return picture, _validate_sha256(sound)
+
+
+def _single_reel_tracks(tracks):
+    if len(tracks) != 2:
+        raise RuntimeError("One real picture and sound MXF track required")
+    assets = {track["kind"]: track for track in tracks}
+    if (set(assets) != {"picture", "sound"} or
+        assets["picture"]["asset_id"] == assets["sound"]["asset_id"] or
+        assets["picture"]["filename"].casefold() ==
+        assets["sound"]["filename"].casefold()):
+        raise RuntimeError("One distinct real picture and sound MXF track required")
+    return assets
+
+
+def _read_pcm24(audio, expected_frames):
+    with wave.open(str(audio), "rb") as w:
+        channels = w.getnchannels()
+        samples = expected_frames * 2000
+        if (w.getsampwidth() != 3 or w.getframerate() != 48000 or
+            w.getnframes() != samples or channels not in (2, 6, 8) or
+            w.getcomptype() != "NONE"):
+            raise RuntimeError("MXF does not preserve source DCI PCM24 timing")
+        source_pcm = w.readframes(samples)
+    if len(source_pcm) != samples * channels * 3:
+        raise RuntimeError("Native PCM WAV payload is truncated")
+    return source_pcm
 
 def _ppm_header(file,*,width,height):
     with file.open("rb") as handle:
@@ -57,23 +96,15 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
     if profile not in PROFILES or type(expected_frames) is not int or (
         not 1<=expected_frames<=MAX_REEL_FRAMES):
         raise ValueError("Bounded original cinema frame count/profile required")
-    if (type(expected_picture_codestream_sha256) is not list or
-        len(expected_picture_codestream_sha256)!=expected_frames or
-        any(type(x) is not str or len(x)!=64 or
-            any(c not in "0123456789abcdef" for c in x)
-            for x in expected_picture_codestream_sha256) or
-        type(expected_sound_pcm_sha256) is not str or
-        len(expected_sound_pcm_sha256)!=64):
-        raise PermissionError("Expected original frame and sound SHA ledger required")
+    expected_picture_codestream_sha256, expected_sound_pcm_sha256 = (
+        _approved_digest_ledger(expected_picture_codestream_sha256,
+                                expected_sound_pcm_sha256, expected_frames))
     common_codec_authority(unwrap,decoder)
-    _sha(expected_sound_pcm_sha256)
     audit=inspect_dcp_structure(folder)
     if audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or (
         audit["reel_count"]!=1):
         raise RuntimeError("Only independently hashed single-reel DCP accepted")
-    assets={x["kind"]:x for x in audit["tracks"]}
-    if set(assets)!={"picture","sound"}:
-        raise RuntimeError("One real picture and sound MXF track required")
+    assets=_single_reel_tracks(audit["tracks"])
     source=Path(folder).resolve(strict=True)
     if any(assets[k]["duration_frames"]!=expected_frames for k in assets):
         raise RuntimeError("Native package duration differs from approved frame count")
@@ -102,13 +133,13 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
             if not 80<=j2k.stat().st_size<=16*1024*1024:
                 raise RuntimeError("Extracted native codestream exceeds bound")
             raw=j2k.read_bytes()
-            if _sha(raw)!=expected:
+            if _hash_bytes(raw)!=expected:
                 raise RuntimeError("Decoded MXF source frame differs from approved J2K")
             inspect_j2k_header(raw,profile)
             out="xyz_"+str(i).zfill(6)+".ppm"
             decoder.run(["-i",name,"-o",out],cwd=root,timeout=240)
             pixels=_ppm_header(root/out,width=width,height=height)
-            decoded_hashes.append(_sha(pixels))
+            decoded_hashes.append(_hash_bytes(pixels))
             j2k.unlink();(root/out).unlink()
         unwrap.run(["-d",str(expected_frames),"sound.mxf","audio"],
                    cwd=root,timeout=3600)
@@ -117,14 +148,8 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
         audio=root/"audio"
         if not audio.is_file() or _linked_entry(audio):
             raise RuntimeError("Real MXF sound unwrap did not create PCM WAV")
-        with wave.open(str(audio),"rb") as w:
-            if (w.getsampwidth()!=3 or w.getframerate()!=48000 or
-                w.getnframes()!=expected_frames*2000 or
-                w.getnchannels() not in (2,6,8) or
-                w.getcomptype()!="NONE"):
-                raise RuntimeError("MXF does not preserve source DCI PCM24 timing")
-            source_pcm=w.readframes(w.getnframes())
-        if _sha(source_pcm)!=expected_sound_pcm_sha256:
+        source_pcm=_read_pcm24(audio,expected_frames)
+        if _hash_bytes(source_pcm)!=expected_sound_pcm_sha256:
             raise RuntimeError("Real sound MXF altered source-approved PCM")
         return {
             "format":FORMAT,"status":"ALL_NATIVE_ESSENCE_ROUNDTRIPPED",
@@ -132,7 +157,7 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
             "decoded_frame_sha256":decoded_hashes,
             "picture_exact_codestream_sha_verified":True,
             "pcm24_48000_sample_exact":True,
-            "verified_source_sound_pcm_sha256":_sha(source_pcm),
+            "verified_source_sound_pcm_sha256":_hash_bytes(source_pcm),
             "asdcplib_unwrap_sha256":unwrap.sha256,
             "openjpeg_decoder_sha256":decoder.sha256,
             "reopened_package_integrity_verified":True,
