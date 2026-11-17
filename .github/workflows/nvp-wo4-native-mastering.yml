@@ -5,6 +5,8 @@ on:
   pull_request:
     paths:
       - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_production_*.py'
+      - 'tests/test_nvp_production_*.py'
       - 'tests/test_nvp_wo4_*.py'
       - 'backend/nvp_film_index.py'
       - 'backend/nvp_openusd_take.py'
@@ -14,6 +16,8 @@ on:
     branches: [main]
     paths:
       - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_production_*.py'
+      - 'tests/test_nvp_production_*.py'
       - 'tests/test_nvp_wo4_*.py'
       - '.github/workflows/nvp-wo4-native-mastering.yml'
 permissions:
@@ -48,10 +52,16 @@ jobs:
         run: |
           python -m compileall -q backend tests
           if ($LASTEXITCODE -ne 0) { throw 'Source syntax failure' }
-          foreach ($f in @('pcm_master','xyz12_master','master_qc','mastering_decision','loudness','pcm_stream','loudness_stream','mxf_stream','file_dcp','multireel')) {
+          foreach ($f in @('pcm_master','xyz12_master','master_qc','mastering_decision','loudness','pcm_stream','loudness_stream','mxf_stream','file_dcp','multireel','feature_journal')) {
             python -m unittest discover -s tests -p ("test_nvp_wo4_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO4 original source suite failed: $f" }
           }
+          foreach ($f in @('journal','monitor','supervisor_process','cinema','delivery','host')) {
+            python -m unittest discover -s tests -p ("test_nvp_production_"+$f+".py") -v
+            if ($LASTEXITCODE -ne 0) { throw "WO4 durable production suite failed: $f" }
+          }
+          python -m unittest discover -s tests -p test_nvp_wo4_native_bundle.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO4 native bundle inventory failed' }
           python tools/nvp_no_ffmpeg_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }

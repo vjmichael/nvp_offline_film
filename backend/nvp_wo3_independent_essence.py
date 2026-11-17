@@ -104,7 +104,14 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
     if audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or (
         audit["reel_count"]!=1):
         raise RuntimeError("Only independently hashed single-reel DCP accepted")
-    assets=_single_reel_tracks(audit["tracks"])
+    return _decode_reel_tracks(folder,audit,audit["tracks"],unwrap=unwrap,decoder=decoder,
+        expected_picture_codestream_sha256=expected_picture_codestream_sha256,
+        expected_sound_pcm_sha256=expected_sound_pcm_sha256,profile=profile,expected_frames=expected_frames)
+
+
+def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_codestream_sha256,
+                        expected_sound_pcm_sha256,profile,expected_frames):
+    assets=_single_reel_tracks(tracks)
     source=Path(folder).resolve(strict=True)
     if any(assets[k]["duration_frames"]!=expected_frames for k in assets):
         raise RuntimeError("Native package duration differs from approved frame count")
@@ -167,3 +174,49 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
             "original_source_modified":False,
             "ffmpeg_used":False,
         }
+
+
+def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profile="2K_FLAT_24"):
+    """Decode every ordered feature track with the existing bounded native stage.
+
+    Trusted caller supplies exact CPL reel asset IDs and codestream/PCM
+    digests, not a claim derived from the output itself.
+    """
+    from copy import deepcopy
+    if (unwrap.product!="ASDCP-asdcp_unwrap" or decoder.product!="OpenJPEG-opj_decompress"
+            or profile not in PROFILES or type(expected_reels) is not list
+            or not 2<=len(expected_reels)<=1000):
+        raise PermissionError("Exact bounded native feature decode authority required")
+    common_codec_authority(unwrap,decoder)
+    expected=deepcopy(expected_reels)
+    for part in expected:
+        if (type(part) is not dict or set(part)!={"picture_uuid","sound_uuid","frames",
+                       "ordered_codestream_sha256","pcm_sha256"} or
+            type(part["frames"]) is not int or not 3<=part["frames"]<=MAX_REEL_FRAMES):
+            raise PermissionError("Exact ordered reel decode scope required")
+        part["ordered_codestream_sha256"],part["pcm_sha256"]=_approved_digest_ledger(
+            part["ordered_codestream_sha256"],part["pcm_sha256"],part["frames"])
+    audit=inspect_dcp_structure(folder)
+    if (audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
+            audit["reel_count"]!=len(expected) or len(audit["tracks"])!=2*len(expected)):
+        raise PermissionError("Feature package does not match approved reel count")
+    all_ids=[x["asset_id"] for x in audit["tracks"]]
+    all_names=[x["filename"].casefold() for x in audit["tracks"]]
+    if len(set(all_ids))!=len(all_ids) or len(set(all_names))!=len(all_names):
+        raise PermissionError("Feature track identities must be distinct")
+    reports=[]
+    for n,part in enumerate(expected):
+        tracks=audit["tracks"][2*n:2*n+2]
+        assets=_single_reel_tracks(tracks)
+        if (assets["picture"]["asset_id"]!=part["picture_uuid"] or
+            assets["sound"]["asset_id"]!=part["sound_uuid"] or
+            audit["reel_durations"][n]!=part["frames"]):
+            raise PermissionError("Approved feature reel identity/order changed")
+        reports.append(_decode_reel_tracks(folder,audit,tracks,unwrap=unwrap,decoder=decoder,
+            expected_picture_codestream_sha256=part["ordered_codestream_sha256"],
+            expected_sound_pcm_sha256=part["pcm_sha256"],profile=profile,expected_frames=part["frames"]))
+    if inspect_dcp_structure(folder)!=audit:
+        raise PermissionError("Feature package changed during native verification")
+    return {"status":"ALL_NATIVE_FEATURE_ESSENCE_ROUNDTRIPPED","reel_count":len(reports),
+            "frames_decoded":sum(x["frames_decoded"] for x in reports),
+            "reels":reports,"production_dcp_accepted":False}

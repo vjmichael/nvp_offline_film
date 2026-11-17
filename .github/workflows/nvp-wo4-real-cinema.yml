@@ -5,8 +5,12 @@ on:
   pull_request:
     paths:
       - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_production_*.py'
+      - 'tests/test_nvp_production_*.py'
       - 'backend/nvp_wo3_*.py'
       - 'tests/test_nvp_wo4_*.py'
+      - 'tests/nvp_wo4_unique_frame_pilot_ci.py'
+      - 'tests/nvp_wo4_sustained_ci.py'
       - 'tests/nvp_wo3_fixture_authority.py'
       - 'backend/nvp_worker_containment.py'
       - 'backend/nvp_w1g_encrypted_source.py'
@@ -15,8 +19,12 @@ on:
     branches: [main]
     paths:
       - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_production_*.py'
+      - 'tests/test_nvp_production_*.py'
       - 'backend/nvp_wo3_*.py'
       - 'tests/test_nvp_wo4_*.py'
+      - 'tests/nvp_wo4_unique_frame_pilot_ci.py'
+      - 'tests/nvp_wo4_sustained_ci.py'
       - '.github/workflows/nvp-wo4-real-cinema.yml'
 permissions:
   contents: read
@@ -27,7 +35,7 @@ jobs:
   wo4-real-source-to-cinema:
     name: WO4 real protected Windows distinct 2K delivery, disk PCM MXF and 4K picture spool
     runs-on: windows-2025
-    timeout-minutes: 75
+    timeout-minutes: 100
     env:
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
@@ -99,25 +107,46 @@ jobs:
           "NVP_NATIVE_ASDCP_INFO=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'asdcp-info.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "NVP_NATIVE_ASDCP_UNWRAP=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'asdcp-unwrap.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "NVP_NATIVE_OPENJPEG_4K=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: All three original WO4 Group B native pilot tests, no skips
+      - name: Original WO4 pilots and durable protected feature recovery, no skips
         shell: pwsh
         run: |
           @'
           import unittest
           from backend.nvp_w1g_release_gate import inspect_original_process_journals
           suite=unittest.TestSuite()
-          for f in ("test_nvp_wo4_real_delivery.py","test_nvp_wo4_real_stream_mxf.py","test_nvp_wo4_real_4k_spool.py"):
+          for f in ("test_nvp_wo4_real_delivery.py","test_nvp_wo4_real_stream_mxf.py","test_nvp_wo4_real_4k_spool.py","test_nvp_wo4_protected_picture_recovery.py"):
               original=unittest.TestLoader().discover("tests",pattern=f)
               if not original.countTestCases():
                   raise RuntimeError("Missing original native mastering test "+f)
               suite.addTests(original)
           result=unittest.TextTestRunner(verbosity=2).run(suite)
-          if not result.wasSuccessful() or result.skipped or result.testsRun!=3:
-              raise SystemExit("Original genuine WO4 Group B pilot acceptance incomplete")
+          if not result.wasSuccessful() or result.skipped or result.testsRun!=4:
+              raise SystemExit("Original genuine WO4 Group B/C pilot acceptance incomplete")
           custody=inspect_original_process_journals()
           if custody["unresolved_original_native_launches"] or custody["original_windows_launch_journals_verified"]<1:
               raise SystemExit("Native job custody missing")
           print("WO4_ORIGINAL_REAL_PROTECTED_DELIVERY_PILOTS_PASS",flush=True)
+          print("WO4_DURABLE_PROTECTED_FEATURE_PILOT_PASS",flush=True)
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Original WO4 native pilot failed' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+
+      - name: Original distinct patterned-frame pilot through protected Windows codecs (12 frames per profile)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          foreach ($profile in @('2K_FLAT_24','4K_SCOPE_24')) {
+            python tests/nvp_wo4_unique_frame_pilot_ci.py --profile $profile --samples 12 --root (Join-Path $env:RUNNER_TEMP "wo4-unique-$profile") --audit (Join-Path $env:RUNNER_TEMP "wo4-unique-$profile.json")
+            if ($LASTEXITCODE -ne 0) { throw "Unique frame pilot failed: $profile" }
+          }
+          python -c "from backend.nvp_w1g_release_gate import inspect_original_process_journals; print(inspect_original_process_journals())"
+          if ($LASTEXITCODE -ne 0) { throw 'Native custody verification failed' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+
+      - name: Native repeated-frame duration stress (48 slots, two real reels; not full-film throughput)
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          python tests/nvp_wo4_sustained_ci.py --profile 2K_FLAT_24 --frames 48 --reel-frames 24 --root (Join-Path $env:RUNNER_TEMP "wo4-duration")
+          if ($LASTEXITCODE -ne 0) { throw 'Protected repeated-frame duration sample failed' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }

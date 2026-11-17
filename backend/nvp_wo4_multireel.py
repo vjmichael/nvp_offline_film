@@ -35,10 +35,18 @@ BLOCK=1024*1024
 FILM_FRAME_TICKS=TICKS_PER_SECOND//24
 MAX_TRACK_BYTES=1024**4
 
-def _check_manifest(reels,ids,source_take_sha256,profile):
+def _check_manifest(reels,ids,source_take_sha256,profile,*,source_reel_authority=None):
     if (type(reels) is not list or not 2<=len(reels)<=MAX_REELS or
             type(ids) is not dict or set(ids)!={"cpl","pkl","assetmap"}):
         raise ValueError("Approved ordered multi-reel manifest required")
+    _sha(source_take_sha256)
+    if source_reel_authority is not None:
+        if type(source_reel_authority) is not list or len(source_reel_authority)!=len(reels):
+            raise PermissionError('Ordered feature source authority required')
+        for entry in source_reel_authority:
+            if type(entry) is not dict or set(entry)!={'source_take_sha256','mastering_decision_sha256','indexed_receipt_sha256'}:
+                raise PermissionError('Exact indexed reel authority required')
+            for digest in entry.values(): _sha(digest)
     all_ids=set()
     for val in ids.values():
         _uuid(val)
@@ -66,7 +74,8 @@ def _check_manifest(reels,ids,source_take_sha256,profile):
         all_ids.add(part["reel_uuid"])
         for name in ("picture","sound"):
             track=part[name]
-            path,_=_track(track,name,source_take_sha256,profile,part["frames"])
+            origin=source_take_sha256 if source_reel_authority is None else source_reel_authority[i]["source_take_sha256"]
+            path,_=_track(track,name,origin,profile,part["frames"])
             identity=_protected_path(path)
             if identity in source_files or track["asset_uuid"] in all_ids:
                 raise PermissionError("Duplicated source file or SMPTE asset identity")
@@ -172,7 +181,8 @@ def _make_xml(reels,ids,title,issued,metadata,profile):
     return xmls
 
 def publish_multireel_dcp(*,reels,ids,title,profile,output_root,check_cancel,
-                          approve,source_take_sha256,mastering_decision_sha256):
+                          approve,source_take_sha256,mastering_decision_sha256,
+                          source_reel_authority=None,feature_assembly_sha256=None):
     if (not callable(check_cancel) or not callable(approve) or type(title) is not str or
             not 1<=len(title)<=80 or
             any(ord(c)<32 or c in "<>&" for c in title)
@@ -181,7 +191,17 @@ def publish_multireel_dcp(*,reels,ids,title,profile,output_root,check_cancel,
     _sha(source_take_sha256)
     _sha(mastering_decision_sha256)
     reels,ids=deepcopy(reels),deepcopy(ids)
-    frames=_check_manifest(reels,ids,source_take_sha256,profile)
+    source_reel_authority=deepcopy(source_reel_authority)
+    if source_reel_authority is not None:
+        _sha(feature_assembly_sha256)
+        if (type(source_reel_authority) is not list or not source_reel_authority or
+            type(source_reel_authority[0]) is not dict or
+            source_reel_authority[0].get("source_take_sha256")!=source_take_sha256 or
+            source_reel_authority[0].get("mastering_decision_sha256")!=mastering_decision_sha256):
+            raise PermissionError("Leading reel identity differs from approved feature scope")
+    elif feature_assembly_sha256 is not None:
+        raise PermissionError('Feature assembly requires ordered reel authority')
+    frames=_check_manifest(reels,ids,source_take_sha256,profile,source_reel_authority=source_reel_authority)
     root,root_identity=_export_root(output_root)
     # The approved source MXF sizes bound the data copied into one feature
     # package. Require storage headroom before creating any stage output.
@@ -197,12 +217,13 @@ def publish_multireel_dcp(*,reels,ids,title,profile,output_root,check_cancel,
            "source_take_sha256":source_take_sha256,
            "mastering_decision_sha256":mastering_decision_sha256,
            "reels":reels,"ids":ids,"title":title,"profile":profile,
+           "source_reel_authority":source_reel_authority,"feature_assembly_sha256":feature_assembly_sha256,
            "frames":frames,"output_root":str(root),
            "plaintext_export_explicitly_requested":True}
     if approve(deepcopy(scope)) is not True:
         return {"format":FORMAT,"status":"DENIED","source_modified":False}
     _assert_export_root(root,root_identity)
-    _check_manifest(reels,ids,source_take_sha256,profile)
+    _check_manifest(reels,ids,source_take_sha256,profile,source_reel_authority=source_reel_authority)
     stage.mkdir(mode=0o700)
     metadata={}
     for i,part in enumerate(reels):
@@ -238,6 +259,7 @@ def publish_multireel_dcp(*,reels,ids,title,profile,output_root,check_cancel,
             "reel_count":len(reels),"total_frames":frames,
             "source_take_sha256":source_take_sha256,
             "mastering_decision_sha256":mastering_decision_sha256,
+            "source_reel_authority":source_reel_authority,"feature_assembly_sha256":feature_assembly_sha256,
             "file_sha256":{k:v["sha256"] for k,v in metadata.items()},
             "whole_feature_in_ram":False,"source_modified":False,
             "production_dcp_accepted":False,
