@@ -158,6 +158,88 @@ class WindowsPrivateBlenderBridgeContract(unittest.TestCase):
                 with self.assertRaisesRegex(AppContainerFailure,"DACL operation failed"):
                     _acl(self.binary_root,"S-1-15-2-1-2-3-4-5-6-7","RX")
 
+    def test_appcontainer_environment_uses_os_paths_and_never_parent_secrets(self):
+        import os
+        from backend.nvp_g03_windows_appcontainer import _native_environment
+        windows=self.root/"Windows"
+        system=windows/"System32"
+        local=self.root/"Account Local"
+        profile=local/"Packages"/"NVP-Film-fixture"/"AC"
+        system.mkdir(parents=True)
+        profile.mkdir(parents=True)
+        with patch.dict(os.environ,{"NVP_SECRET_API_KEY":"DO-NOT-COPY",
+                    "PATH":r"C:\Untrusted",
+                    "LOCALAPPDATA":r"C:\WrongAccount",
+                    "SYSTEMROOT":r"C:\FakeWindows"}),patch(
+                "backend.nvp_g03_windows_appcontainer._host_windows_paths",
+                return_value=(str(windows),str(system),str(local))):
+            block=_native_environment(None,self.job,profile,None)
+            explicit=_native_environment(None,self.job,profile,{
+                "sYsTeMrOoT":r"C:\FakeWindows",
+                "localappdata":r"C:\WrongAccount",
+                "PATH":r"C:\Untrusted",
+                "TEMP":r"C:\WrongTemp",
+                "BLENDER_USER_CONFIG":str(self.job/"config")})
+        def entries(buffer):
+            raw=buffer[:]
+            self.assertTrue(raw.endswith("\0\0"))
+            lines=raw.rstrip("\0").split("\0")
+            self.assertEqual(lines,sorted(lines,key=str.upper))
+            return dict(line.split("=",1) for line in lines)
+        job=self.job.resolve()
+        baseline={"SystemRoot":str(windows),"WINDIR":str(windows),
+                  "SystemDrive":windows.drive,
+                  "PATH":str(system)+";"+str(windows),
+                  "LOCALAPPDATA":str(local),
+                  "TEMP":str(job),"TMP":str(job),
+                  "PYTHONDONTWRITEBYTECODE":"1","PYTHONIOENCODING":"utf-8"}
+        self.assertEqual(entries(block),baseline)
+        self.assertEqual(entries(explicit),dict(baseline,
+                         BLENDER_USER_CONFIG=str(job/"config")))
+
+    def test_appcontainer_environment_refuses_unknown_duplicate_or_escaping_inputs(self):
+        from backend.nvp_g03_windows_appcontainer import (
+            _native_environment,AppContainerFailure)
+        windows=self.root/"Windows"
+        system=windows/"System32"
+        local=self.root/"Local"
+        profile=local/"Packages"/"NVP-Film-fixture"/"AC"
+        system.mkdir(parents=True)
+        profile.mkdir(parents=True)
+        cases=[
+            {"NVP_HOME":str(self.root)},
+            {"PYTHONPATH":str(self.root)},
+            {"BLENDER_USER_CONFIG":str(self.root)},
+            {"Path":"x","PATH":"y"},
+            {"PATH":"x\0y"},
+            {"=C:":"C:\\"},
+        ]
+        with patch("backend.nvp_g03_windows_appcontainer._host_windows_paths",
+                   return_value=(str(windows),str(system),str(local))):
+            for env in cases:
+                with self.subTest(env=env),self.assertRaises(AppContainerFailure):
+                    _native_environment(None,self.job,profile,env)
+            with self.assertRaisesRegex(AppContainerFailure,"paths unverified"):
+                _native_environment(None,self.job,self.root,None)
+
+    def test_native_environment_queries_actual_windows_locations(self):
+        from backend.nvp_g03_windows_appcontainer import (
+            _api,_host_windows_paths)
+        kernel,_,_=_api()
+        windows,system,local=map(Path,_host_windows_paths(kernel))
+        for path in (windows,system,local):
+            self.assertTrue(path.is_absolute())
+            self.assertTrue(path.is_dir())
+        self.assertTrue(system.resolve().is_relative_to(windows.resolve()))
+
+    def test_launch_passes_explicit_native_unicode_environment(self):
+        from backend.nvp_g03_windows_appcontainer import launch_appcontainer
+        source=inspect.getsource(launch_appcontainer)
+        self.assertIn("block=_native_environment(kernel,work,profile_folder,env)",source)
+        self.assertIn("C.cast(block,W.LPVOID)",source)
+        self.assertNotIn("dict(env or {})",source)
+        self.assertIn("flags=0x4|0x08000000|0x400|0x80000",source)
+
     def test_supervisor_dispatch_requires_real_appcontainer_not_plain_job(self):
         node=ast.parse(textwrap.dedent(
             inspect.getsource(worker.BlenderWorkerSupervisor._run_worker)))

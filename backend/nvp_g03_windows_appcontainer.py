@@ -57,6 +57,10 @@ def _api():
     k.CreateProcessW.argtypes=[W.LPCWSTR,W.LPWSTR,W.LPVOID,W.LPVOID,W.BOOL,W.DWORD,
         W.LPVOID,W.LPCWSTR,C.POINTER(_StartupEx),C.POINTER(_ProcessInfo)]
     k.CreateProcessW.restype=W.BOOL
+    k.GetSystemWindowsDirectoryW.argtypes=[W.LPWSTR,W.UINT]
+    k.GetSystemWindowsDirectoryW.restype=W.UINT
+    k.GetSystemDirectoryW.argtypes=[W.LPWSTR,W.UINT]
+    k.GetSystemDirectoryW.restype=W.UINT
     u.CreateAppContainerProfile.argtypes=[W.LPCWSTR,W.LPCWSTR,W.LPCWSTR,
                                            W.LPVOID,W.DWORD,C.POINTER(W.LPVOID)]
     u.CreateAppContainerProfile.restype=C.c_long
@@ -163,6 +167,87 @@ def _profile_folder(userenv,sid):
         ole=C.WinDLL("ole32")
         ole.CoTaskMemFree.argtypes=[W.LPVOID]
         ole.CoTaskMemFree(C.cast(location,W.LPVOID))
+
+
+def _host_windows_paths(kernel):
+    """Read the host's machine and user locations from native OS APIs."""
+    def directory(api,label):
+        value=C.create_unicode_buffer(32768)
+        size=api(value,len(value))
+        if not 0<size<len(value):
+            raise AppContainerFailure("Cannot resolve native "+label)
+        return value.value
+
+    windows=directory(kernel.GetSystemWindowsDirectoryW,"SystemRoot")
+    system=directory(kernel.GetSystemDirectoryW,"system directory")
+    # CSIDL_LOCAL_APPDATA resolves the current token's known folder, not
+    # arbitrary LOCALAPPDATA supplied by the parent/caller environment.
+    shell=C.WinDLL("shell32")
+    shell.SHGetFolderPathW.argtypes=[W.HWND,C.c_int,W.HANDLE,W.DWORD,W.LPWSTR]
+    shell.SHGetFolderPathW.restype=C.c_long
+    local=C.create_unicode_buffer(260)
+    if shell.SHGetFolderPathW(None,0x001c,None,0,local)&0xffffffff or not local.value:
+        raise AppContainerFailure("Cannot resolve native LOCALAPPDATA")
+    return windows,system,local.value
+
+
+def _native_environment(kernel,work,profile_folder,env):
+    """Build an explicit minimal Unicode environment for native lowbox creation.
+
+    SystemRoot is necessary for Windows loader/side-by-side activation.
+    CreateProcess also uses the user's actual LOCALAPPDATA to resolve and
+    redirect the AppContainer profile. Neither is caller-overridable.
+    Do not inherit a creator's PATH, credentials, Python/Blender search paths,
+    drive working-directory entries or arbitrary environment variables.
+    """
+    work=work.resolve(strict=True)
+    windows,system,local=(Path(x) for x in _host_windows_paths(kernel))
+    packages=(local/"Packages").resolve()
+    profile_root=profile_folder.resolve()
+    if (any(not x.is_absolute() or not x.is_dir() or ";" in str(x)
+            for x in (windows,system,local))
+            or not windows.drive
+            or not system.resolve().is_relative_to(windows.resolve())
+            or profile_root==packages
+            or not profile_root.is_relative_to(packages)):
+        raise AppContainerFailure("Native Windows environment/profile paths unverified")
+    clean={"SystemRoot":str(windows),"WINDIR":str(windows),
+           "SystemDrive":windows.drive,
+           "PATH":str(system)+";"+str(windows),
+           "LOCALAPPDATA":str(local),
+           "TEMP":str(work),"TMP":str(work),
+           "PYTHONDONTWRITEBYTECODE":"1","PYTHONIOENCODING":"utf-8"}
+    # Historical protected Cycles caller may explicitly request its three
+    # private configuration paths. Nothing else may be forwarded unchanged.
+    blender={"BLENDER_USER_CONFIG":"config",
+             "BLENDER_USER_SCRIPTS":"scripts",
+             "BLENDER_USER_DATAFILES":"datafiles"}
+    reserved={key.upper() for key in clean}
+    seen=set()
+    if env is not None and type(env) is not dict:
+        raise AppContainerFailure("Invalid AppContainer environment")
+    for key,value in (env or {}).items():
+        if (type(key) is not str or type(value) is not str
+                or not key or "\0" in key or "\0" in value or "=" in key):
+            raise AppContainerFailure("Invalid AppContainer environment entry")
+        name=key.upper()
+        if name in seen:
+            raise AppContainerFailure("Duplicate AppContainer environment entry")
+        seen.add(name)
+        if name in reserved:
+            continue # Always use trusted values above, never caller overrides.
+        if name not in blender:
+            raise AppContainerFailure("Unreviewed AppContainer environment entry")
+        target=work/blender[name]
+        # Canonicalize DOS short names from temporary-directory callers,
+        # but refuse a symlink/junction that would redirect the fixed target.
+        if Path(value).resolve()!=target or target.resolve()!=target:
+            raise AppContainerFailure("Unreviewed AppContainer environment path")
+        clean[name]=str(target)
+    # Windows environment names are case-insensitive; sort accordingly.
+    return C.create_unicode_buffer("\0".join(
+        key+"="+value for key,value in sorted(
+            clean.items(),key=lambda item:item[0].upper()))+"\0\0")
 
 
 def _profile_inventory(folder):
@@ -324,11 +409,7 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
             si.StartupInfo.hStdError=handles[2]
             si.lpAttributeList=C.cast(attrs,W.LPVOID)
             argv=C.create_unicode_buffer(subprocess.list2cmdline(command))
-            clean=dict(env or {})
-            clean.update({"TEMP":str(work),"TMP":str(work),
-                          "PYTHONDONTWRITEBYTECODE":"1"})
-            block=C.create_unicode_buffer("\0".join(
-                key+"="+value for key,value in sorted(clean.items()))+"\0\0")
+            block=_native_environment(kernel,work,profile_folder,env)
             pi=_ProcessInfo()
             flags=0x4|0x08000000|0x400|0x80000
             if not kernel.CreateProcessW(str(exe),argv,None,None,True,flags,
