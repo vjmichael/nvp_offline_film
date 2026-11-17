@@ -216,7 +216,7 @@ def _read_verified_pcm24(wavfile,channel_order,frames=1):
     identity=_protected_path(Path(wavfile))
     with Path(wavfile).open("rb") as stream, wave.open(stream,"rb") as inp:
         st=os.fstat(stream.fileno())
-        if (st.st_dev,st.st_ino)!=identity or inp.getnchannels()!=len(channel_order) or
+        if ((st.st_dev,st.st_ino)!=identity or inp.getnchannels()!=len(channel_order) or
             inp.getframerate()!=RATE or inp.getsampwidth()!=3 or
             inp.getcomptype()!="NONE" or inp.getnframes()!=frames*SAMPLES_PER_FRAME):
             raise PermissionError("Unwrapped finished PCM does not match approved Film Time")
