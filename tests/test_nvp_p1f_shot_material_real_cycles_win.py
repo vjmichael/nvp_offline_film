@@ -70,6 +70,12 @@ class NVPRealReviewedMaterialMultiShot(unittest.TestCase):
                       return_value={"public_fixture_only":True}),
                 patch("backend.nvp_worker_private_sandbox.sandbox_command",
                       side_effect=lambda cmd,jobdir:{"command":cmd}),
+                # PUBLIC SYNTHETIC fixture only. Do not claim EFS or
+                # AppContainer from the test-only Job Object harness.
+                patch("backend.nvp_w1g_encrypted_source.require_efs_stage",
+                      return_value={"public_fixture_only":True}),
+                patch("backend.nvp_blender_worker._windows_private_blender_code_root",
+                      return_value=None),
             )
             for scoped in test_only_boundaries:
                 scoped.start()

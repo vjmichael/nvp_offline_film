@@ -68,6 +68,21 @@ class WindowsPrivateBlenderBridgeContract(unittest.TestCase):
         names=efs.call_args.kwargs["names"]
         self.assertEqual(set(names),{"render.py","source.usda"})
 
+    def test_production_p1f_encrypts_before_first_original_source_write(self):
+        from backend.nvp_p1f_cycles_picture_sound import P1FOriginalPictureSound
+        source=inspect.getsource(P1FOriginalPictureSound.render_frame)
+        self.assertIn('if os.name=="nt":',source)
+        self.assertIn('require_efs_stage(jobdir)',source)
+        self.assertLess(source.index('require_efs_stage(jobdir)'),
+                        source.index('_add_file(jobdir/"fixed_cycles.py"'))
+        self.assertLess(source.index('require_efs_stage(jobdir)'),
+                        source.index('_add_file(jobdir/"original.usda"'))
+        self.assertLess(source.index('require_efs_stage(jobdir)'),
+                        source.index('_add_file(jobdir/"original_pcm.wav"'))
+        self.assertIn('require_private_isolation=True',source)
+        self.assertIn('require_linux_cgroup_v2=True',source)
+        self.assertIn('prove_private_kernel_boundary(self.supervisor.root)',source)
+
     def test_supervisor_dispatch_requires_real_appcontainer_not_plain_job(self):
         node=ast.parse(textwrap.dedent(
             inspect.getsource(worker.BlenderWorkerSupervisor._run_worker)))

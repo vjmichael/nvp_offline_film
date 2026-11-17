@@ -203,16 +203,25 @@ class P1FOriginalPictureSound:
         }
         if self.verify_isolated_worker(dict(sandbox_scope)) is not True:
             raise PermissionError("Genuine private film Cycles worker isolation not established")
-        # There is NO test/public mode in production: every film source
-        # needs a genuine native OS boundary before any USD/PCM staging.
-        # The Windows production SCM/AppContainer/WFP broker is not yet
-        # installed and Windows requests necessarily fail closed.
-        from backend.nvp_worker_private_sandbox import prove_private_kernel_boundary
-        prove_private_kernel_boundary(self.supervisor.root)
+        # Production Windows private films must use native EFS for source
+        # bytes and the OS-owned no-network AppContainer/Job worker. The
+        # supervisor independently admits that genuine kernel boundary.
+        # The established Linux cgroup/bwrap preflight stays unchanged and
+        # is suspended from NVP acceptance by owner direction.
+        if os.name=="nt":
+            from backend.nvp_w1g_encrypted_source import require_efs_stage
+        else:
+            from backend.nvp_worker_private_sandbox import prove_private_kernel_boundary
+            prove_private_kernel_boundary(self.supervisor.root)
         jobdir=self.supervisor.root/job_id
         # User-owned private USD and original actor PCM must never be staged
         # in the default 0755 Linux workspace. Restrict before first write.
         jobdir.mkdir(mode=0o700,parents=False,exist_ok=False)
+        if os.name=="nt":
+            # Encrypt the empty dedicated workspace BEFORE any original
+            # scene, actor, PCM, PBR, or fixed worker script bytes are saved.
+            # The supervisor re-verifies EFS for every source at admission.
+            require_efs_stage(jobdir)
         if os.name=="posix":
             import stat
             if (jobdir.is_symlink() or
