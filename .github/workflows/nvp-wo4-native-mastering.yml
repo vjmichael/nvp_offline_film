@@ -1,0 +1,57 @@
+name: NVP WO4 Native PCM Mastering (NO FFMPEG)
+# Original WO4 Group A native mastering tests; Linux lanes suspended, not waived.
+# Historical native delivery/MXF suites restored with Group B.
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_wo4_*.py'
+      - 'tests/test_nvp_wo4_*.py'
+      - 'backend/nvp_film_index.py'
+      - 'backend/nvp_openusd_take.py'
+      - 'backend/nvp_w1g_encrypted_source.py'
+      - '.github/workflows/nvp-wo4-native-mastering.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/nvp_wo4_*.py'
+      - 'tests/test_nvp_wo4_*.py'
+      - '.github/workflows/nvp-wo4-native-mastering.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nvp-wo4-original-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  pcm24-candidate:
+    name: WO4 original mastering Windows / Python ${{ matrix.py }}
+    runs-on: windows-2025
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        py: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Exact source
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Wrong source SHA' }
+      - name: Native foundation
+        run: python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32
+      - name: Verify actual PCM, XYZ12, QC, FilmIndex and encrypted streaming
+        shell: pwsh
+        run: |
+          python -m compileall -q backend tests
+          if ($LASTEXITCODE -ne 0) { throw 'Source syntax failure' }
+          foreach ($f in @('pcm_master','xyz12_master','master_qc','mastering_decision','loudness','pcm_stream','loudness_stream')) {
+            python -m unittest discover -s tests -p ("test_nvp_wo4_"+$f+".py") -v
+            if ($LASTEXITCODE -ne 0) { throw "WO4 original source suite failed: $f" }
+          }
+          python tools/nvp_no_ffmpeg_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
