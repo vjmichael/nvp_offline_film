@@ -1,6 +1,6 @@
 name: NVP WO4 Native PCM Mastering (NO FFMPEG)
 # Original WO4 Group A native mastering tests; Linux lanes suspended, not waived.
-# Historical native delivery/MXF suites restored with Group B.
+# Group A plus restored Group B bridge, MXF, resource and structural publisher suites.
 on:
   pull_request:
     paths:
@@ -48,7 +48,7 @@ jobs:
         run: |
           python -m compileall -q backend tests
           if ($LASTEXITCODE -ne 0) { throw 'Source syntax failure' }
-          foreach ($f in @('pcm_master','xyz12_master','master_qc','mastering_decision','loudness','pcm_stream','loudness_stream')) {
+          foreach ($f in @('pcm_master','xyz12_master','master_qc','mastering_decision','loudness','pcm_stream','loudness_stream','mxf_stream','file_dcp','multireel')) {
             python -m unittest discover -s tests -p ("test_nvp_wo4_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO4 original source suite failed: $f" }
           }

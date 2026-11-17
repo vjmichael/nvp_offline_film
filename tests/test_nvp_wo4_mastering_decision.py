@@ -7,6 +7,7 @@ from test_nvp_wo3_native_delivery import WO3OriginalCinemaAuthoring
 from backend.nvp_wo4_pcm_master import master_pcm24_candidate
 from backend.nvp_wo4_master_qc import evaluate_master_candidates
 from backend.nvp_wo4_mastering_decision import register_mastering_decision
+from backend.nvp_wo4_master_delivery import publish_mastered_dcp
 
 
 class WO4SourceCustody(unittest.TestCase):
@@ -143,6 +144,57 @@ class WO4SourceCustody(unittest.TestCase):
         later=dict(self.picture,xyz12=raw,xyz12_sha256=sha256(raw).hexdigest())
         with self.assertRaises(PermissionError):
             self.authorize(ordered_pictures=[self.picture,later,self.picture])
+
+
+    def test_successful_bridge_passes_exact_master_bytes_to_native_interfaces(self):
+        self.authorize()
+        frames_seen=[]
+        with patch("backend.nvp_wo4_master_delivery.encode_xyz12_frame",
+                   side_effect=lambda _encoder,xyz,**opts:(
+                       frames_seen.append(xyz) or
+                       {"codestream_sha256":"1"*64})) as encoded, \
+             patch("backend.nvp_wo4_master_delivery.wrap_cinema_picture",
+                   return_value={"sha256":"2"*64}) as wrapped_picture, \
+             patch("backend.nvp_wo4_master_delivery.wrap_cinema_pcm",
+                   return_value={"sha256":"3"*64}) as wrapped_audio, \
+             patch("backend.nvp_wo4_master_delivery.publish_dcp_candidate",
+                   return_value={"status":"STRUCTURAL_DCP_CANDIDATE_PUBLISHED"}) as package:
+            output=publish_mastered_dcp(
+                self.f.index,self.f.pid,take_id="FrozenFixture",
+                take_revision=1,take_sha256=self.f.sha,
+                mastering_decision_id="ApprovedCinemaMaster",
+                pictures=[self.picture]*3,sound=self.sound,
+                encoder=None,wrapper=None,info=None,
+                output_root=self.f.output,title="Verified Film",
+                approve_package=lambda _:True)
+        self.assertEqual(frames_seen,[self.picture["xyz12"]]*3)
+        self.assertEqual(encoded.call_count,3)
+        self.assertEqual(wrapped_audio.call_args.kwargs["wav_bytes"]
+                         if "wav_bytes" in wrapped_audio.call_args.kwargs
+                         else wrapped_audio.call_args.args[2],
+                         self.sound["wav_bytes"])
+        self.assertTrue(package.called)
+        self.assertEqual(output["picture_codestream_sha256"],["1"*64]*3)
+        self.assertFalse(output["production_master_accepted"])
+
+    def test_delivery_requires_authorized_decision_and_pcm_sha(self):
+        base=dict(index=self.f.index,pid=self.f.pid,
+                  take_id="FrozenFixture",take_revision=1,
+                  take_sha256=self.f.sha,
+                  mastering_decision_id="ApprovedCinemaMaster",
+                  pictures=[self.picture]*3,sound=self.sound,
+                  encoder=None,wrapper=None,info=None,
+                  output_root=self.f.output,
+                  title="Verified Film",approve_package=lambda _:True)
+        with self.assertRaises(KeyError):
+            publish_mastered_dcp(**base)
+        self.authorize()
+        modified=dict(self.sound,master_pcm_sha256="f"*64)
+        with self.assertRaises(PermissionError):
+            publish_mastered_dcp(**dict(base,sound=modified))
+        changed=dict(self.picture,xyz12_sha256="0"*64)
+        with self.assertRaises(PermissionError):
+            publish_mastered_dcp(**dict(base,pictures=[changed]*3))
 
 
 if __name__=="__main__":

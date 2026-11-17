@@ -1,0 +1,123 @@
+name: NVP WO4 Real Native Master to DCP (NO FFMPEG)
+# Original three native pilots. Sustained/production supervisor lanes restored separately.
+# Linux native acceptance remains owner-suspended, not waived.
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_wo3_*.py'
+      - 'tests/test_nvp_wo4_*.py'
+      - 'tests/nvp_wo3_fixture_authority.py'
+      - 'backend/nvp_worker_containment.py'
+      - 'backend/nvp_w1g_encrypted_source.py'
+      - '.github/workflows/nvp-wo4-real-cinema.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_wo3_*.py'
+      - 'tests/test_nvp_wo4_*.py'
+      - '.github/workflows/nvp-wo4-real-cinema.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nvp-wo4-real-original-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  wo4-real-source-to-cinema:
+    name: WO4 real protected Windows distinct 2K delivery, disk PCM MXF and 4K picture spool
+    runs-on: windows-2025
+    timeout-minutes: 75
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/checkout@v4
+        with:
+          repository: uclouvain/openjpeg
+          ref: 6c4a29b00211eb0430fa0e5e890f1ce5c80f409f
+          path: deps/openjpeg
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cinecert/asdcplib
+          ref: 905d6047f67c8211c2d22f29fb0e2e44c142b59b
+          path: deps/asdcplib
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require exact head and original reviewed dependency sources
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Wrong source SHA' }
+          if ((git -C deps/openjpeg rev-parse HEAD).Trim() -ne '6c4a29b00211eb0430fa0e5e890f1ce5c80f409f') { throw 'OpenJPEG drift' }
+          if ((git -C deps/asdcplib rev-parse HEAD).Trim() -ne '905d6047f67c8211c2d22f29fb0e2e44c142b59b') { throw 'CineCert drift' }
+          if (-not (Test-Path deps/openjpeg/LICENSE) -or -not (Test-Path deps/asdcplib/COPYING)) { throw 'License notices missing' }
+      - name: Build original reviewed native static codecs on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cmake -S deps/openjpeg -B deps/openjpeg/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_CODEC=ON -DBUILD_TESTING=OFF -DBUILD_JPIP=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG configure' }
+          cmake --build deps/openjpeg/build --config Release --parallel 2 --target opj_compress opj_decompress
+          if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG compile' }
+          cmake -S deps/asdcplib -B deps/asdcplib/build -DCMAKE_BUILD_TYPE=Release -DWITHOUT_SSL=ON -DWITHOUT_XML=ON -DBUILD_SHARED_LIBS=OFF "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+          if ($LASTEXITCODE -ne 0) { throw 'CineCert configure' }
+          cmake --build deps/asdcplib/build --config Release --parallel 2 --target asdcp-wrap asdcp-info asdcp-unwrap
+          if ($LASTEXITCODE -ne 0) { throw 'CineCert compile' }
+          $out=Join-Path $env:RUNNER_TEMP 'wo3-exact-native-tools'
+          New-Item -ItemType Directory -Path $out | Out-Null
+          foreach ($name in @('opj_compress','opj_decompress','asdcp-wrap','asdcp-info','asdcp-unwrap')) {
+            $build=if ($name.StartsWith('opj_')) {'deps/openjpeg/build'} else {'deps/asdcplib/build'}
+            $matches=@(Get-ChildItem $build -Recurse -File -Filter ($name+'.exe') | Where-Object {$_.FullName -match 'Release'})
+            if ($matches.Count -ne 1) { throw "Expected one actual Windows binary: $name" }
+            Copy-Item -LiteralPath $matches[0].FullName -Destination (Join-Path $out ($name+'.exe'))
+          }
+          "NVP_WO3_BUILD_TOOLS=$out" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install foundation and provision reviewed CI-only codec manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32
+          if ($LASTEXITCODE -ne 0) { throw 'Native foundation missing' }
+          $program=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion').ProgramFilesDir
+          $env:NVP_WO3_FIXTURE_BUNDLE=Join-Path $program 'NVP-WO3-Generated-CI-Codecs'
+          $env:NVP_WO3_FIXTURE_ROOT=Join-Path $env:RUNNER_TEMP 'wo3-protected-stage'
+          New-Item -ItemType Directory -Path $env:NVP_WO3_FIXTURE_ROOT | Out-Null
+          $env:PYTHONPATH=(Get-Location).Path
+          $pin=(python tests/nvp_wo3_fixture_authority.py)
+          if ($LASTEXITCODE -ne 0 -or $pin -notmatch '^[a-f0-9]{64}$') { throw 'Pinned native manifest failed' }
+          "NVP_WO3_FIXTURE_BUNDLE=$env:NVP_WO3_FIXTURE_BUNDLE" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_WO3_FIXTURE_ROOT=$env:NVP_WO3_FIXTURE_ROOT" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_WO3_FIXTURE_MANIFEST_PIN=$pin" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_OPENJPEG=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'opj_compress.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_OPENJPEG_DECODE=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'opj_decompress.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_ASDCP_WRAP=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'asdcp-wrap.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_ASDCP_INFO=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'asdcp-info.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_ASDCP_UNWRAP=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'asdcp-unwrap.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_OPENJPEG_4K=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: All three original WO4 Group B native pilot tests, no skips
+        shell: pwsh
+        run: |
+          @'
+          import unittest
+          from backend.nvp_w1g_release_gate import inspect_original_process_journals
+          suite=unittest.TestSuite()
+          for f in ("test_nvp_wo4_real_delivery.py","test_nvp_wo4_real_stream_mxf.py","test_nvp_wo4_real_4k_spool.py"):
+              original=unittest.TestLoader().discover("tests",pattern=f)
+              if not original.countTestCases():
+                  raise RuntimeError("Missing original native mastering test "+f)
+              suite.addTests(original)
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful() or result.skipped or result.testsRun!=3:
+              raise SystemExit("Original genuine WO4 Group B pilot acceptance incomplete")
+          custody=inspect_original_process_journals()
+          if custody["unresolved_original_native_launches"] or custody["original_windows_launch_journals_verified"]<1:
+              raise SystemExit("Native job custody missing")
+          print("WO4_ORIGINAL_REAL_PROTECTED_DELIVERY_PILOTS_PASS",flush=True)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Original WO4 native pilot failed' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }

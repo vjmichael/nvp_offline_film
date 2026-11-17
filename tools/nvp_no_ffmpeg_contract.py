@@ -28,6 +28,10 @@ ENTRYPOINTS=(
     "backend/nvp_slate08b_native_camera_ipc.py",
     "backend/nvp_wo4_mastering_decision.py",
     "backend/nvp_wo4_loudness_stream.py",
+    "backend/nvp_wo4_master_delivery.py",
+    "backend/nvp_wo4_picture_spool.py",
+    "backend/nvp_wo4_supervised_sound.py",
+    "backend/nvp_wo4_multireel.py",
 )
 # Standalone PyAV (av) is forbidden as an imported package, but an
 # internal source module such as nvp_data_av_scene is NOT the PyAV package.
