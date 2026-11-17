@@ -123,6 +123,41 @@ class WindowsPrivateBlenderBridgeContract(unittest.TestCase):
         self.assertIn("exit=5",str(observation.exception))
         self.assertIn("Access is denied.",str(observation.exception))
 
+    def test_acl_success_summary_with_zero_failed_files_is_accepted(self):
+        from backend.nvp_g03_windows_appcontainer import _acl
+        from types import SimpleNamespace
+        result=SimpleNamespace(returncode=0,stderr="",
+            stdout="processed file: installed Blender\n"
+                   "Successfully processed 4321 files; Failed processing 0 files\n")
+        with patch("backend.nvp_g03_windows_appcontainer.subprocess.run",
+                   return_value=result) as command:
+            _acl(self.binary_root,"S-1-15-2-1-2-3-4-5-6-7","(OI)(CI)RX",
+                 recursive=True)
+        self.assertEqual(command.call_args.args[0],
+            ["icacls.exe",str(self.binary_root),"/grant",
+             "*S-1-15-2-1-2-3-4-5-6-7:(OI)(CI)RX","/T"])
+
+    def test_acl_partial_or_unverifiable_result_is_refused_even_with_zero_exit(self):
+        from backend.nvp_g03_windows_appcontainer import _acl,AppContainerFailure
+        from types import SimpleNamespace
+        cases=[
+            (0,"Successfully processed 4 files; Failed processing 1 files",""),
+            (0,"processed file: installed Blender",""),
+            (0,"Successfully processed 0 files; Failed processing 0 files",""),
+            (0,"Successfully processed 1 files; Failed processing 0 files",
+               "Access is denied."),
+            (5,"Successfully processed 1 files; Failed processing 0 files",""),
+            (0,"Successfully processed 1 files; Failed processing 0 files\n"
+               "Successfully processed 2 files; Failed processing 1 files",""),
+        ]
+        for rc,stdout,stderr in cases:
+            with self.subTest(exit=rc,stdout=stdout,stderr=stderr),patch(
+                    "backend.nvp_g03_windows_appcontainer.subprocess.run",
+                    return_value=SimpleNamespace(returncode=rc,stdout=stdout,
+                                                 stderr=stderr)):
+                with self.assertRaisesRegex(AppContainerFailure,"DACL operation failed"):
+                    _acl(self.binary_root,"S-1-15-2-1-2-3-4-5-6-7","RX")
+
     def test_supervisor_dispatch_requires_real_appcontainer_not_plain_job(self):
         node=ast.parse(textwrap.dedent(
             inspect.getsource(worker.BlenderWorkerSupervisor._run_worker)))

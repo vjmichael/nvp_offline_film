@@ -80,11 +80,23 @@ def _acl(path,sid,permission,recursive=False,remove=False):
         args.append("/T")
     r=subprocess.run(args,capture_output=True,text=True,errors="replace",
                      timeout=120,check=False)
-    if r.returncode or "Failed processing" in r.stdout or r.stderr.strip():
+    # icacls prints "Failed processing 0 files" on SUCCESS. Match the
+    # final explicit native counters, not the mere words "Failed processing".
+    # Nonzero exit, nonzero failed count, missing/ambiguous summary or stderr
+    # remain a hard refusal; do not infer success from exit code alone.
+    summaries=re.findall(
+        r"^Successfully processed (\d+) files?; Failed processing (\d+) files?\s*$",
+        r.stdout,re.MULTILINE|re.IGNORECASE)
+    valid_summary=(len(summaries)==1 and int(summaries[0][0])>0
+                   and int(summaries[0][1])==0)
+    if r.returncode or not valid_summary or r.stderr.strip():
         # Preserve the actual Windows failing object and error; a denied ACL
         # must never turn into an unsandboxed or more broadly granted launch.
         operation="remove" if remove else "grant "+permission
-        message=" ".join((r.stderr+" "+r.stdout).split())[:900]
+        # Retain both the leading diagnostic and final native summary;
+        # a recursive installation grant can emit thousands of file lines.
+        message=("stderr="+r.stderr.strip()[:350]+
+                 "; stdout tail="+r.stdout.strip()[-500:])
         raise AppContainerFailure(
             f"Native AppContainer DACL operation failed ({operation}, "
             f"path={path}, exit={r.returncode}): {message}")

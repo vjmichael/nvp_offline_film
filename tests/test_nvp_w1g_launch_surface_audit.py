@@ -58,9 +58,9 @@ class RuntimeLaunchAuditTests(unittest.TestCase):
             shutil.copytree(repo/"backend",root/"backend")
             candidate=root/"backend"/"nvp_g03_windows_appcontainer.py"
             original=candidate.read_text("utf8")
-            self.assertIn('args=["icacls",str(path)]',original)
+            self.assertIn('args=["icacls.exe",str(path)]',original)
             candidate.write_text(original.replace(
-                'args=["icacls",str(path)]',
+                'args=["icacls.exe",str(path)]',
                 'args=["powershell",str(path)]'),encoding="utf8")
             with self.assertRaisesRegex(PermissionError,"AppContainer ACL host"):
                 audit_release_launch_surface(root)
