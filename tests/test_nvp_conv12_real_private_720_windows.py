@@ -14,11 +14,13 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from backend.nvp_blender_worker import BlenderOperation, BlenderWorkerSupervisor,sha_file
 from backend.nvp_usd_film01m_director_camera_bank import DirectorCameraBank
@@ -64,6 +66,62 @@ def _fixture_failure_logs(root,job_id):
         except OSError:
             result[name]="unavailable"
     return result
+
+
+class ProtectedRendererPathContract(unittest.TestCase):
+    def test_exact_fixed_entries_do_not_resolve_creator_ancestors(self):
+        source=Path(__file__).resolve().parents[1]/"tools"/(
+            "nvp_usd_film01q_blender_selected_views.py")
+        worker=runpy.run_path(str(source))
+        verify=worker["_fixed_job_files"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp).resolve()
+            names=(source.name,"nvp_usd_film01r_quality.py",
+                   "nvp_usd_film01m_camera_ray_mask.py",
+                   "source.json","plan.json","source.usda","chunk.json")
+            for name in names:
+                (root/name).write_bytes(b"fixture")
+            args=["--manifest",str(root/"chunk.json"),
+                  "--audit",str(root/"audit.json")]
+            previous=Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.object(Path,"resolve",side_effect=PermissionError(
+                        "normalized ancestor lookup denied")):
+                    self.assertEqual(verify(args,root/source.name)[0],root)
+                    for invalid in (
+                        ["--manifest",str(root/"source.json"),*args[2:]],
+                        ["--manifest",str(root/".."/root.name/"chunk.json"),*args[2:]],
+                        [*args[:2],"--audit",str(root.parent/"audit.json")],
+                    ):
+                        with self.assertRaises(PermissionError):
+                            verify(invalid,root/source.name)
+                    with self.assertRaises(PermissionError):
+                        verify(args,root.parent/source.name)
+                    (root/"audit.json").write_bytes(b"existing")
+                    with self.assertRaises(PermissionError):
+                        verify(args,root/source.name)
+                    (root/"audit.json").unlink()
+                    (root/"source.usda").unlink()
+                    (root/"source.usda").mkdir()
+                    with self.assertRaises(PermissionError):
+                        verify(args,root/source.name)
+            finally:
+                os.chdir(previous)
+
+    def test_reparse_and_access_denial_never_downgraded_to_absent(self):
+        from types import SimpleNamespace
+        import stat
+        source=Path(__file__).resolve().parents[1]/"tools"/(
+            "nvp_usd_film01q_blender_selected_views.py")
+        entry=runpy.run_path(str(source))["_plain_entry"]
+        with patch.object(Path,"lstat",return_value=SimpleNamespace(
+                st_mode=stat.S_IFREG,st_file_attributes=0x400)):
+            with self.assertRaises(PermissionError):
+                entry(Path("reparse"))
+        with patch.object(Path,"lstat",side_effect=PermissionError("denied")):
+            with self.assertRaises(PermissionError):
+                entry(Path("audit.json"),absent=True)
 
 
 class FixtureDiagnosticContract(unittest.TestCase):

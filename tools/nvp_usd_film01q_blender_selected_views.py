@@ -12,14 +12,8 @@ from hashlib import sha256
 import json
 import math
 from pathlib import Path
+import stat
 import sys
-
-# Source-reviewed, SHA-pinned local helpers live in this one private job root.
-sys.path.insert(0,str(Path(__file__).resolve().parent))
-
-import bpy
-from nvp_usd_film01r_quality import verify_quality,quality_hash
-from nvp_usd_film01m_camera_ray_mask import per_camera_primary_ray_exclusions
 
 SOURCE_FORMAT="nvp.usd_film01o.original_720frame_director_rig_source.v1"
 PLAN_FORMAT="nvp.usd_film01q.source_selected_view_render_plan.v1"
@@ -40,28 +34,66 @@ def digest(path):
     return h.hexdigest()
 
 
-def run():
-    argv=sys.argv[sys.argv.index("--")+1:]
+def _plain_entry(path, *, directory=False, absent=False):
+    """Check the actual entry without resolving/traversing creator ancestors."""
+    try:
+        info=path.lstat()
+    except FileNotFoundError:
+        if absent:
+            return
+        raise
+    if (absent or
+        getattr(info,"st_file_attributes",0)&
+            getattr(stat,"FILE_ATTRIBUTE_REPARSE_POINT",0x400) or
+        (not stat.S_ISDIR(info.st_mode) if directory
+         else not stat.S_ISREG(info.st_mode))):
+        raise PermissionError("Refused existing output, non-regular entry or reparse point")
+
+
+def _fixed_job_files(argv, script_path):
+    # The trusted host has already resolved the actual job, pinned every
+    # input, set the native process cwd, and granted only that directory.
+    # GetFinalPathNameByHandleW's normalized-name lookup may require rights
+    # to the creator's ancestors, even when this exact job is accessible.
+    # Do not broaden ACLs or catch-and-ignore access errors. Within the job,
+    # use only exact fixed leaf names, inspect entries without following
+    # links/reparse points, and keep the original input/output SHA gates.
+    root=Path.cwd()
+    if (not root.is_absolute() or
+        Path(script_path)!=root/"nvp_usd_film01q_blender_selected_views.py"):
+        raise PermissionError("Worker script not in fixed authorized job")
+    _plain_entry(Path("."),directory=True)
     if len(argv)!=4 or set(argv[::2])!={"--manifest","--audit"}:
         raise PermissionError("Reviewed original-shot renderer flags only")
     args=dict(zip(argv[::2],argv[1::2]))
-    root=Path.cwd().resolve(strict=True)
     files={}
-    for key,value in args.items():
-        requested=Path(value)
-        path=requested.resolve()
-        if (requested.is_symlink() or path.parent!=root or
-            (key=="--manifest" and not path.is_file()) or
-            (key=="--audit" and path.exists())):
+    for key,name in (("--manifest","chunk.json"),("--audit","audit.json")):
+        path=root/name
+        if Path(args[key])!=path:
             raise PermissionError("Camera source shot path escaped fixed job dir")
+        _plain_entry(path,absent=key=="--audit")
         files[key]=path
+    for name in ("nvp_usd_film01q_blender_selected_views.py",
+                 "nvp_usd_film01r_quality.py",
+                 "nvp_usd_film01m_camera_ray_mask.py",
+                 "source.json","plan.json","source.usda"):
+        _plain_entry(root/name)
+    return root,files
+
+
+def run():
+    argv=sys.argv[sys.argv.index("--")+1:]
+    root,files=_fixed_job_files(argv,__file__)
+    # Only reviewed helpers inside the same hash-pinned private job.
+    sys.path.insert(0,str(root))
+    import bpy
+    from nvp_usd_film01r_quality import verify_quality,quality_hash
+    from nvp_usd_film01m_camera_ray_mask import per_camera_primary_ray_exclusions
+
     chunk=json.loads(files["--manifest"].read_text("utf8"))
     manifest=root/"source.json"
     plan_file=root/"plan.json"
     stage=root/"source.usda"
-    for file in (manifest,plan_file,stage):
-        if file.is_symlink() or not file.is_file():
-            raise PermissionError("Missing reviewed immutable source film input")
     source=json.loads(manifest.read_text("utf8"))
     plan=json.loads(plan_file.read_text("utf8"))
     if (type(chunk) is not dict or set(chunk)!={
@@ -184,8 +216,7 @@ def run():
         scene.camera=camera
         name=f"frame_{i:04d}.png"
         picture=root/name
-        if picture.is_symlink() or picture.exists():
-            raise FileExistsError("No overwriting a previous editor frame")
+        _plain_entry(picture,absent=True)
         scene.render.filepath=str(picture)
         with per_camera_primary_ray_exclusions(
                 objects,frame["camera_ray_exclusions"]) as masked:
@@ -193,7 +224,8 @@ def run():
                 masked["masked_mesh_object_count"]==0):
                 raise RuntimeError("Requested wall-primary-ray mask did not apply")
             bpy.ops.render.render(write_still=True)
-        if not picture.is_file() or picture.stat().st_size<100:
+        _plain_entry(picture)
+        if picture.stat().st_size<100:
             raise RuntimeError("Native original-source selected view pixel missing")
         rows.append({
             "frame":i,"original_film_tick":frame["original_film_tick"],
@@ -226,7 +258,9 @@ def run():
         "native_blender_version":bpy.app.version_string,
         "full_original_camera_rolls_rendered":False,
         "director_picture_reviewed":False}
-    files["--audit"].write_bytes(canonical(report))
+    _plain_entry(files["--audit"],absent=True)
+    with files["--audit"].open("xb") as output:
+        output.write(canonical(report))
 
 if __name__=="__main__":
     run()
