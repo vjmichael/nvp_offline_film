@@ -62,6 +62,10 @@ jobs:
           }
           python -m unittest discover -s tests -p test_nvp_wo4_native_bundle.py -v
           if ($LASTEXITCODE -ne 0) { throw 'WO4 native bundle inventory failed' }
+          foreach ($f in @('original_short','original_feature','codec_binding')) {
+            python -m unittest discover -s tests -p ("test_nvp_wo5_"+$f+".py") -v
+            if ($LASTEXITCODE -ne 0) { throw "WO5 source custody suite failed: $f" }
+          }
           python tools/nvp_no_ffmpeg_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }

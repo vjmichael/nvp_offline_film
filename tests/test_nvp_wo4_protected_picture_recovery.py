@@ -17,6 +17,9 @@ from backend.nvp_wo4_master_qc import evaluate_master_candidates
 from backend.nvp_w1g_encrypted_source import require_efs_stage
 from backend.nvp_production_journal import SingletonSupervisor
 from backend.nvp_wo4_feature_journal import FeatureJournal,ASSEMBLY_FORMAT
+from backend.nvp_wo5_original_short import inspect_indexed_reel,inspect_original_single_reel_readiness
+from backend.nvp_wo5_original_feature import inspect_indexed_feature,inspect_original_feature_readiness
+from backend.nvp_wo5_codec_binding import pinned_codec_pair
 from backend.nvp_wo4_pcm_stream import stream_master_pcm24_candidate
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
@@ -185,11 +188,35 @@ class NativePictureCheckpointRecovery(unittest.TestCase):
             self.assertEqual(reopened.reconcile_features()["jobs"][0]["state"],"PUBLISHED_PENDING_INDEX")
             runner=ProductionSupervisor(reopened,resolve_project=lambda _:f.index,codec_factory=factory)
             self.assertEqual(runner.run_one()["status"],"MULTIREEL_FEATURE_FILMINDEX_RECORDED")
-        authority=factory(f.pid,lambda:False)[0].authority
-        def codec(product):
-            item=manifest["tools"][ROLES[product]]
-            return ApprovedCodecBinary(bundle/item["filename"],sha256=item["sha256"],product=product,authority=authority)
-        unwrap=codec("ASDCP-asdcp_unwrap");decoder=codec("OpenJPEG-opj_decompress")
+        check=lambda:False
+        authority=factory(f.pid,check)[0].authority
+        unwrap,decoder=pinned_codec_pair(bundle,manifest,authority.pin,authority=authority,
+                                        project_id=f.pid,check_cancel=check)
+        with self.assertRaises(PermissionError):
+            pinned_codec_pair(bundle,manifest,authority.pin,authority=authority,
+                              project_id="other-project",check_cancel=check)
+        with self.assertRaises(PermissionError):
+            pinned_codec_pair(bundle,manifest,authority.pin,authority=authority,
+                              project_id=f.pid,check_cancel=lambda:False)
+        for job in (uid,uid_b):
+            receipt=inspect_indexed_reel(f.index,reopened,f.pid,job)
+            self.assertEqual(receipt["status"],"INDEXED_REEL_SOURCE_CUSTODY_VERIFIED")
+            self.assertEqual(receipt["frame_count"],3)
+            self.assertFalse(receipt["production_acceptance"])
+            self.assertNotIn(str(root),str(receipt))
+            # Real short playback admission must not be confused with the
+            # specific one-second varied-frame creative proof threshold.
+            with self.assertRaises(ValueError):
+                inspect_original_single_reel_readiness(f.index,reopened,f.pid,job)
+        film=inspect_indexed_feature(f.index,reopened,f.pid,fid)
+        self.assertEqual(film["status"],"INDEXED_FEATURE_SOURCE_CUSTODY_VERIFIED")
+        self.assertEqual(film["frame_count"],6)
+        self.assertFalse(film["pilot_variation_checked"])
+        self.assertFalse(film["production_acceptance"])
+        self.assertNotIn(str(root),str(film))
+        with self.assertRaises(ValueError):
+            inspect_original_feature_readiness(f.index,reopened,f.pid,fid)
+        print("WO5_PROTECTED_INDEXED_REEL_AND_FEATURE_DECODER_ADMISSION_PASS",flush=True)
         first_d=reopened.delivery(uid)
         single=decode_full_dcp_candidate(exports/("DCP_"+first_d["cpl_uuid"]),
             unwrap=unwrap,decoder=decoder,expected_frames=3,
