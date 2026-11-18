@@ -188,7 +188,7 @@ class TaskLedger:
         return {"task_id":request.task_id,"state":"QUEUED","admitted":False,
                 "lane":lane,"reason":detail}
 
-    def claim_next(self,*,owner_key:str):
+    def claim_next(self,*,owner_key:str,expected_task_id=None):
         """Reserve the highest priority queued task for a trusted producer.
 
         Atomic admission checks and reservation hold the same SQLite write
@@ -208,6 +208,12 @@ class TaskLedger:
                 db.commit()
                 return None
             task_id,kind,title,ram_mb,gpu_mb,device_id,lane=row
+            # The producer may have checked an exact immutable approval
+            # before acquiring this SQLite lease. Never claim a replacement
+            # head (even one owned by the same producer).
+            if expected_task_id is not None and task_id!=expected_task_id:
+                db.commit()
+                return None
             request=AdmissionRequest(task_id,kind,title,ram_mb,gpu_mb,device_id)
             reserved=db.execute("""SELECT COALESCE(SUM(ram_mb),0),
                 COALESCE(SUM(CASE WHEN device_id=? THEN gpu_mb ELSE 0 END),0)

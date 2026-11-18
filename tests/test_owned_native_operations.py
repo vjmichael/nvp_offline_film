@@ -77,6 +77,30 @@ class ApprovedBindingTests(unittest.TestCase):
             self.assertEqual(binder.verified_spec("job_one",owner_key="source_one"),document)
             self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],1024)
 
+    def test_priority_change_between_verified_spec_and_claim_never_reserves_other_task(self):
+        with TemporaryDirectory() as root:
+            ledger=TaskLedger(root,sampler=measured)
+            binder=ApprovedTaskBindings(ledger,approval_check=lambda *_:True)
+            def enqueue(task,lane):
+                binder.enqueue(AdmissionRequest(task,"blender","Exact",1024),
+                    owner_key="native_host",lane=lane,approval_id="creator",
+                    document={"task_id":task,"kind":"blender"})
+            enqueue("old","standard")
+            actual=ledger.claim_next
+            def raced(**kwargs):
+                enqueue("urgent","interactive")
+                return actual(**kwargs)
+            with patch.object(ledger,"claim_next",side_effect=raced):
+                self.assertIsNone(binder.claim_next(owner_key="native_host",
+                                                    expected_task_id="old"))
+            self.assertEqual(ledger.get_task("old")["state"],"QUEUED")
+            self.assertEqual(ledger.get_task("urgent")["state"],"QUEUED")
+            self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
+            self.assertIsNone(binder.claim_next(owner_key="native_host",
+                                                expected_task_id="old"))
+            self.assertEqual(binder.claim_next(owner_key="native_host",
+                expected_task_id="urgent")["task_id"],"urgent")
+
     def test_revocation_and_tampering_fail_closed(self):
         with TemporaryDirectory() as root:
             ledger=TaskLedger(root,sampler=measured)

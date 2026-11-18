@@ -123,7 +123,7 @@ class ApprovedTaskBindings:
         self._check(approval_id,digest,document)
         return document
 
-    def claim_next(self,*,owner_key):
+    def claim_next(self,*,owner_key,expected_task_id=None):
         # Preflight the head-of-line binding before reserving memory. A
         # revoked approval should not strand host RAM merely because the
         # queued task has become unauthorized. The policy is rechecked again
@@ -136,10 +136,12 @@ class ApprovedTaskBindings:
                 ORDER BY CASE s.lane WHEN 'interactive' THEN 2
                     WHEN 'standard' THEN 1 ELSE 0 END DESC,
                     s.queued_at ASC,t.id ASC LIMIT 1""",(owner_key,)).fetchone()
-        if candidate is None:
+        if candidate is None or (expected_task_id is not None and
+                                 candidate[0]!=expected_task_id):
             return None
         self.verified_spec(candidate[0],owner_key=owner_key,require_active=False)
-        result=self.ledger.claim_next(owner_key=owner_key)
+        result=self.ledger.claim_next(owner_key=owner_key,
+                                      expected_task_id=candidate[0])
         if result is None or not result["admitted"]:
             return result
         self.verified_spec(result["task_id"],owner_key=owner_key)

@@ -41,9 +41,9 @@ class ApprovedBlenderDispatcher:
         return self.bindings.enqueue(request,owner_key=self.owner_key,lane=lane,
             approval_id=approval_id,document={"task_id":task_id,"kind":"blender","operation":spec})
 
-    def run_next(self):
+    def run_next(self,*,expected_task_id=None):
         """One synchronous run; a future native dispatcher may invoke repeatedly."""
-        ticket=self.bindings.claim_next(owner_key=self.owner_key)
+        ticket=self.bindings.claim_next(owner_key=self.owner_key,expected_task_id=expected_task_id)
         if ticket is None or not ticket["admitted"]:
             return ticket
         task_id=ticket["task_id"]
