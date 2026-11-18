@@ -320,6 +320,8 @@ class FinishedReviewActions:
         return self._wo5_finished().stop(session_id)
 
     def _wo5_close_review(self):
-        if self._wo5_player is not None:
-            self._wo5_player.close()
-        self._wo5_pending_review_grant=None
+        try:
+            if self._wo5_player is not None:
+                self._wo5_player.close()
+        finally:
+            self._wo5_pending_review_grant=None

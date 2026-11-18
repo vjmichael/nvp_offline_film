@@ -283,11 +283,12 @@ def create_trusted_camera_bridge(port):
     from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
     # The production journal must already exist; this view never creates a
     # second production owner. Codecs may reside only in HKLM Program Files.
+    from backend._nvp_wo5_release_pin import RELEASE_CODEC_MANIFEST_SHA256
     codec_bundle=None
-    if os.name=="nt" and getattr(sys,"frozen",False):
+    if os.name=="nt" and getattr(sys,"frozen",False) and RELEASE_CODEC_MANIFEST_SHA256:
         import winreg
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion") as key:
-            codec_bundle=Path(winreg.QueryValueEx(key,"ProgramFilesDir")[0])/"NVP"/"native-codecs"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r"SOFTWARE\Microsoft\Windows\CurrentVersion") as key:
+            codec_bundle=Path(winreg.QueryValueEx(key,"ProgramFilesDir")[0]).resolve(strict=True)/"NVP"/"native-codecs"
     return TrustedDesktopCameraBridge(
         FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
         project_lock_check=film_access().any_protected,

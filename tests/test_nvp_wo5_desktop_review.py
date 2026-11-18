@@ -126,6 +126,19 @@ class NativeDirectorWindowTests(unittest.TestCase):
             self.api.wo5_film_begin(self.project,"not-a-feature")
         self.assertFalse(hasattr(self.api,"_wo5_configure_review"))
 
+    def test_project_lock_and_revoked_origin_after_dialog_refuse_publication(self):
+        self.bridge._project_lock_check=lambda:True
+        with self.assertRaises(PermissionError):
+            self.api.wo5_review_catalog(self.project)
+        self.bridge._project_lock_check=lambda:False
+        def approve_then_navigate(*args):
+            self.win.url="http://127.0.0.1:51213/evil"
+            return True
+        self.win.create_confirmation_dialog=approve_then_navigate
+        with self.assertRaises(PermissionError):
+            self.api.wo5_review_save_intent(self.intent_request())
+        self.assertEqual(self.index.history(self.project,"OriginalIntent01"),[])
+
     def test_read_only_native_review_receives_source_bound_feature_report(self):
         evidence={"status":"SOURCE_CUSTODY_READY_FOR_HUMAN_FILM_REVIEW_NOT_ACCEPTED",
                   "project_id":self.project,"feature_id":"real-job",

@@ -2076,7 +2076,13 @@ class TrustedDesktopCameraBridge(FinishedReviewActions, ConvergedDirectorDesktop
                 self._original_capture_controller.close()
             host=self._host
             tickets=list(self._tickets.values())
-        self._wo5_close_review()
+        review_error=None
+        try:
+            self._wo5_close_review()
+        except Exception as exc:
+            # A failed playback cleanup must never prevent other native tree
+            # cancellation. Retain the unresolved playback evidence and report it.
+            review_error=exc
         if host is not None:
             for item in tickets:
                 job=item.get("job_id")
@@ -2093,3 +2099,5 @@ class TrustedDesktopCameraBridge(FinishedReviewActions, ConvergedDirectorDesktop
         if hasattr(self, "_camfx04_active"):
             self._camfx04_shutdown()
         self._executor.shutdown(wait=True,cancel_futures=True)
+        if review_error is not None:
+            raise review_error
