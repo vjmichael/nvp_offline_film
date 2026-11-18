@@ -368,5 +368,65 @@ class WebviewLoadObservationTests(unittest.TestCase):
         self.assertIn("window_native_source_sound_verified", smoke)
 
 
+class PrivateProfileTests(unittest.TestCase):
+    @staticmethod
+    def _helper():
+        import tempfile
+        path = Path(__file__).resolve().parents[1] / "tools" / "nvp_desktop_alpha.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                    and n.name == "_start_private_webview")
+        scope = {"tempfile": tempfile, "Path": Path}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), scope)
+        return scope[node.name]
+
+    def test_profile_exists_unique_and_removed(self):
+        from types import SimpleNamespace
+        paths = []
+        callback = lambda: None
+        def run(**kwargs):
+            profile = Path(kwargs["storage_path"])
+            self.assertTrue(profile.is_dir())
+            self.assertTrue(kwargs["private_mode"])
+            self.assertFalse(kwargs["debug"])
+            self.assertEqual(kwargs["gui"], "edgechromium")
+            self.assertIs(kwargs["func"], callback)
+            (profile / "synthetic").write_text("test")
+            paths.append(profile)
+        webview = SimpleNamespace(start=run, renderer="edgechromium")
+        start = self._helper()
+        start(webview, func=callback)
+        start(webview, func=callback)
+        self.assertNotEqual(paths[0], paths[1])
+        self.assertTrue(all(not p.parent.exists() for p in paths))
+
+    def test_failure_is_not_swallowed_or_raw_diagnostic_retained(self):
+        import logging
+        from types import SimpleNamespace
+        observed = {}
+        paths = []
+        logger = logging.getLogger("pywebview")
+        original_handlers = list(logger.handlers)
+        def run(**kwargs):
+            paths.append(Path(kwargs["storage_path"]))
+            logger.error("WebView2 initialization failed with exception:\n SECRET_PATH")
+            logger.error("Cache directory SECRET_PATH creation failed")
+            raise RuntimeError("native startup failed")
+        with self.assertRaisesRegex(RuntimeError, "native startup failed"):
+            self._helper()(SimpleNamespace(start=run, renderer="edgechromium"), diagnostics=observed)
+        self.assertEqual(observed, {"native_initialization_failed": True,
+            "profile_creation_failed": True, "renderer_is_edgechromium": True})
+        self.assertNotIn("SECRET_PATH", repr(observed))
+        self.assertEqual(logger.handlers, original_handlers)
+        self.assertFalse(paths[0].parent.exists())
+
+    def test_fallback_renderer_is_not_misreported(self):
+        from types import SimpleNamespace
+        observed = {}
+        self._helper()(SimpleNamespace(start=lambda **kwargs: None, renderer="mshtml"), diagnostics=observed)
+        self.assertFalse(observed["renderer_is_edgechromium"])
+        self.assertFalse(observed["native_initialization_failed"])
+
+
 if __name__=="__main__":
     unittest.main()

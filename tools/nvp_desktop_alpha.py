@@ -297,6 +297,44 @@ def create_trusted_camera_bridge(port):
         review_codec_bundle=codec_bundle)
 
 
+def _start_private_webview(webview, *, func=None, diagnostics=None):
+    """Keep a dedicated, existing private WebView2 profile alive for the GUI loop.
+
+    pywebview 6.2.1 defaults to TemporaryDirectory().name on Windows, dropping
+    the owner before native initialization. Supply a private, process-unique
+    directory explicitly; never reuse a creator's project or browser profile.
+    """
+    import logging
+
+    class StartupObserver(logging.Handler):
+        def emit(self, record):
+            # The upstream message can contain paths or native exception text.
+            # Retain only fixed booleans, not the original diagnostic payload.
+            message = record.getMessage()
+            if message.startswith("WebView2 initialization failed with exception:"):
+                diagnostics["native_initialization_failed"] = True
+            elif message.startswith("Cache directory ") and message.endswith(" creation failed"):
+                diagnostics["profile_creation_failed"] = True
+
+    logger = logging.getLogger("pywebview")
+    observer = None
+    if diagnostics is not None:
+        diagnostics.update(native_initialization_failed=False, profile_creation_failed=False,
+                           renderer_is_edgechromium=False)
+        observer = StartupObserver()
+        logger.addHandler(observer)
+    try:
+        with tempfile.TemporaryDirectory(prefix="nvp-webview2-") as root:
+            profile = Path(root) / "profile"
+            profile.mkdir()
+            webview.start(func=func, gui="edgechromium", debug=False,
+                          private_mode=True, storage_path=str(profile))
+    finally:
+        if observer is not None:
+            logger.removeHandler(observer)
+            diagnostics["renderer_is_edgechromium"] = webview.renderer == "edgechromium"
+
+
 def _await_native_window_load(window, server, worker, *, timeout=30):
     """Wait for pywebview's own load event, not a dispatched observer callback.
 
@@ -393,6 +431,8 @@ def run_visible_window_smoke():
             raise RuntimeError(description)
         def inspect_and_close():
             try:
+                if webview.renderer != "edgechromium":
+                    raise RuntimeError("Native WebView2 renderer unavailable")
                 _await_native_window_load(window,server,worker)
                 _smoke_checkpoint("window_real_page_loaded")
                 # Director-first navigation has replaced old engineering tabs.
@@ -565,12 +605,13 @@ def run_visible_window_smoke():
                 _smoke_checkpoint("window_native_ui_assertion_failed")
             finally:
                 window.destroy()
-        webview.start(func=inspect_and_close,gui="edgechromium",debug=False)
+        startup_diagnostics={}
+        _start_private_webview(webview,func=inspect_and_close,diagnostics=startup_diagnostics)
         _smoke_checkpoint("window_webview2_loop_exited")
         if not result["passed"]:
             raise RuntimeError(
                 "Native director screen or data-first IPC failed: "+
-                result.get("failure","unknown"))
+                result.get("failure","unknown")+"; startup: "+repr(startup_diagnostics))
         return 0
     finally:
         try:
@@ -752,7 +793,7 @@ def run_g03_window_smoke():
             finally:
                 window.destroy()
 
-        webview.start(func=assert_visible,gui="edgechromium",debug=False)
+        _start_private_webview(webview,func=assert_visible)
         if not result["passed"]:
             raise RuntimeError("G03 native WebView acceptance failed ("+
                                result["phase"]+"): "+
@@ -1381,7 +1422,7 @@ def main(argv=None):
             "http://127.0.0.1:"+str(port),
             width=1280,height=800,min_size=(960,600),js_api=NativeWebviewIPCSurface(bridge))
         bridge._attach_window(window)
-        webview.start(gui="edgechromium",debug=False)
+        _start_private_webview(webview)
         return 0
     finally:
         try:
