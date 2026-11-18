@@ -96,6 +96,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WO6 native source or task authorization regression' }
           python -m unittest discover -s tests -p test_nvp_wo6_creator_plan.py -v
           if ($LASTEXITCODE -ne 0) { throw 'WO6 creator planning scope or source custody regression' }
+          python -m unittest discover -s tests -p test_nvp_wo6_take_pipe_protocol.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 pathless worker refusal regression' }
           python -m unittest discover -s tests -p test_nvp_wo6_native_take_action.py -v
           if ($LASTEXITCODE -ne 0) { throw 'WO6 genuine protected native Take regression' }
           python -m unittest discover -s tests -p test_owned_native_operations.py -v
