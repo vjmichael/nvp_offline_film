@@ -197,13 +197,8 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
                 workspace_dirty=bool(list(root.rglob("*")))
                 still_live=live()
                 pin_matches=command_scope()[3]==pin
-                if (rc!=0 or errors or stderr or alive or workspace_dirty or not still_live or not pin_matches):
-                    # No source, private diagnostics, paths or stderr content.
-                    raise RuntimeError("Protected native Take failed: "+
-                        "exit="+str(rc)+" pipe_errors="+str(len(errors))+
-                        " stderr_bytes="+str(len(stderr))+" stdout_bytes="+str(len(stdout))+
-                        " pipe_alive="+str(alive)+" workspace_dirty="+str(workspace_dirty)+
-                        " live="+str(still_live)+" pin_matches="+str(pin_matches))
+                _require_clean_worker_result(rc,errors,stderr,stdout,alive,
+                    workspace_dirty,still_live,pin_matches)
                 header=len(MAGIC_OUT)+8
                 if not stdout.startswith(MAGIC_OUT) or len(stdout)<header:
                     raise RuntimeError("Native Take output protocol invalid")
@@ -230,6 +225,18 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
                         if proc.poll() is None:proc.terminate_tree()
                         proc.wait(timeout=12)
                     finally:proc.close()
+
+
+def _require_clean_worker_result(rc, errors, stderr, stdout, alive,
+                                 workspace_dirty, still_live, pin_matches):
+    # Retain every existing fail-closed predicate. stderr contents are not
+    # classified from byte count, displayed, persisted, or sent over IPC.
+    if (rc!=0 or errors or stderr or alive or workspace_dirty or not still_live or not pin_matches):
+        raise RuntimeError("Protected native Take failed: "+
+            "exit="+str(rc)+" pipe_errors="+str(len(errors))+
+            " stderr_bytes="+str(len(stderr))+" stdout_bytes="+str(len(stdout))+
+            " pipe_alive="+str(alive)+" workspace_dirty="+str(workspace_dirty)+
+            " live="+str(still_live)+" pin_matches="+str(pin_matches))
 
 
 def _write_all(file, payload, errors):
