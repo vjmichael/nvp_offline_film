@@ -105,6 +105,24 @@ class PackageGuardTests(unittest.TestCase):
         self.assertNotIn('RMDir /r "${PREVIOUS_DIR}"', script)
         self.assertNotIn('RMDir /r "${STAGE_DIR}"', script)
 
+    def test_codec_enabled_nsis_never_promotes_before_frozen_gate(self):
+        root=Path(__file__).resolve().parents[1]
+        script=(root/"packaging"/"nvp-alpha.nsi").read_text(encoding="utf8")
+        gate=script.index('--verify-wo5-installer-pin')
+        self.assertLess(gate,script.index('FileOpen $0 "${STAGE_DIR}\\${MARKER}" w'))
+        self.assertLess(gate,script.index('Rename "${STAGE_DIR}" "$INSTDIR"'))
+        self.assertIn('RequestExecutionLevel user',script)
+        self.assertIn('StrCmp $4 "0" codec_verified codec_failed',script)
+        self.assertNotIn('ExecShell "runas"',script)
+        self.assertNotIn('RMDir /r "$PROGRAMFILES',script)
+        self.assertNotIn('File /r "${WO5',script)
+        boot=(root/"tools"/"nvp_desktop_alpha.py").read_text(encoding="utf8")
+        start=boot.index('def main(argv=None):')
+        self.assertLess(boot.index('--verify-wo5-installer-pin',start),boot.index('    configure_home()',start))
+        build=(root/"packaging"/"build-nvp-nsis.sh").read_text(encoding="utf8")
+        self.assertIn('backend.nvp_wo5_install_contract',build)
+        self.assertIn('-DWO5_CODEC_PIN=$codec_pin',build)
+
 
 
 if __name__ == "__main__":

@@ -66,10 +66,27 @@ if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 8
 fi
 
+# WO5: independently approved offline codecs are deployed in a distinct
+# machine transaction. The one per-user installer never copies or elevates them.
+codec_pin="${NVP_WO5_RELEASE_PIN:-disabled}"
+codec_args=()
+if [ "$codec_pin" != disabled ]; then
+  if ! [[ "$codec_pin" =~ ^[0-9a-f]{64}$ ]] || [ -z "${NVP_WO5_MACHINE_PAYLOAD:-}" ]; then
+    echo "Codec release requires independent manifest SHA and reviewed offline payload" >&2
+    exit 9
+  fi
+  codec_args+=(--codec-payload "$NVP_WO5_MACHINE_PAYLOAD")
+elif [ -n "${NVP_WO5_MACHINE_PAYLOAD:-}" ]; then
+  echo "Codec-disabled release must not carry a machine payload" >&2
+  exit 9
+fi
 mkdir -p "$repo/dist"
 (
   cd "$repo"
-  "$compiler" "-DAPP_VERSION=$version" -V3 "packaging/nvp-alpha.nsi"
+  python3 -m backend.nvp_wo5_install_contract --expected "$codec_pin" \
+    --pin-module backend/_nvp_wo5_release_pin.py --app-bundle "$bundle" \
+    "${codec_args[@]}" > dist/NVP-WO5-installer-contract.json
+  "$compiler" "-DAPP_VERSION=$version" "-DWO5_CODEC_PIN=$codec_pin" -V3 "packaging/nvp-alpha.nsi"
 )
 exe="$repo/dist/NVP-Alpha-Setup.exe"
 test -s "$exe" || { echo "NSIS did not produce an installer" >&2; exit 5; }

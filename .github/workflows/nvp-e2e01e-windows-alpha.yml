@@ -63,7 +63,10 @@ jobs:
           if (-not (Test-Path $nsis)) {
             $nsis = (Get-Command makensis -ErrorAction Stop).Source
           }
-          & $nsis '/V3' 'packaging/nvp-alpha.nsi'
+          # Default CI deliberately has no independently reviewed codec pin.
+          python -m backend.nvp_wo5_install_contract --expected disabled --pin-module backend/_nvp_wo5_release_pin.py --app-bundle dist/NVP
+          if ($LASTEXITCODE -ne 0) { throw 'WO5 installer contract mismatch' }
+          & $nsis '/V3' '/DWO5_CODEC_PIN=disabled' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0) { throw 'NSIS failed' }
           if (-not (Test-Path 'dist/NVP-Alpha-Setup.exe')) { throw 'Missing NSIS installer' }
       - name: Silent install and execute installed native alpha

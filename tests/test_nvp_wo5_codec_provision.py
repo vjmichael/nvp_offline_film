@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 from backend.nvp_wo5_codec_provision import (
     FORMAT, ROSTER, MANIFEST, verify_payload, provision_immutable, check_installed,
-    require_machine_codec_scope,
+    require_machine_codec_scope, deploy_machine,
 )
 
 
@@ -109,6 +109,40 @@ class ProvisionTests(unittest.TestCase):
                     with self.assertRaises(PermissionError):
                         require_machine_codec_scope(roots, files, binary,
                             pin=pin, compiled_pin=self.pin, frozen=frozen)
+
+    def test_deploy_prepares_exact_ingress_and_preserves_old_release(self):
+        root = self.root
+        app = root.parent / 'ProgramFilesNVP'
+        app.mkdir()
+        class LocalACL:
+            def __init__(self):
+                self.app = app
+                self.root = root
+            def ensure_root(self):
+                return self.root
+            def check(self, path, **kwargs):
+                if not Path(path).exists():
+                    raise FileNotFoundError(path)
+            def mkdir(self, path):
+                path.mkdir()
+            def seal_file(self, path):
+                self.check(path)
+        with patch('backend.nvp_wo5_codec_provision._MachineACL', LocalACL):
+            first = deploy_machine(self.source, self.pin)
+            other = self.root.parent / 'second'
+            other.mkdir()
+            second_pin = self.fixture(other, b'b')
+            second = deploy_machine(other, second_pin)
+            self.assertEqual(first, root/self.pin)
+            self.assertEqual(second, root/second_pin)
+            self.assertEqual(len(verify_payload(app/'codec-payloads'/self.pin, self.pin)), 8)
+            self.assertEqual(len(verify_payload(first, self.pin)), 8)
+            self.assertEqual(deploy_machine(other, second_pin), second)
+
+    def test_deploy_bad_payload_never_opens_machine_authority(self):
+        with patch('backend.nvp_wo5_codec_provision._MachineACL', side_effect=AssertionError('must not open machine root')):
+            with self.assertRaises(PermissionError):
+                deploy_machine(self.source, '0'*64)
 
     def test_non_windows_machine_gate(self):
         import os

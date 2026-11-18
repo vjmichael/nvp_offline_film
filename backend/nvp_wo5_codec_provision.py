@@ -205,6 +205,8 @@ class _MachineACL:
         read = bool(package_mask & 0x80000000 or package_mask & 0x01)
         if (package_read or package_traverse) and not execute or package_read and not read:
             raise PermissionError("Pre-provisioned AppContainer codec read/execute ACL absent")
+        if package_traverse and not package_read and read:
+            raise PermissionError("Machine codec parent must have traverse-only package access")
 
     def mkdir(self, path):
         attrs = self.pytypes.SECURITY_ATTRIBUTES()
@@ -227,9 +229,10 @@ class _MachineACL:
             raise PermissionError("Explicit elevated machine installation required")
         for path in (self.app, self.root):
             try:
-                self.check(path)
+                self.check(path, package_traverse=True)
             except FileNotFoundError:
                 self.mkdir(path)
+                self.check(path, package_traverse=True)
         return self.root
 
 
@@ -276,13 +279,39 @@ def provision_machine(source, pin):
     return check_installed(pin)
 
 
+def deploy_machine(source, pin):
+    """Elevated release-only copy from verified offline payload into machine ingress.
+
+    Do not invoke this from the per-user application or an elevated script
+    in an untrusted location. The operator separately approves the pin;
+    even an externally writable payload cannot change the admitted bytes.
+    No executable in the payload is run during deployment.
+    """
+    require_pin(pin)
+    source = _plain(source, directory=True)
+    verify_payload(source, pin)
+    acl = _MachineACL()
+    acl.ensure_root()
+    ingress = acl.app / "codec-payloads"
+    try:
+        acl.check(ingress)
+    except FileNotFoundError:
+        acl.mkdir(ingress)
+    secured = provision_immutable(source, pin, ingress, mkdir_secure=acl.mkdir,
+                                  check_secure=acl.check, seal_new_file=acl.seal_file)
+    return provision_machine(secured, pin)
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--approved-pin", required=True)
     parser.add_argument("--payload", type=Path, required=True)
+    parser.add_argument("--deploy-approved-payload", action="store_true",
+                        help="Prepare protected ingress from the independently approved offline payload")
     args = parser.parse_args()
-    target = provision_machine(args.payload, args.approved_pin)
+    provision = deploy_machine if args.deploy_approved_payload else provision_machine
+    target = provision(args.payload, args.approved_pin)
     print(json.dumps({"status": "MACHINE_CODEC_PAYLOAD_VERIFIED", "pin": target.name,
                       "native_playback_accepted": False}, sort_keys=True))
 

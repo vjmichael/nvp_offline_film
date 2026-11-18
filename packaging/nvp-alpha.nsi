@@ -13,6 +13,9 @@ Unicode true
 !ifndef APP_VERSION
 !define APP_VERSION "0.1.0"
 !endif
+!ifndef WO5_CODEC_PIN
+!define WO5_CODEC_PIN "disabled"
+!endif
 !define PRODUCT_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\NVPAlpha"
 !define PACKAGE_FILES "..\dist\NVP"
 Name "${APP_NAME}"
@@ -93,7 +96,17 @@ Section "NVP Alpha" SEC_MAIN
         IfErrors package_failed
         IfFileExists "${STAGE_DIR}\NVP.exe" +2 0
             Goto package_failed
-        FileOpen $0 "${STAGE_DIR}\${MARKER}" w
+        ; Read-only check of the frozen candidate's independently bound pin and
+    ; exact protected machine codec bundle. Never elevate the per-user app.
+    ; A codec-enabled release requires its separate authorized machine phase.
+    ClearErrors
+    ExecWait '"${STAGE_DIR}\NVP.exe" --verify-wo5-installer-pin "${WO5_CODEC_PIN}"' $4
+    IfErrors codec_failed
+    StrCmp $4 "0" codec_verified codec_failed
+    codec_failed:
+        Abort "NVP codec release verification failed. Install the approved machine codec payload or use the matching codec-disabled release. Existing NVP and original films are unchanged."
+    codec_verified:
+    FileOpen $0 "${STAGE_DIR}\${MARKER}" w
         IfErrors package_failed
         FileWrite $0 "NVP-ALPHA-INSTALL-v1"
         FileClose $0

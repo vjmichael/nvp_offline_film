@@ -159,23 +159,38 @@ def main():
     stage.add_argument("--asdcp-license",required=True,type=Path)
     for role in EXES:stage.add_argument("--"+role,required=True,type=Path)
     stage.add_argument("--dll",action="append",default=[],type=Path)
-    stage.add_argument("--pin-module",required=True,type=Path)
+    stage.add_argument("--pin-module",type=Path)
+    stage.add_argument("--approved-pin")
+    bind=sub.add_parser("bind-release")
+    bind.add_argument("--bundle",required=True,type=Path)
+    bind.add_argument("--approved-pin",required=True)
+    bind.add_argument("--pin-module",required=True,type=Path)
     audit=sub.add_parser("verify")
     audit.add_argument("--bundle",required=True,type=Path)
     audit.add_argument("--pin",required=True)
     provision=sub.add_parser("provision-machine")
     provision.add_argument("--payload",required=True,type=Path)
     provision.add_argument("--approved-pin",required=True)
+    provision.add_argument("--deploy-approved-payload",action="store_true")
     args=ap.parse_args()
     if args.cmd=="stage":
+        if bool(args.pin_module)!=bool(args.approved_pin):
+            raise PermissionError("Pin generation requires separate independently approved manifest digest")
         report=stage_bundle(args.destination,
             {role:getattr(args,role.replace("-","_")) for role in EXES},
             args.openjpeg_license,args.asdcp_license,args.dll)
-        write_compiled_pin(args.pin_module,report["manifest_sha256"])
+        if args.pin_module is not None:
+            if args.approved_pin!=report["manifest_sha256"]:
+                raise PermissionError("Staged codec digest differs from independent release approval")
+            write_compiled_pin(args.pin_module,args.approved_pin)
+    elif args.cmd=="bind-release":
+        report=verify_bundle(args.bundle,args.approved_pin)
+        write_compiled_pin(args.pin_module,args.approved_pin)
     elif args.cmd=="verify":report=verify_bundle(args.bundle,args.pin)
     else:
-        from backend.nvp_wo5_codec_provision import provision_machine
-        target=provision_machine(args.payload,args.approved_pin)
+        from backend.nvp_wo5_codec_provision import provision_machine,deploy_machine
+        deploy=deploy_machine if args.deploy_approved_payload else provision_machine
+        target=deploy(args.payload,args.approved_pin)
         report={"status":"MACHINE_CODEC_PAYLOAD_VERIFIED","manifest_sha256":target.name,
                 "native_playback_accepted":False}
     print(json.dumps(report,sort_keys=True,indent=2),flush=True)

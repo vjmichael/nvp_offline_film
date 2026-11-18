@@ -70,7 +70,7 @@ jobs:
           }
           python -m unittest discover -s tests -p test_nvp_wo4_native_bundle.py -v
           if ($LASTEXITCODE -ne 0) { throw 'WO4 native bundle inventory failed' }
-          foreach ($f in @('original_short','original_feature','codec_binding','finished_playback','director_review','desktop_review','release_codecs','codec_provision','review_storage')) {
+          foreach ($f in @('original_short','original_feature','codec_binding','finished_playback','director_review','desktop_review','release_codecs','codec_provision','review_storage','install_contract')) {
             python -m unittest discover -s tests -p ("test_nvp_wo5_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO5 source custody suite failed: $f" }
           }
