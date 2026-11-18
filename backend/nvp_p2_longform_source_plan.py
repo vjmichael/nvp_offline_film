@@ -11,6 +11,8 @@ worker is introduced. Original film master remains separately unauthorized.
 """
 from __future__ import annotations
 
+from backend.nvp_performance_probe import measured, span, observe_windows_job
+
 import hashlib
 import json
 import math
@@ -88,6 +90,7 @@ class NativeLongformFilmPlan:
         edit=self.assembly.open_edit(project_id,doc["edit_id"],doc["edit_revision"])
         return record,edit
 
+    @measured("reel.plan")
     def _prepare(self,project_id,continuity_id,revision,listener_path,camera_path):
         record,edit=self._source(project_id,continuity_id,revision)
         if (type(listener_path) is not str or
@@ -123,6 +126,7 @@ class NativeLongformFilmPlan:
                 "final_film_master_approved":False,
                 "publication_is_only_a_source_plan":True}
 
+    @measured("reel.publish")
     def publish(self,project_id,plan_id,*,continuity_id,
                 continuity_revision,listener_path,camera_path,creator_event,
                 expected_revision=0):
@@ -273,6 +277,7 @@ class NativeLongformFilmPlan:
                 "full_film_master_approved":False,
                 "auto_resumed_worker":False}
 
+    @measured("reel.analysis")
     def reconcile_all(self,project_id,plan_id,revision,*,output_parent,
                       require_protected_worker=False,native_worker_verifier=None,
                       cancelled=lambda:False,progress=lambda **_:None):

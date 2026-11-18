@@ -7,6 +7,8 @@ authority, media access authorization or creator approval.
 """
 from __future__ import annotations
 
+from backend.nvp_performance_probe import measured, span, observe_windows_job
+
 import hashlib
 import json
 import math
@@ -150,6 +152,7 @@ def _digest(doc):
         ensure_ascii=True,allow_nan=False).encode("ascii")).hexdigest()
 
 
+@measured("usd.import")
 def _layer_from_text(text, label, Sdf):
     layer = Sdf.Layer.CreateAnonymous(label)
     if not layer.ImportFromString(text):
@@ -157,6 +160,7 @@ def _layer_from_text(text, label, Sdf):
     return layer
 
 
+@measured("usd.compose")
 def _compose(base, motion, Sdf, Usd, parameters=None, skeletons=None):
     # Strongest first: animation opinions supersede the layout layer.
     root = Sdf.Layer.CreateAnonymous("nvp_composed.usda")
@@ -203,6 +207,7 @@ class OpenUSDSceneBridge:
             raise TypeError("A trusted FilmIndex is required")
         self.index=index
 
+    @measured("usd.publish")
     def publish(self, project_id, scene_id, *, prims, curves,
                 expected_revision=0, asset_bindings=None,
                 performance_channels=None, native_schemas=False,
@@ -547,6 +552,7 @@ class OpenUSDSceneBridge:
         finally:
             stage.SetEditTarget(old)
 
+    @measured("usd.open")
     def open(self, project_id, scene_id, revision):
         record=self.index.read_revision(project_id,scene_id,revision)
         doc=record["data"]

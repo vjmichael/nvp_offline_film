@@ -91,7 +91,7 @@ jobs:
         timeout-minutes: 320
         run: |
           $ErrorActionPreference='Stop'
-          python -m unittest discover -s tests -p test_nvp_conv12_real_private_720_windows.py -v
+          python -m tools.nvp_perf_acceptance cycles
           if ($LASTEXITCODE -ne 0) { throw 'Native OS/EFS/cancel/reopen/720 Cycles acceptance FAILED' }
           if (-not (Test-Path $env:NVP_CONV12_EVIDENCE_PATH)) { throw '720 selected native images not independently verified' }
           $proof=Get-Content $env:NVP_CONV12_EVIDENCE_PATH -Raw | ConvertFrom-Json

@@ -11,6 +11,8 @@ Windows Job Objects / persistent kernel containment are a later acceptance gate.
 """
 from __future__ import annotations
 
+from backend.nvp_performance_probe import measured, span, observe_windows_job
+
 from dataclasses import dataclass, asdict
 from contextlib import contextmanager
 from pathlib import Path
@@ -458,6 +460,7 @@ class BlenderWorkerSupervisor:
         # projects may both legitimately create "approved_build_001".
         return "blend_"+hashlib.sha256(str(self.root).encode()).hexdigest()[:12]+"_"+job_id[:46]
 
+    @measured("blender.operation")
     def run(self, op: BlenderOperation):
         if self.activity is None:
             return self._run_worker(op)
@@ -557,7 +560,8 @@ class BlenderWorkerSupervisor:
             if proc is not None and not close_attempted:
                 close_attempted=True
                 if hasattr(proc,"close"):
-                    proc.close()
+                    with span("blender.cleanup"):
+                        proc.close()
 
         with self._lock:
             self._running[op.job_id]=token
@@ -568,23 +572,25 @@ class BlenderWorkerSupervisor:
                     # Use the existing G03 no-capability AppContainer, bound to
                     # W1-G's shared release slot, source journal and kernel Job.
                     with open(os.devnull,"rb") as worker_stdin:
-                        proc=launch_contained(
-                            command,cwd=str(jobdir),stdin=worker_stdin,
-                            stdout=stdout,stderr=stderr,
-                            memory_mb=op.memory_limit_mb,
-                            linux_cgroup_tree_required=False,
-                            private_isolation_required=False,
-                            windows_appcontainer_required=True,
-                            appcontainer_code_roots=(str(windows_root),))
+                        with span("blender.launch"):
+                            proc=launch_contained(
+                                command,cwd=str(jobdir),stdin=worker_stdin,
+                                stdout=stdout,stderr=stderr,
+                                memory_mb=op.memory_limit_mb,
+                                linux_cgroup_tree_required=False,
+                                private_isolation_required=False,
+                                windows_appcontainer_required=True,
+                                appcontainer_code_roots=(str(windows_root),))
                     if getattr(proc,"sandbox_identity",None)!=(
                             "windows-appcontainer-with-zero-network-capabilities"):
                         raise RuntimeError("Native private Blender lacks proved Windows AppContainer identity")
                 else:
-                    proc=launch_contained(
-                        command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
-                        memory_mb=op.memory_limit_mb,
-                        linux_cgroup_tree_required=op.require_linux_cgroup_v2,
-                        private_isolation_required=op.require_private_isolation)
+                    with span("blender.launch"):
+                        proc=launch_contained(
+                            command,cwd=str(jobdir),stdout=stdout,stderr=stderr,
+                            memory_mb=op.memory_limit_mb,
+                            linux_cgroup_tree_required=op.require_linux_cgroup_v2,
+                            private_isolation_required=op.require_private_isolation)
                 self._transition(op.job_id,"RUNNING",worker_pid=proc.pid)
                 if self.activity is not None:
                     self.activity.update(self._activity_id(op.job_id),

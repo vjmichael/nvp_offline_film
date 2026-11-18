@@ -7,6 +7,8 @@ A trusted host must supply an explicit creator-action verifier.
 """
 from __future__ import annotations
 
+from backend.nvp_performance_probe import measured, span, observe_windows_job
+
 import hashlib
 import json
 
@@ -89,6 +91,7 @@ class OpenUSDTakeCapture:
                 raise RuntimeError("Timed event "+eid+" targets an absent scene prim")
         return source,timeline,stage,duration
 
+    @measured("take.sample")
     def sample(self, project_id, scene_id, scene_revision,
                timeline_id, timeline_revision, *, tick, paths=None):
         """Evaluate one DATA checkpoint without frames or frame-rate choice."""
@@ -134,6 +137,7 @@ class OpenUSDTakeCapture:
                 stage,src["data"]["skeleton_rigs"],tick)
         return result
 
+    @measured("take.freeze")
     def freeze(self, project_id, take_id, *,
                scene_id, scene_revision, timeline_id, timeline_revision,
                sample_ticks, creator_event,
@@ -313,6 +317,7 @@ class OpenUSDTakeCapture:
             project_id,take_id,"take",manifest,expected_revision=0,
             dependencies=dependencies,precommit_guard=precommit_guard)
 
+    @measured("take.verify")
     def verify_take(self, project_id, take_id):
         # A journaled filming Take is not readable while its multi-object
         # publication is incomplete. Historical Takes without a filming

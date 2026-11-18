@@ -6,6 +6,8 @@ independently reverified. Crash survivors may be rechecked on the next human
 request; no stale grant can be replayed. No film-master or install authority.
 """
 from __future__ import annotations
+
+from backend.nvp_performance_probe import measured, span, observe_windows_job
 import hashlib
 import json
 from pathlib import Path
@@ -47,6 +49,7 @@ class NativeFilmReelBatch:
         self.require_protected_worker=require_protected_worker
         self.native_worker_verifier=native_worker_verifier
 
+    @measured("reel.analysis")
     def _prepare(self,project_id,plan_id,revision,*,first_index,limit,
                  output_parent,actor_mix_id,actor_mix_revision):
         _require_pid(project_id)
@@ -113,6 +116,7 @@ class NativeFilmReelBatch:
             limit=limit,output_parent=output_parent,actor_mix_id=actor_mix_id,
             actor_mix_revision=actor_mix_revision)[0]
 
+    @measured("reel.render")
     def render(self,project_id,plan_id,revision,*,first_index,limit,
                output_parent,actor_mix_id=None,actor_mix_revision=None):
         grant,items,source,parent=self._prepare(

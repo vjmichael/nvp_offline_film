@@ -5,6 +5,8 @@ evaluates the immutable OpenUSD layers/checkpoints in real AppContainer
 custody; only the native host can publish a new FilmIndex identity.
 """
 from __future__ import annotations
+
+from backend.nvp_performance_probe import measured, span, observe_windows_job
 from hashlib import sha256
 from contextlib import ExitStack, contextmanager
 import json
@@ -137,6 +139,7 @@ def _payload(index, scope):
     return raw
 
 
+@measured("take.worker")
 def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task, ledger, recovery, timeout=120):
     command,roots,files,actual=command_scope()
     command=command+[scope_sha]

@@ -9,6 +9,8 @@ Containment API errors fail closed; there is no uncontained Popen fallback.
 """
 from __future__ import annotations
 
+from backend.nvp_performance_probe import measured, span, observe_windows_job
+
 import os
 from pathlib import Path
 import subprocess
@@ -96,6 +98,7 @@ class WindowsJobProcess:
                 if time.monotonic() >= deadline:
                     raise RuntimeError("Windows Job Object still owns live descendants")
                 time.sleep(.05)
+            observe_windows_job(self._job)
             self._job.Close()
             self._job = None
         if self._process is not None:

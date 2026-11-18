@@ -53,7 +53,7 @@ jobs:
           python -c "from pxr import Usd; print('REAL_USD_VERSION',Usd.GetVersion())"
       - name: Native source-bound proxy recipe and crash-safe disk cache
         shell: bash
-        run: python -m unittest discover -s tests -p "test_nvp_slate05_preview_native.py" -v
+        run: python -m tools.nvp_perf_acceptance cache
       - name: Previous immutable Take, shot and thin timeline regressions
         shell: bash
         run: |
@@ -84,7 +84,7 @@ jobs:
         env:
           NVP_NATIVE_BLENDER_EXECUTABLE: /usr/bin/blender
         run: |
-          python -m unittest discover -s tests -p "test_nvp_slate05_preview_native.py" -v
+          python -m tools.nvp_perf_acceptance cache
 
   preview-pane-ui:
     name: SLATE-05 React verified-preview status/segment scope

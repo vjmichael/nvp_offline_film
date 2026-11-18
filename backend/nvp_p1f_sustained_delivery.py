@@ -12,6 +12,8 @@ This module never starts an unsupervised Blender, FFmpeg or device producer.
 """
 from __future__ import annotations
 
+from backend.nvp_performance_probe import measured, span, observe_windows_job
+
 import base64
 import hashlib
 import json
@@ -74,6 +76,7 @@ class NativeSustainedPictureSound:
         self.require_protected_worker=require_protected_worker
         self.native_worker_verifier=native_worker_verifier
 
+    @measured("reel.plan")
     def preflight(self,project_id,continuity_id,revision, *,
                   first_frame,frame_count,listener_path,
                   camera_path,actor_mix_id=None,actor_mix_revision=None):
@@ -179,6 +182,7 @@ class NativeSustainedPictureSound:
         if current!=plan:
             raise RuntimeError("Immutable source/chunk changed since native approval")
 
+    @measured("reel.export")
     def export_chunk(self,project_id,continuity_id,revision,chunk_id,
                      output_parent,*,first_frame,frame_count,
                      listener_path,camera_path,actor_mix_id=None,
@@ -242,9 +246,10 @@ class NativeSustainedPictureSound:
                                   "original_sources_immutable":True,
                                   "approved_plan_sha256":intent["plan_sha256"],
                                   "source_tick":source_tick}
-                    rendered=self.render_png(
-                        scope=render_scope,tick=source_tick,
-                        camera_path=camera_path,source_snapshot=original)
+                    with span("reel.frame"):
+                        rendered=self.render_png(
+                            scope=render_scope,tick=source_tick,
+                            camera_path=camera_path,source_snapshot=original)
                     worker_receipt=None
                     if type(rendered) is dict:
                         if set(rendered)!={"png_bytes","native_worker_receipt"}:
@@ -351,6 +356,7 @@ class NativeSustainedPictureSound:
         finally:
             if staged.exists():shutil.rmtree(staged)
 
+    @measured("reel.verify")
     def verify_chunk(self,project_id,folder,*,expected_plan=None):
         _require_pid(project_id)
         root=Path(folder)

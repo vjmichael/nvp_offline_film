@@ -9,6 +9,8 @@ or FFmpeg path is provided; source audio conform remains a separate gate.
 """
 from __future__ import annotations
 
+from backend.nvp_performance_probe import measured, span, observe_windows_job
+
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -66,6 +68,7 @@ class ReviewedSelectedViewFilm:
         self.custody=prove_process_custody
         self._original=ProtectedOriginalSelectedSource(index,supervisor)
 
+    @measured("cycles.plan")
     def source_plan(self,pid,edit_id,revision):
         edit=OriginalSelectedViewEdit(
             self.index,verify_director_action=lambda *_:False).verify(
@@ -99,6 +102,7 @@ class ReviewedSelectedViewFilm:
             "source_frames_sha256":item["source_frames_sha256"],
             "attempt":attempt}
 
+    @measured("cycles.verify")
     def _verify_completed(self,job_id,source_dir,source,planned,
                           start,attempt,*,include_receipt=False):
         state=self.supervisor.verify_completed(job_id)
@@ -203,6 +207,7 @@ class ReviewedSelectedViewFilm:
             "journal_state":state["state"],
             **({"verified_receipt_rows":rows} if include_receipt else {})}
 
+    @measured("cycles.chunk")
     def run_chunk(self,pid,edit_id,*,revision,start,attempt=1,
                   director_event,native_execution_event):
         """One new scoped native 8-frame job, or reverify completed journal."""
@@ -385,6 +390,7 @@ class ReviewedSelectedViewFilm:
             start,attempt,planned["plan"]["render_profile_sha256"])
         return self.supervisor.cancel(job_id)
 
+    @measured("cycles.gather")
     def gather(self,pid,edit_id,*,revision,output_directory,
                director_event,approved_attempts=None):
         """Complete verified 720 selected PNGs, not any unselected camera roll."""

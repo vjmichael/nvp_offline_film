@@ -10,6 +10,8 @@ independently verifies its native worker output and required PNG file hash.
 """
 from __future__ import annotations
 
+from backend.nvp_performance_probe import measured, span, observe_windows_job
+
 from contextlib import contextmanager
 import hashlib
 import os
@@ -108,6 +110,7 @@ class SlatePreviewCache:
             raise RuntimeError("Native output is not the expected PNG dimensions")
         return sha_file(path),size
 
+    @measured("cache.lookup")
     def lookup(self,project_id,cache_key):
         """Never serve a thumbnail without checking its accepted disk SHA."""
         path=self._path(project_id,cache_key)
@@ -194,6 +197,7 @@ class SlatePreviewCache:
             raise KeyError("No pending proxy preview for native worker")
         return row
 
+    @measured("cache.accept")
     def accept_verified(self,supervisor:BlenderWorkerSupervisor,job_id):
         """A worker audit receipt, not the browser, makes a PNG cacheable."""
         if not isinstance(supervisor,BlenderWorkerSupervisor):
@@ -275,6 +279,7 @@ class SlatePreviewCache:
                                 "output_accepted":False})
         return results
 
+    @measured("cache.evict")
     def evict(self):
         """LRU eviction ONLY for bounded derivative PNGs, never FilmIndex."""
         removed=[]
