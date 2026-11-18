@@ -211,7 +211,11 @@ class FinishedReviewActions:
             return None
         root = self._wo5_review_bundle
         file = root / "nvp-codec-manifest.json"
-        if (not root.is_absolute() or any(_linked_entry(p) for p in (file,*file.parents)) or
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r"SOFTWARE\Microsoft\Windows\CurrentVersion") as key:
+            program=Path(winreg.QueryValueEx(key,"ProgramFilesDir")[0]).resolve(strict=True)
+        if (root != program/"NVP"/"native-codecs" or not root.is_absolute() or
+                any(_linked_entry(p) for p in (file,*file.parents)) or
                 not file.is_file() or not 1 <= file.stat().st_size <= 128*1024):
             return None
         raw = file.read_bytes()

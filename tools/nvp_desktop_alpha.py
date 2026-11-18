@@ -424,6 +424,14 @@ def run_visible_window_smoke():
                         "reviewed callable methods: "+
                         repr(missing_native_director_methods))
                 _smoke_checkpoint("window_original_director_ipc_surface_verified")
+                missing_review_methods=window.evaluate_js(
+                    "(()=>{const required=['wo5_review_catalog','wo5_review_read_intent',"
+                    "'wo5_review_save_intent','wo5_review_inspect_feature','wo5_review_save_observations',"
+                    "'wo5_film_capabilities','wo5_film_begin','wo5_film_frame','wo5_film_window','wo5_film_stop'];"
+                    "return required.filter(name=>typeof window.pywebview?.api?.[name]!=='function')})()")
+                if type(missing_review_methods) is not list or missing_review_methods:
+                    raise RuntimeError("Missing installed finished-film review methods")
+                _smoke_checkpoint("window_finished_review_ipc_surface_verified")
                 # Real UI opens a project, but no technical tabs are restored.
                 selected=window.evaluate_js(
                     "(()=>{let d=document.querySelector('div[role=\"dialog\"]');"

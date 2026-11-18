@@ -125,7 +125,7 @@ def write_compiled_pin(path,manifest_digest):
 
 def verify_bundle(root,pin):
     root=Path(root)
-    if (not root.is_absolute() or root.is_symlink() or
+    if (not root.is_absolute() or any(_linked_entry(p) for p in (root,*root.parents)) or
             not root.is_dir() or not SHA.fullmatch(pin)):
         raise PermissionError("Exact approved offline codec payload required")
     file=root/"nvp-codec-manifest.json"

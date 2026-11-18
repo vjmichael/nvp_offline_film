@@ -46,6 +46,9 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
     def test_no_public_graph_references_or_dynamic_reflection(self):
         names={name for name in dir(self.api) if not name.startswith("_")}
         expected={
+            "wo5_review_catalog","wo5_review_read_intent","wo5_review_save_intent",
+            "wo5_review_inspect_feature","wo5_review_save_observations","wo5_film_capabilities",
+            "wo5_film_begin","wo5_film_frame","wo5_film_window","wo5_film_stop",
             "camera_render_capabilities",
             "request_camera_still","poll_camera_still","cancel_camera_still",
             # CONV-12 installed movie mounts this original native director
@@ -84,7 +87,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_film_stage_chunk_poll","data_av_film_stage_chunk_cancel",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),62)
+        self.assertEqual(len(names),72)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)
@@ -152,6 +155,26 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             with self.subTest(name=name):
                 with self.assertRaises(PermissionError):
                     getattr(self.api,name)(*arg)
+        self.assertEqual(self.native_window.prompt_count,0)
+
+    def test_finished_review_calls_are_explicit_and_origin_bound(self):
+        frontend=Path(__file__).resolve().parents[1]/"frontend"/"src"
+        calls=set()
+        for name,receiver in (("DirectorFinishedReview.jsx","api"),("FinishedFilmPlaybackPanel.jsx","native")):
+            code=(frontend/name).read_text(encoding="utf-8")
+            calls.update(re.findall(r"\b"+receiver+r"\.(wo5_[a-z_]+)\s*\(",code))
+        for name in calls:
+            self.assertTrue(callable(getattr(self.api,name,None)),name)
+        self.assertTrue({"wo5_review_catalog","wo5_film_begin","wo5_film_window",
+                         "wo5_review_save_observations"} <= calls)
+        self.native_window.url="http://outside.example/"
+        for name,args in (("wo5_review_catalog",("a"*32,)),
+                          ("wo5_review_save_intent",({},)),
+                          ("wo5_film_capabilities",()),
+                          ("wo5_film_begin",("a"*32,"Feature")),
+                          ("wo5_film_stop",("not-a-ticket",))):
+            with self.subTest(name=name),self.assertRaises(PermissionError):
+                getattr(self.api,name)(*args)
         self.assertEqual(self.native_window.prompt_count,0)
 
     def test_delegation_keeps_native_window_authorization(self):

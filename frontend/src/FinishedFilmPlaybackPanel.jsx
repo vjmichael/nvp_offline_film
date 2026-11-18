@@ -17,7 +17,7 @@ export function requireContinuousPicture(lastPainted,nextFrame){
   // rAF can be throttled when the window is hidden. An unseen skipped
   // picture cannot be counted as a complete film review.
   if(!Number.isInteger(lastPainted)||!Number.isInteger(nextFrame)||
-     nextFrame>lastPainted+1)
+     nextFrame<lastPainted || nextFrame>lastPainted+1)
     throw Error('Finished-film picture skipped a required presentation frame');
   return nextFrame;
 }
@@ -81,10 +81,10 @@ function sampleChannels(base64){
 }
 async function decodedPicture(base64){
   const img=new Image();
-  img.src='data:image/png;base64,'+base64;
-  if(img.decode)await img.decode();
+  const src='data:image/png;base64,'+base64;
+  if(img.decode){img.src=src;await img.decode();}
   else await new Promise((resolve,reject)=>{
-    img.onload=resolve;img.onerror=()=>reject(Error('Real DCP screen frame unavailable'));
+    img.onload=resolve;img.onerror=()=>reject(Error('Finished picture unavailable'));img.src=src;
   });
   return img;
 }
@@ -134,6 +134,8 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
     const r=ref.current;
     r.generation++;
     r.active=false;
+    // Fence stale native replies immediately, before any asynchronous cleanup.
+    ref.current={generation:r.generation,active:false};
     if(r.animation!=null)cancelAnimationFrame(r.animation);
     for(const node of r.scheduled||[]){
       try{node.stop();}catch{}
@@ -146,7 +148,6 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
         if(!silent)setError('Playback stopped locally; native grant cleanup failed: '+e.message);
       }
     }
-    ref.current={generation:r.generation,active:false};
     if(!silent){setPlaying(false);setStatus('STOPPED');}
   };
 
@@ -170,22 +171,25 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
     try{
       ctx=new Audio({sampleRate:RATE});
       activated=ctx.resume();
+      // Handle early activation rejection even while native consent is pending.
+      activated.catch(()=>{});
     }catch(e){
       if(ctx)try{await ctx.close();}catch{}
       setError('WebView2 audio activation failed: '+e.message);return;
     }
     startingRef.current=true;
     setStarting(true);
-    await stop(true);
-    const current=ref.current;
-    const gen=current.generation;
+    const stopping=stop(true);
+    const gen=ref.current.generation;
+    await stopping;
+    if(ref.current.generation!==gen){await ctx.close();startingRef.current=false;setStarting(false);return;}
     setStatus('APPROVING_NATIVE_READ');
     let session=null;
     try{
       session=await native.wo5_film_begin(projectId,featureId);
       if(session?.status==='DENIED'){
         await ctx.close();
-        setStatus('DENIED');return;
+        if(ref.current.generation===gen)setStatus('DENIED');return;
       }
       if(ref.current.generation!==gen){
         await ctx.close();
@@ -372,6 +376,8 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
           for(const frame of frames){
             if(!remain())return;
             const image=await decodedPicture(frame.picture_png_base64);
+            if(image.naturalWidth!==frame.picture_width||image.naturalHeight!==frame.picture_height)
+              throw Error('Finished picture dimensions differ from its receipt');
             const audio=sampleChannels(frame.stereo_pcm16_base64);
             if(!remain())return;
             c.loaded.set(frame.frame_index,{
@@ -395,7 +401,7 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
       if(session?.session_id){
         try{await native.wo5_film_stop(session.session_id);}catch{}
       }
-      setStatus('UNAVAILABLE');setError(e.message);setPlaying(false);
+      if(ref.current.generation===gen){setStatus('UNAVAILABLE');setError(e.message);setPlaying(false);}
     }finally{startingRef.current=false;setStarting(false);}
   }
 
@@ -409,13 +415,7 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
     <p aria-label="Finished film playback state">{playing?"Playing":status==="APPROVING_NATIVE_READ"?"Waiting for permission":status.startsWith("FAILED")?"Playback interrupted":status==="DENIED"?"Permission declined":"Ready"}</p>
     {presentationReceipt&&<output aria-label="Native finished film presentation receipt"
       data-nvp-film-av-receipt={JSON.stringify(presentationReceipt)}>
-      WebView2 presentation timeline: {presentationReceipt.canvasFramesDrawn}
-      {' '}real canvas frames, {presentationReceipt.masteredPcmWindowsQueued}
-      {' '}mastered-audio clock windows queued; Web Audio produced non-silent samples
-      in {presentationReceipt.webAudioNonSilentRenderCallbacks} callback(s),
-      maximum picture/audio-clock phase {presentationReceipt.maxPictureAudioOffsetMs.toFixed(1)} ms.
-      This does not prove audible speakers,
-      director approval or theatrical compliance.
+      Playback reached the end of this presentation. Confirm separately what you watched and heard.
     </output>}
     <canvas ref={canvas} width={512} height={270} role="img"
       aria-label="Decoded finished DCP picture at its audio-clock Film Time"
@@ -434,15 +434,9 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
       <button disabled={!native||playing||starting||!featureId||
         !capability?.native_finished_mxf_decode_configured}
         onClick={begin}>Play Finished Film</button>
-      <button disabled={!playing} className="secondary"
+      <button disabled={!playing&&!starting} className="secondary"
         onClick={()=>void stop()}>Stop</button>
     </div>
-    <p className="fineprint">Native decode is bounded by a 16-frame
-      picture+audio buffer. If a decoder misses the audio clock, playback
-      fails closed instead of silently skipping a shot or reporting success.
-      Picture is an uncalibrated XYZ-to-sRGB review PNG; the original
-      multi-channel 24-bit DCP sound is preserved. SMPTE DCP Bv2.1,
-      cinema projector ingest and the director's creative judgment
-      remain independent acceptance requirements.</p>
+    <p className="fineprint">If picture or sound falls behind, playback stops rather than skipping footage. This is a screen and stereo preview, not a theater screening.</p>
   </section>;
 }
