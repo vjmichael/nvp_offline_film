@@ -90,6 +90,8 @@ jobs:
           }
           python -m unittest discover -s tests -p test_nvp_wo3_protected_contract.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Protected playback command denial failed' }
+          python -m unittest discover -s tests -p test_nvp_wo6_exact_dispatch.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 exact task ownership regression' }
           python -m unittest discover -s tests -p 'test_nvp_wo6_*retake*.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'WO6 native source or task authorization regression' }
           python -m unittest discover -s tests -p test_nvp_wo6_creator_plan.py -v

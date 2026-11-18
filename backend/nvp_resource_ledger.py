@@ -188,6 +188,12 @@ class TaskLedger:
         return {"task_id":request.task_id,"state":"QUEUED","admitted":False,
                 "lane":lane,"reason":detail}
 
+    @staticmethod
+    def _validate_notice(expected_task_id):
+        if expected_task_id is not None and (type(expected_task_id) is not str or
+                not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", expected_task_id)):
+            raise ValueError("Exact native task notice identity required")
+
     def claim_next(self,*,owner_key:str,expected_task_id=None):
         """Reserve the highest priority queued task for a trusted producer.
 
@@ -196,6 +202,7 @@ class TaskLedger:
         Denied head-of-line work cannot be bypassed by a lower priority task.
         """
         self._schedule_args(owner_key)
+        self._validate_notice(expected_task_id)
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             row=db.execute("""SELECT t.id,t.kind,t.title,t.ram_mb,t.gpu_mb,t.device_id,s.lane
@@ -207,13 +214,11 @@ class TaskLedger:
             if row is None:
                 db.commit()
                 return None
-            task_id,kind,title,ram_mb,gpu_mb,device_id,lane=row
-            # The producer may have checked an exact immutable approval
-            # before acquiring this SQLite lease. Never claim a replacement
-            # head (even one owned by the same producer).
-            if expected_task_id is not None and task_id!=expected_task_id:
+            if expected_task_id is not None and row[0]!=expected_task_id:
                 db.commit()
-                return None
+                return {"task_id":expected_task_id,"state":"NOT_CLAIMED",
+                        "admitted":False,"reason":"Notice is not scheduler head"}
+            task_id,kind,title,ram_mb,gpu_mb,device_id,lane=row
             request=AdmissionRequest(task_id,kind,title,ram_mb,gpu_mb,device_id)
             reserved=db.execute("""SELECT COALESCE(SUM(ram_mb),0),
                 COALESCE(SUM(CASE WHEN device_id=? THEN gpu_mb ELSE 0 END),0)

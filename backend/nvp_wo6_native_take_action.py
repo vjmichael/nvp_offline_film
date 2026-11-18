@@ -6,6 +6,7 @@ custody; only the native host can publish a new FilmIndex identity.
 """
 from __future__ import annotations
 from hashlib import sha256
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -28,8 +29,11 @@ RECEIPT="nvp.wo6.protected_take_execution.v1"
 
 
 def _digest_file(path):
+    h=sha256()
     with Path(path).open("rb") as fd:
-        return sha256(fd.read()).hexdigest()
+        for chunk in iter(lambda:fd.read(1024*1024),b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _command():
@@ -89,7 +93,7 @@ def _execute_pipe(raw, pin, live, *, timeout=120):
     with tempfile.TemporaryDirectory(prefix="nvp-wo6-take-") as tmp:
         root=Path(tmp)
         require_efs_stage(root)
-        with __import__("contextlib").ExitStack() as stack:
+        with ExitStack() as stack:
             def pipe():
                 r,w=os.pipe()
                 return (stack.enter_context(os.fdopen(r,"rb",buffering=0)),
@@ -125,7 +129,7 @@ def _execute_pipe(raw, pin, live, *, timeout=120):
                 proc=None
                 owned.close()
                 for th in threads:th.join(timeout=6)
-                if (rc!=0 or errors or any(th.is_alive() for th in threads) or
+                if (rc!=0 or errors or stderr or any(th.is_alive() for th in threads) or
                     list(root.rglob("*")) or not live() or _command()[3]!=pin):
                     raise RuntimeError("Protected native Take result or custody unverified")
                 header=len(MAGIC_OUT)+8

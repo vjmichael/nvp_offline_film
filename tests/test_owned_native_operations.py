@@ -91,13 +91,13 @@ class ApprovedBindingTests(unittest.TestCase):
                 enqueue("urgent","interactive")
                 return actual(**kwargs)
             with patch.object(ledger,"claim_next",side_effect=raced):
-                self.assertIsNone(binder.claim_next(owner_key="native_host",
-                                                    expected_task_id="old"))
+                self.assertEqual(binder.claim_next(owner_key="native_host",
+                    expected_task_id="old")["state"],"NOT_CLAIMED")
             self.assertEqual(ledger.get_task("old")["state"],"QUEUED")
             self.assertEqual(ledger.get_task("urgent")["state"],"QUEUED")
             self.assertEqual(ledger.snapshot()["reservations"]["ram_mb"],0)
-            self.assertIsNone(binder.claim_next(owner_key="native_host",
-                                                expected_task_id="old"))
+            self.assertEqual(binder.claim_next(owner_key="native_host",
+                expected_task_id="old")["state"],"NOT_CLAIMED")
             self.assertEqual(binder.claim_next(owner_key="native_host",
                 expected_task_id="urgent")["task_id"],"urgent")
 

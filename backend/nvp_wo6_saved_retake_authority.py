@@ -3,7 +3,7 @@
 Saved plans are planning receipts, never execution grants. A separately
 confirmed operation is sealed to one task and one native window lifetime.
 This class intentionally does not launch a process or publish a Take. The
-future finite protected host must hold admitted() for its complete operation,
+finite protected host must hold admitted() for its complete operation,
 and only that host can prove OS cleanup and terminal output.
 """
 from __future__ import annotations

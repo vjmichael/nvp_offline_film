@@ -171,19 +171,7 @@ jobs:
           # URL. Only accept current official 5.2 LTS artifacts and their SHA.
           version=5.2.4
           archive="blender-${version}-linux-x64.tar.xz"
-          for name in "$archive" "blender-${version}.sha256"; do
-            if [[ "$name" == *.sha256 ]]; then target=blender.sha256
-            else target="$name"; fi
-            fetched=0
-            for base in https://download.blender.org/release/Blender5.2 https://mirror.blender.org/release/Blender5.2; do
-              if curl --fail --location --retry 2 --retry-delay 3 "$base/$name" -o "$target"; then
-                fetched=1
-                break
-              fi
-            done
-            test "$fetched" = 1 || { echo "Official Blender artifact missing: $name"; exit 1; }
-          done
-          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          bash tools/nvp_ci_fetch_blender_linux.sh "$version"
           mkdir -p /tmp/nvp-int02c-blender
           tar -xJf "$archive" -C /tmp/nvp-int02c-blender --strip-components=1
           echo "/tmp/nvp-int02c-blender" >> "$GITHUB_PATH"

@@ -35,9 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
-          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
-          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
-          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          bash tools/nvp_ci_fetch_blender_linux.sh "$BLENDER_VERSION"
           mkdir -p /tmp/nvp-slate08b-blender
           tar -xJf "$archive" -C /tmp/nvp-slate08b-blender --strip-components=1
           "/tmp/nvp-slate08b-blender/blender" -b --version | head -n 2

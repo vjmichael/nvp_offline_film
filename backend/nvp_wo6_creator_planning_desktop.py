@@ -229,7 +229,10 @@ class CreatorPlanningActions:
             plan_sha=_sha(request["plan_sha256"])
             output="Take"+secrets.token_hex(16)
             def live(doc):
-                return self._wo5_project(pid)==pid and doc["project_id"]==pid
+                try:
+                    return self._wo5_project(pid)==pid and doc["project_id"]==pid
+                except (PermissionError,KeyError,RuntimeError):
+                    return False
             def confirm(doc,spec_sha):
                 scope=doc["scope"]
                 return self._native_window().create_confirmation_dialog(

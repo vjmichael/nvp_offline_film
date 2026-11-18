@@ -129,6 +129,7 @@ class ApprovedTaskBindings:
         # queued task has become unauthorized. The policy is rechecked again
         # after the atomic admission to handle concurrent approval changes.
         TaskLedger._schedule_args(owner_key)
+        TaskLedger._validate_notice(expected_task_id)
         with self.ledger._db() as db:
             candidate=db.execute("""SELECT t.id FROM tasks t
                 JOIN task_schedule s ON s.task_id=t.id
@@ -136,12 +137,15 @@ class ApprovedTaskBindings:
                 ORDER BY CASE s.lane WHEN 'interactive' THEN 2
                     WHEN 'standard' THEN 1 ELSE 0 END DESC,
                     s.queued_at ASC,t.id ASC LIMIT 1""",(owner_key,)).fetchone()
-        if candidate is None or (expected_task_id is not None and
-                                 candidate[0]!=expected_task_id):
+        if candidate is None:
             return None
+        if expected_task_id is not None and candidate[0]!=expected_task_id:
+            return {"task_id":expected_task_id,"state":"NOT_CLAIMED",
+                    "admitted":False,"reason":"Notice is not scheduler head"}
         self.verified_spec(candidate[0],owner_key=owner_key,require_active=False)
-        result=self.ledger.claim_next(owner_key=owner_key,
-                                      expected_task_id=candidate[0])
+        # Always fence the actual preflighted ID, even for generic callers.
+        # A concurrent priority change or cancellation cannot claim another task.
+        result=self.ledger.claim_next(owner_key=owner_key,expected_task_id=candidate[0])
         if result is None or not result["admitted"]:
             return result
         self.verified_spec(result["task_id"],owner_key=owner_key)
