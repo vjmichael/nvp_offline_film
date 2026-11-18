@@ -66,7 +66,9 @@ RETIRED_LAUNCHER="backend/nvp_w1g_legacy_blender_launch.py"
 # the host-owned AppContainer ACL, not a renderer/worker subprocess.
 # An immutable Git blob attestation prevents extending the exception.
 G03_HOST_ACL_MODULE="backend/nvp_g03_windows_appcontainer.py"
-G03_REVIEWED_BLOB_SHA1="7f152a1a1c40132193587a2838b740ff068912dd"
+# WO5 installed codec admission: independently pinned machine RX root only,
+# private per-job SID unchanged; both original icacls ASTs unchanged.
+G03_REVIEWED_BLOB_SHA1="affcf57b253cfe74ee633c862a18b7db77368b22"
 G03_ALLOWED_ACL_SITES=(
     "subprocess.run(args, capture_output=True, text=True, errors='replace', timeout=120, check=False)",
     "subprocess.run(['icacls', str(work), '/setintegritylevel', '(OI)(CI)L'], capture_output=True, text=True, timeout=30)",

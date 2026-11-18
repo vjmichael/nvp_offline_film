@@ -65,6 +65,20 @@ class RuntimeLaunchAuditTests(unittest.TestCase):
             with self.assertRaisesRegex(PermissionError,"AppContainer ACL host"):
                 audit_release_launch_surface(root)
 
+    def test_machine_codec_scope_cannot_bypass_pinned_launch_gate(self):
+        repo=Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as td:
+            root=Path(td)
+            shutil.copytree(repo/"backend",root/"backend")
+            candidate=root/"backend"/"nvp_g03_windows_appcontainer.py"
+            original=candidate.read_text("utf8")
+            scope='require_machine_codec_scope(roots,files,exe,pin=machine_codec_pin,'
+            self.assertEqual(original.count(scope),2)
+            tampered=original.replace(scope, 'unchecked_machine_scope(roots,files,exe,pin=machine_codec_pin,',1)
+            candidate.write_text(tampered,encoding="utf8")
+            with self.assertRaisesRegex(PermissionError,"AppContainer ACL host"):
+                audit_release_launch_surface(root)
+
     def test_new_uncontained_subprocess_fails_closed(self):
         repo=Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as td:
