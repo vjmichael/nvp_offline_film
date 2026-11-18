@@ -434,6 +434,12 @@ def run_visible_window_smoke():
                 if type(missing_review_methods) is not list or missing_review_methods:
                     raise RuntimeError("Missing installed finished-film review methods")
                 _smoke_checkpoint("window_finished_review_ipc_surface_verified")
+                missing_plan_methods=window.evaluate_js(
+                    "['wo6_plan_catalog','wo6_plan_preview','wo6_plan_save','wo6_plan_read']"
+                    ".filter(name=>typeof window.pywebview?.api?.[name]!=='function')")
+                if type(missing_plan_methods) is not list or missing_plan_methods:
+                    raise RuntimeError("Missing installed creator planning methods")
+                _smoke_checkpoint("window_creator_planning_ipc_surface_verified")
                 # Real UI opens a project, but no technical tabs are restored.
                 selected=window.evaluate_js(
                     "(()=>{let d=document.querySelector('div[role=\"dialog\"]');"

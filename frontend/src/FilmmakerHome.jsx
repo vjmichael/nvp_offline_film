@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import LineNumberedTextarea from './LineNumberedTextarea.jsx';
 import DirectorSceneLibrary from './DirectorSceneLibrary.jsx';
 import DirectorCameraActorContinuity from './DirectorCameraActorContinuity.jsx';
+import DirectorProductionPlanning from './DirectorProductionPlanning.jsx';
 import DirectorScreenplayAssistant from './DirectorScreenplayAssistant.jsx';
 import DirectorFilmingStudio from './DirectorFilmingStudio.jsx';
 import DirectorExportFilm from './DirectorExportFilm.jsx';
@@ -439,6 +440,7 @@ export default function FilmmakerHome() {
           <DirectorSceneLibrary key={project.id+':'+project.revision}
             movie={project} onScript={()=>goPhase('script')} onFilm={()=>goPhase('film')}/>
           <DirectorCameraActorContinuity movie={project}/>
+          <DirectorProductionPlanning key={project.id+':planning'} movie={project}/>
         </>}
         {phase==='film'&&<DirectorFilmingStudio
           key={project.id+':'+project.revision}

@@ -24,6 +24,18 @@ class NativeWebviewIPCSurface:
             raise TypeError("Native per-window camera bridge required")
         self._delegate = delegate
 
+    def wo6_plan_catalog(self, project_id):
+        return self._delegate.wo6_plan_catalog(project_id)
+
+    def wo6_plan_preview(self, request):
+        return self._delegate.wo6_plan_preview(request)
+
+    def wo6_plan_save(self, request):
+        return self._delegate.wo6_plan_save(request)
+
+    def wo6_plan_read(self, project_id, plan_id):
+        return self._delegate.wo6_plan_read(project_id, plan_id)
+
     def wo5_review_catalog(self, project_id):
         return self._delegate.wo5_review_catalog(project_id)
 
