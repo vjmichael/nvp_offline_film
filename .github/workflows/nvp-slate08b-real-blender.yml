@@ -68,17 +68,16 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $base='https://download.blender.org/release/Blender5.2'
           $archive='blender-5.2.3-windows-x64.zip'
-          & curl.exe --fail --location --retry 4 --retry-delay 5 --output $archive "$base/$archive"
-          if ($LASTEXITCODE -ne 0) { throw 'Portable Blender download failed' }
-          & curl.exe --fail --location --retry 4 --retry-delay 5 --output blender.sha256 "$base/blender-5.2.3.sha256"
-          if ($LASTEXITCODE -ne 0) { throw 'Blender SHA manifest download failed' }
-          $line=Get-Content blender.sha256 | Where-Object {
+          # Git for Windows bash uses the same HTTPS-only, exact-archive,
+          # unique checksum and corruption-denial helper as Linux.
+          & bash tools/nvp_ci_fetch_blender_linux.sh 5.2.3 windows
+          if ($LASTEXITCODE -ne 0) { throw 'Verified portable Blender acquisition failed' }
+          $lines=@(Get-Content blender.sha256 | Where-Object {
             $_ -match '(?i)^[a-f0-9]{64}\s+\*?blender-5\.2\.3-windows-x64\.zip\s*$'
-          } | Select-Object -First 1
-          if (-not $line) { throw 'Exact approved Blender zip missing from official checksum manifest' }
-          $expected=($line -split '\s+')[0].ToLowerInvariant()
+          })
+          if ($lines.Count -ne 1) { throw 'Exact approved Blender zip missing or ambiguous' }
+          $expected=($lines[0] -split '\s+')[0].ToLowerInvariant()
           $actual=(Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
           if ($expected -ne $actual) { throw 'Portable Blender ZIP SHA mismatch' }
           New-Item -ItemType Directory -Path _nvp_slate08b_blender -Force | Out-Null

@@ -3,7 +3,12 @@
 set -euo pipefail
 version=${1:?exact Blender release required}
 case "$version" in 5.2.3|5.2.4) ;; *) echo 'Unreviewed Blender version' >&2; exit 2;; esac
-archive="blender-${version}-linux-x64.tar.xz"
+platform=${2:-linux}
+case "$platform" in
+    linux) archive="blender-${version}-linux-x64.tar.xz";;
+    windows) archive="blender-${version}-windows-x64.zip";;
+    *) echo 'Unreviewed Blender platform' >&2; exit 2;;
+esac
 manifest="blender-${version}.sha256"
 # Blender Foundation's enabled mirrors: https://projects.blender.org/infrastructure/mirror/wiki
 # Keep the original version, not an arbitrary newest or distribution package.
