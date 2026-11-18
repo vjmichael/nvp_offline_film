@@ -315,5 +315,58 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             NativeWebviewIPCSurface(self.native_window)
 
 
+class WebviewLoadObservationTests(unittest.TestCase):
+    @staticmethod
+    def _helper():
+        path = Path(__file__).resolve().parents[1] / "tools" / "nvp_desktop_alpha.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                    and n.name == "_await_native_window_load")
+        scope = {}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), scope)
+        return scope[node.name]
+
+    @staticmethod
+    def _window(*, loaded=False, before_load=False):
+        from threading import Event
+        from types import SimpleNamespace
+        events = SimpleNamespace(**{name: Event() for name in
+            ("initialized", "before_show", "shown", "before_load", "loaded")})
+        events.initialized.set()
+        events.before_show.set()
+        events.shown.set()
+        if before_load:
+            events.before_load.set()
+        if loaded:
+            events.loaded.set()
+        return SimpleNamespace(events=events)
+
+    def test_native_event_is_sufficient_without_observer_callback(self):
+        from types import SimpleNamespace
+        self.assertIsNone(self._helper()(self._window(loaded=True, before_load=True),
+            SimpleNamespace(started=True), SimpleNamespace(is_alive=lambda: True), timeout=0))
+
+    def test_missing_native_event_still_fails_with_lifecycle_evidence(self):
+        from types import SimpleNamespace
+        with self.assertRaisesRegex(RuntimeError, "Installed WebView2 page-loaded event missing") as exc:
+            self._helper()(self._window(before_load=True), SimpleNamespace(started=True),
+                SimpleNamespace(is_alive=lambda: True), timeout=0)
+        self.assertIn("'before_load': True", str(exc.exception))
+        self.assertIn("'loaded': False", str(exc.exception))
+        self.assertIn("'local_api_alive': True", str(exc.exception))
+
+    def test_real_smoke_uses_native_event_and_keeps_original_ui_assertions(self):
+        path = Path(__file__).resolve().parents[1] / "tools" / "nvp_desktop_alpha.py"
+        source = path.read_text(encoding="utf-8")
+        smoke = source.split("def run_visible_window_smoke():", 1)[1].split(
+            "def run_g03_window_smoke():", 1)[0]
+        self.assertIn("_await_native_window_load(window,server,worker)", smoke)
+        self.assertNotIn("window.events.loaded +=", smoke)
+        self.assertIn("window_real_page_loaded", smoke)
+        self.assertIn("window_director_home_visible", smoke)
+        self.assertIn("window_native_camera_ipc_verified", smoke)
+        self.assertIn("window_native_source_sound_verified", smoke)
+
+
 if __name__=="__main__":
     unittest.main()

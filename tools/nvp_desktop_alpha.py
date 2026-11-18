@@ -297,6 +297,25 @@ def create_trusted_camera_bridge(port):
         review_codec_bundle=codec_bundle)
 
 
+def _await_native_window_load(window, server, worker, *, timeout=30):
+    """Wait for pywebview's own load event, not a dispatched observer callback.
+
+    The loaded event is still mandatory; the real DOM and IPC checks follow.
+    A failed wait must not evaluate JS on a possibly uninitialized COM window.
+    Report only native lifecycle booleans and local server liveness.
+    """
+    if window.events.loaded.wait(timeout):
+        return
+    # A completion at the exact timeout edge is still native event evidence.
+    if window.events.loaded.is_set():
+        return
+    stages = {name: bool(getattr(window.events, name).is_set())
+              for name in ("initialized", "before_show", "shown", "before_load", "loaded")}
+    stages["local_api_started"] = bool(server.started)
+    stages["local_api_alive"] = bool(worker.is_alive())
+    raise RuntimeError("Installed WebView2 page-loaded event missing; lifecycle: " + repr(stages))
+
+
 def run_visible_window_smoke():
     """Installed real WebView2 + native OpenUSD source panel smoke.
 
@@ -304,7 +323,6 @@ def run_visible_window_smoke():
     or mutate the creator's durable Projects directory.
     """
     import webview
-    from threading import Event
     test_home=Path(tempfile.mkdtemp(prefix="nvp-slate08b-installed-"))
     old_home=os.environ.get("NVP_HOME")
     os.environ["NVP_HOME"]=str(test_home)
@@ -358,7 +376,6 @@ def run_visible_window_smoke():
         else: os.environ["NVP_HOME"]=old_home
         shutil.rmtree(test_home,ignore_errors=True)
         raise
-    loaded=Event()
     result={"passed":False,"phase":"started"}
     bridge=None
     try:
@@ -367,7 +384,6 @@ def run_visible_window_smoke():
             "http://127.0.0.1:"+str(port),width=1100,height=760,js_api=NativeWebviewIPCSurface(bridge))
         bridge._attach_window(window)
         _smoke_checkpoint("window_real_webview2_attached")
-        window.events.loaded += lambda:loaded.set()
         def wait_js(expression,seconds,description):
             deadline=time.monotonic()+seconds
             while time.monotonic()<deadline:
@@ -377,8 +393,7 @@ def run_visible_window_smoke():
             raise RuntimeError(description)
         def inspect_and_close():
             try:
-                if not loaded.wait(timeout=30):
-                    raise RuntimeError("Installed WebView2 page-loaded event missing")
+                _await_native_window_load(window,server,worker)
                 _smoke_checkpoint("window_real_page_loaded")
                 # Director-first navigation has replaced old engineering tabs.
                 # Native A/V remains accessible to host/bridge, not in a
