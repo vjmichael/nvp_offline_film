@@ -150,6 +150,49 @@ class ProtectedTakeResultPolicyTests(unittest.TestCase):
             with self.subTest(predicate=index),self.assertRaises(RuntimeError):
                 _require_clean_worker_result(*args)
 
+    def test_exact_reviewed_cpython_startup_line_only(self):
+        from backend.nvp_wo6_native_take_action import (
+            _reviewed_cpython_startup_diagnostic,_require_clean_worker_result)
+        # Actual 3.13.17 public CI diagnostic, including exact newline.
+        exe=r"C:\hostedtoolcache\windows\Python\3.13.17\x64\python.exe"
+        command=[exe,"-I","-B",r"C:\stage\tools\nvp_wo6_take_worker.py","a"*64]
+        context=dict(platform="win32",implementation="cpython",version=(3,13),frozen=False)
+        expected=("Failed to find real location of "+exe+"\n").encode("ascii")
+        self.assertEqual(len(expected),89)
+        line=_reviewed_cpython_startup_diagnostic(command,**context)
+        self.assertEqual(line,expected)
+        good=[0,[],line,b"x"*335,False,False,True,True]
+        _require_clean_worker_result(*good,startup_diagnostic=line)
+        for raw in (line+line,line+b"extra",b"extra"+line,line[:-1],line[:-1]+b"\r\n",
+                    line.replace(b"python.exe",b"other_.exe"),b"x"*89):
+            args=list(good);args[2]=raw
+            with self.subTest(raw=raw),self.assertRaises(RuntimeError):
+                _require_clean_worker_result(*args,startup_diagnostic=line)
+        for index,value in ((0,3),(1,["pipe"]),(4,True),(5,True),(6,False),(7,False)):
+            args=list(good);args[index]=value
+            with self.subTest(predicate=index),self.assertRaises(RuntimeError):
+                _require_clean_worker_result(*args,startup_diagnostic=line)
+
+    def test_startup_exception_bound_to_reviewed_runtime_and_command(self):
+        from backend.nvp_wo6_native_take_action import _reviewed_cpython_startup_diagnostic
+        exe=r"C:\runtime\python.exe"
+        command=[exe,"-I","-B",r"C:\stage\tools\nvp_wo6_take_worker.py","a"*64]
+        context=dict(platform="win32",implementation="cpython",version=(3,13),frozen=False)
+        self.assertTrue(_reviewed_cpython_startup_diagnostic(command,**context))
+        for override in (dict(platform="linux"),dict(implementation="pypy"),
+                         dict(version=(3,11)),dict(version=(3,14)),dict(frozen=True)):
+            with self.subTest(override=override):
+                self.assertEqual(_reviewed_cpython_startup_diagnostic(command,**(context|override)),b"")
+        for changed in (["python.exe",*command[1:]],
+                        [r"C:\runtime\other.exe",*command[1:]],
+                        ["C:\\bad\npython.exe",*command[1:]],
+                        ["C:\\nonascii_\u00e9\\python.exe",*command[1:]],
+                        [exe,"-E",*command[2:]],
+                        [*command[:3],r"C:\stage\different.py",command[4]],
+                        command[:-1]):
+            with self.subTest(command=changed):
+                self.assertEqual(_reviewed_cpython_startup_diagnostic(changed,**context),b"")
+
     def test_fixture_observer_preserves_reader_and_bytes(self):
         import io
         from contextlib import redirect_stdout

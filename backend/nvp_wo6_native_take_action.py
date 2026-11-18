@@ -198,7 +198,10 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
                 still_live=live()
                 pin_matches=command_scope()[3]==pin
                 _require_clean_worker_result(rc,errors,stderr,stdout,alive,
-                    workspace_dirty,still_live,pin_matches)
+                    workspace_dirty,still_live,pin_matches,
+                    startup_diagnostic=_reviewed_cpython_startup_diagnostic(command,
+                        platform=sys.platform,implementation=sys.implementation.name,
+                        version=sys.version_info[:2],frozen=getattr(sys,"frozen",False)))
                 header=len(MAGIC_OUT)+8
                 if not stdout.startswith(MAGIC_OUT) or len(stdout)<header:
                     raise RuntimeError("Native Take output protocol invalid")
@@ -227,11 +230,36 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
                     finally:proc.close()
 
 
+def _reviewed_cpython_startup_diagnostic(command, *, platform, implementation,
+                                        version, frozen):
+    # CPython 3.13 Modules/getpath.py warns if an existing executable's
+    # realpath lookup is denied. Windows lowbox can deny final-path lookup
+    # while still permitting the exact host-pinned executable to run.
+    # Recognize only the one observed ASCII line for the sealed source-mode
+    # command. Do not relax the lowbox, suppress warnings, normalize unknown
+    # bytes, accept other paths, or extend this exception to frozen binaries.
+    import ntpath
+    if (platform!="win32" or implementation!="cpython" or version!=(3,13)
+        or frozen or len(command)!=5 or command[1:3]!=["-I","-B"]
+        or not ntpath.isabs(command[0])
+        or ntpath.basename(command[0]).lower()!="python.exe"
+        or ntpath.basename(command[3])!="nvp_wo6_take_worker.py"):
+        return b""
+    exe=command[0]
+    if not exe.isascii() or any(ord(c)<32 or ord(c)==127 for c in exe):
+        return b""
+    return ("Failed to find real location of "+exe+"\n").encode("ascii")
+
+
 def _require_clean_worker_result(rc, errors, stderr, stdout, alive,
-                                 workspace_dirty, still_live, pin_matches):
-    # Retain every existing fail-closed predicate. stderr contents are not
-    # classified from byte count, displayed, persisted, or sent over IPC.
-    if (rc!=0 or errors or stderr or alive or workspace_dirty or not still_live or not pin_matches):
+                                 workspace_dirty, still_live, pin_matches,
+                                 *, startup_diagnostic=b""):
+    # The only nonempty stderr permitted is the entire exact reviewed
+    # startup line, with no additions or repetitions. All other checks,
+    # including the following canonical result, journal, checkpoint, source
+    # and immutable publication checks, remain mandatory.
+    unexpected_stderr=bool(stderr) and bytes(stderr)!=startup_diagnostic
+    if (rc!=0 or errors or unexpected_stderr or alive or workspace_dirty or not still_live or not pin_matches):
         raise RuntimeError("Protected native Take failed: "+
             "exit="+str(rc)+" pipe_errors="+str(len(errors))+
             " stderr_bytes="+str(len(stderr))+" stdout_bytes="+str(len(stdout))+
