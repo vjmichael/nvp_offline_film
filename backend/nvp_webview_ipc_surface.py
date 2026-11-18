@@ -24,6 +24,36 @@ class NativeWebviewIPCSurface:
             raise TypeError("Native per-window camera bridge required")
         self._delegate = delegate
 
+    def wo5_review_catalog(self, project_id):
+        return self._delegate.wo5_review_catalog(project_id)
+
+    def wo5_review_read_intent(self, project_id, intent_id):
+        return self._delegate.wo5_review_read_intent(project_id, intent_id)
+
+    def wo5_review_save_intent(self, payload):
+        return self._delegate.wo5_review_save_intent(payload)
+
+    def wo5_review_inspect_feature(self, project_id, feature_id):
+        return self._delegate.wo5_review_inspect_feature(project_id, feature_id)
+
+    def wo5_review_save_observations(self, payload):
+        return self._delegate.wo5_review_save_observations(payload)
+
+    def wo5_film_capabilities(self):
+        return self._delegate.wo5_film_capabilities()
+
+    def wo5_film_begin(self, project_id, feature_id, single_reel=False):
+        return self._delegate.wo5_film_begin(project_id, feature_id, single_reel)
+
+    def wo5_film_frame(self, session_id, frame_index):
+        return self._delegate.wo5_film_frame(session_id, frame_index)
+
+    def wo5_film_window(self, session_id, first_frame, count=4):
+        return self._delegate.wo5_film_window(session_id, first_frame, count)
+
+    def wo5_film_stop(self, session_id):
+        return self._delegate.wo5_film_stop(session_id)
+
     # Source camera stills are deliberately RETIRED and fail closed in host.
     def camera_render_capabilities(self):
         return self._delegate.camera_render_capabilities()

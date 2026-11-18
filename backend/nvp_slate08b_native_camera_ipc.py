@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 
 from backend.nvp_plan02c_desktop import NativePlan02CCameraActions
 from backend.nvp_conv06_trusted_director_desktop import ConvergedDirectorDesktopActions
+from backend.nvp_wo5_desktop_review import FinishedReviewActions
 from backend.nvp_camera_workbench import verified_optics, workbench_preview_key
 from backend.nvp_film_index import FilmIndex, _id, _require_pid, _sha
 from backend.nvp_slate_proxy_recipe import canonical
@@ -115,11 +116,12 @@ def build_desktop_camera_host(index, callback):
     return host
 
 
-class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CCameraActions):
+class TrustedDesktopCameraBridge(FinishedReviewActions, ConvergedDirectorDesktopActions, NativePlan02CCameraActions):
     """Per-WebView native authority. No browser can self-sign an approval."""
 
     def __init__(self, index: FilmIndex, *, origin, host_factory=None,
-                 native_capture_auditor=None, project_lock_check=None):
+                 native_capture_auditor=None, project_lock_check=None,
+                 production_root=None, review_codec_bundle=None):
         if not isinstance(index, FilmIndex):
             raise TypeError("Actual native FilmIndex required")
         parsed = urlsplit(origin)
@@ -148,6 +150,7 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
         self._edited_export = None
         self._p1f_export = None
         self._closing = False
+        self._wo5_configure_review(production_root=production_root,bundle_root=review_codec_bundle)
         if project_lock_check is not None and not callable(project_lock_check):
             raise TypeError("Native project-lock check must be a trusted host callback")
         # A protected film cannot silently enter native camera/PCM controls.
@@ -2073,6 +2076,7 @@ class TrustedDesktopCameraBridge(ConvergedDirectorDesktopActions, NativePlan02CC
                 self._original_capture_controller.close()
             host=self._host
             tickets=list(self._tickets.values())
+        self._wo5_close_review()
         if host is not None:
             for item in tickets:
                 job=item.get("job_id")

@@ -3,6 +3,7 @@ import './director-export-film.css';
 import DirectorFinishingRoom from './DirectorFinishingRoom.jsx';
 import DirectorLongFilmExport from './DirectorLongFilmExport.jsx';
 import DirectorFilmLibrary from './DirectorFilmLibrary.jsx';
+import DirectorFinishedReview from './DirectorFinishedReview.jsx';
 
 const active=new Set(['queued','rendering','verifying']);
 const baseProject=id=>'/api/projects/'+encodeURIComponent(id);
@@ -201,6 +202,7 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
           </div>
         </article>)}
     </div>}
+    <DirectorFinishedReview key={movie.id+':finished-review'} movie={movie}/>
     <DirectorFilmLibrary key={movie.id+':film-library'}
       movie={movie}/>
     {jobs.some(j=>['failed','interrupted','cancelled'].includes(j.status))&&
