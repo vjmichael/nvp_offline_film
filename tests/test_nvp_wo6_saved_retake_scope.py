@@ -10,7 +10,11 @@ from backend.nvp_openusd_scene import OpenUSDSceneBridge
 from backend.nvp_openusd_take import OpenUSDTakeCapture
 from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
 from backend.nvp_wo6_saved_retake_scope import prepare_saved_retake
-from tests.test_nvp_wo6_creator_plan import Window
+class Window:
+    def get_current_url(self):
+        return "http://127.0.0.1:51213/"
+    def create_confirmation_dialog(self, title, message):
+        return True
 
 
 class SavedRetakeScopeTests(unittest.TestCase):
@@ -23,8 +27,14 @@ class SavedRetakeScopeTests(unittest.TestCase):
         self.scenes=OpenUSDSceneBridge(self.index)
         self.prims=[{"path":"/World/Actor","role":"actor","position":[0,0,0]}]
         self.scenes.publish(self.pid,"Scene",prims=self.prims,curves=[])
-        TemporalLedger(self.index).publish(self.pid,"Time",[],
-            duration_tick=TICKS_PER_SECOND)
+        self.index.register_revision(self.pid,"Performance","performance",
+            {"format":"native.action.fixture","actor":"Actor"},expected_revision=0)
+        TemporalLedger(self.index).publish(self.pid,"Time",[
+            {"event_id":"Action","event_kind":"action","subject_id":"Actor",
+             "start_tick":0,"end_tick":TICKS_PER_SECOND,
+             "source_id":"Performance","source_revision":1,
+             "payload":{"verb":"stand","usd_prim_path":"/World/Actor"}}
+        ], duration_tick=TICKS_PER_SECOND)
         self.original=OpenUSDTakeCapture(self.index,
             verify_creator_action=lambda event,scope:event=="native_fixture").freeze(
             self.pid,"Original",scene_id="Scene",scene_revision=1,
@@ -34,7 +44,6 @@ class SavedRetakeScopeTests(unittest.TestCase):
             origin="http://127.0.0.1:51213")
         self.addCleanup(self.bridge._close)
         window=Window()
-        window.approve=True
         self.bridge._attach_window(window)
         proposal={"project_id":self.pid,"source_id":"Original",
             "source_revision":1,"source_sha256":self.original["document_sha256"],
