@@ -6,9 +6,10 @@ custody; only the native host can publish a new FilmIndex identity.
 """
 from __future__ import annotations
 from hashlib import sha256
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import json
 import os
+import shutil
 from pathlib import Path
 import struct
 import sys
@@ -17,7 +18,7 @@ import threading
 import time
 
 from backend.nvp_approved_tasks import canonical_bytes
-from backend.nvp_g03_protected_scene_supervisor import _stream_read, _stream_write
+from backend.nvp_g03_protected_scene_supervisor import _stream_read
 from backend.nvp_openusd_take import OpenUSDTakeCapture, canonical, sha
 from backend.nvp_wo6_saved_retake_authority import SavedRetakeTaskAuthority, RAM_MB
 from backend.nvp_wo6_saved_retake_scope import check_saved_retake_current
@@ -36,24 +37,75 @@ def _digest_file(path):
     return h.hexdigest()
 
 
-def _command():
+def _code_inventory(root):
+    root=Path(root)
+    if root.is_symlink() or not root.is_dir():
+        raise PermissionError("Native worker code root unavailable")
+    result={}
+    for item in sorted(root.rglob("*")):
+        if item.is_symlink():
+            raise PermissionError("Linked native worker code refused")
+        relative=item.relative_to(root).as_posix()
+        if item.is_dir():
+            if relative not in ("backend","tools"):
+                raise PermissionError("Unexpected native worker code directory")
+            continue
+        if not item.is_file() or item.suffix!=".py":
+            raise PermissionError("Unexpected native worker code entry")
+        result[relative]=_digest_file(item)
+    if len(result)>600 or "tools/nvp_wo6_take_worker.py" not in result or "backend/__init__.py" not in result:
+        raise PermissionError("Incomplete or unbounded native worker code inventory")
+    return result
+
+
+@contextmanager
+def _source_code_scope(repo):
+    # FileFinder must enumerate package parents; do not grant the original
+    # checkout ACLs or expose creator bytes. Stage a separate code-only root.
+    with tempfile.TemporaryDirectory(prefix="nvp-wo6-code-") as tmp:
+        root=Path(tmp).resolve(strict=True)
+        original={}
+        for folder in ("backend","tools"):
+            (root/folder).mkdir()
+        sources=sorted((repo/"backend").glob("*.py"))+[
+            repo/"tools"/"nvp_wo6_take_worker.py",
+            repo/"tools"/"nvp_g03_protected_scene_worker.py"]
+        if not 2<=len(sources)<=599:
+            raise PermissionError("Bounded reviewed Python source required")
+        for source in sources:
+            if source.is_symlink() or source.parent.is_symlink() or not source.is_file():
+                raise PermissionError("Linked or absent native worker source")
+            relative=source.relative_to(repo).as_posix()
+            original[relative]=_digest_file(source)
+            shutil.copyfile(source,root/relative)
+        (root/"tools"/"__init__.py").write_bytes(b"")
+        original["tools/__init__.py"]=sha256(b"").hexdigest()
+        if _code_inventory(root)!=original:
+            raise PermissionError("Staged native code did not match exact sources")
+        def verify():
+            current=_code_inventory(root)
+            if current!=original:
+                raise PermissionError("Staged native code changed")
+            return current
+        yield root,verify
+
+
+@contextmanager
+def _command_scope():
     if sys.platform!="win32":
         raise PermissionError("Protected native Take execution requires Windows AppContainer")
     exe=Path(sys.executable).resolve(strict=True)
     if getattr(sys,"frozen",False):
-        return [str(exe),"--wo6-protected-take-worker"],[exe.parent],[],_digest_file(exe)
+        def frozen():
+            return [str(exe),"--wo6-protected-take-worker"],[exe.parent],[],_digest_file(exe)
+        yield frozen
+        return
     repo=Path(__file__).resolve().parents[1]
-    worker=repo/"tools"/"nvp_wo6_take_worker.py"
-    pipe=repo/"tools"/"nvp_g03_protected_scene_worker.py"
-    paths=[worker,pipe]
-    if any(p.is_symlink() or not p.is_file() for p in paths):
-        raise PermissionError("Reviewed fixed native Take worker source unavailable")
-    # No original film root or browser-selected code is ever granted.
-    code=[exe,worker,pipe]+[repo/"backend"/name for name in (
-        "nvp_openusd_scene.py","nvp_openusd_take.py","nvp_openusd_channels.py",
-        "nvp_openusd_native_schemas.py","nvp_openusd_skeleton.py")]
-    pin=sha([_digest_file(p) for p in code])
-    return [str(exe),"-B",str(worker)],[exe.parent,repo/"backend"],paths,pin
+    with _source_code_scope(repo) as (root,verify):
+        def command():
+            pin=sha({"executable":_digest_file(exe),"modules":verify()})
+            return [str(exe),"-I","-B",str(root/"tools"/"nvp_wo6_take_worker.py")],[exe.parent,root],[],pin
+        yield command
 
 
 def _payload(index, scope):
@@ -82,8 +134,8 @@ def _payload(index, scope):
     return raw
 
 
-def _execute_pipe(raw, pin, live, *, scope_sha, command_sha, task, ledger, timeout=120):
-    command,roots,files,actual=_command()
+def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task, ledger, timeout=120):
+    command,roots,files,actual=command_scope()
     command=command+[scope_sha]
     if sha(command)!=command_sha:
         raise PermissionError("Sealed exact worker command changed")
@@ -105,7 +157,7 @@ def _execute_pipe(raw, pin, live, *, scope_sha, command_sha, task, ledger, timeo
             stdout=bytearray(); stderr=bytearray(); errors=[]; threads=[]
             proc=None
             try:
-                if not live() or _command()[3]!=pin:
+                if not live() or command_scope()[3]!=pin:
                     raise PermissionError("Native authorization changed before launch")
                 proc=launch_contained(command,cwd=str(root),stdin=inp,stdout=out,
                     stderr=err,memory_mb=RAM_MB,windows_appcontainer_required=True,
@@ -124,7 +176,7 @@ def _execute_pipe(raw, pin, live, *, scope_sha, command_sha, task, ledger, timeo
                 ledger.update(task,"building_scene","Native protected job: "+journal.token)
                 inp.close();out.close();err.close()
                 payload=MAGIC_IN+struct.pack("!Q",len(raw))+raw
-                for fn,args in ((_stream_write,(send,payload,errors)),
+                for fn,args in ((_write_all,(send,payload,errors)),
                     (_stream_read,(receive,len(MAGIC_OUT)+8+MAX_OUTPUT,stdout,errors)),
                     (_stream_read,(error_in,4096,stderr,errors))):
                     th=threading.Thread(target=fn,args=args,daemon=True)
@@ -141,9 +193,17 @@ def _execute_pipe(raw, pin, live, *, scope_sha, command_sha, task, ledger, timeo
                 proc=None
                 owned.close()
                 for th in threads:th.join(timeout=6)
-                if (rc!=0 or errors or stderr or any(th.is_alive() for th in threads) or
-                    list(root.rglob("*")) or not live() or _command()[3]!=pin):
-                    raise RuntimeError("Protected native Take result or custody unverified")
+                alive=any(th.is_alive() for th in threads)
+                workspace_dirty=bool(list(root.rglob("*")))
+                still_live=live()
+                pin_matches=command_scope()[3]==pin
+                if (rc!=0 or errors or stderr or alive or workspace_dirty or not still_live or not pin_matches):
+                    # No source, private diagnostics, paths or stderr content.
+                    raise RuntimeError("Protected native Take failed: "+
+                        "exit="+str(rc)+" pipe_errors="+str(len(errors))+
+                        " stderr_bytes="+str(len(stderr))+" stdout_bytes="+str(len(stdout))+
+                        " pipe_alive="+str(alive)+" workspace_dirty="+str(workspace_dirty)+
+                        " live="+str(still_live)+" pin_matches="+str(pin_matches))
                 header=len(MAGIC_OUT)+8
                 if not stdout.startswith(MAGIC_OUT) or len(stdout)<header:
                     raise RuntimeError("Native Take output protocol invalid")
@@ -172,13 +232,35 @@ def _execute_pipe(raw, pin, live, *, scope_sha, command_sha, task, ledger, timeo
                     finally:proc.close()
 
 
+def _write_all(file, payload, errors):
+    try:
+        view=memoryview(payload)
+        while view:
+            n=file.write(view)
+            if type(n) is not int or not 0<n<=len(view):
+                raise OSError("Incomplete native pipe write")
+            view=view[n:]
+        file.flush()
+    except OSError:
+        errors.append("Native worker input pipe failed")
+    finally:
+        file.close()
+
+
 def execute_saved_retake(index, ledger, *, project_id, plan_id, plan_sha256,
                         new_take_id, confirm_native, live_gate):
     """One synchronous native action; no generic executor or caller path."""
-    _command()
+    with _command_scope() as command_scope:
+        return _execute_saved(index,ledger,project_id=project_id,plan_id=plan_id,
+            plan_sha256=plan_sha256,new_take_id=new_take_id,
+            confirm_native=confirm_native,live_gate=live_gate,command_scope=command_scope)
+
+
+def _execute_saved(index, ledger, *, project_id, plan_id, plan_sha256,
+                   new_take_id, confirm_native, live_gate, command_scope):
     def seal(scope):
         raw=_payload(index,scope)
-        command,_,_,pin=_command()
+        command,_,_,pin=command_scope()
         return {"worker_sha256":pin,"input_sha256":sha256(raw).hexdigest(),
                 "command_sha256":sha(command+[scope["scope_sha256"]])}
     authority=SavedRetakeTaskAuthority(index,ledger,project_id,
@@ -198,6 +280,7 @@ def execute_saved_retake(index, ledger, *, project_id, plan_id, plan_sha256,
             live=lambda:authority.grant_live(spec)
             ledger.update(task,"building_scene","Evaluating exact native source in protected worker")
             result,journal_id=_execute_pipe(raw,execution["worker_sha256"],live,
+                command_scope=command_scope,
                 scope_sha=scope["scope_sha256"],command_sha=execution["command_sha256"],
                 task=task,ledger=ledger)
             # Successful return requires the actual AppContainer closed and
