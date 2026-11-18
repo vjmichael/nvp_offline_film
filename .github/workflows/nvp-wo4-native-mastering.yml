@@ -15,6 +15,10 @@ on:
       - 'backend/nvp_film_index.py'
       - 'backend/nvp_openusd_take.py'
       - 'backend/nvp_w1g_encrypted_source.py'
+      - 'frontend/**'
+      - 'packaging/**'
+      - 'tools/nvp_desktop_alpha.py'
+      - 'tools/nvp_wo5_release_codecs.py'
       - '.github/workflows/nvp-wo4-native-mastering.yml'
   push:
     branches: [main]
@@ -27,6 +31,10 @@ on:
       - 'tests/test_nvp_wo5_*.py'
       - 'backend/nvp_wo3_native_codecs.py'
       - 'tests/test_nvp_wo3_protected_contract.py'
+      - 'frontend/**'
+      - 'packaging/**'
+      - 'tools/nvp_desktop_alpha.py'
+      - 'tools/nvp_wo5_release_codecs.py'
       - '.github/workflows/nvp-wo4-native-mastering.yml'
 permissions:
   contents: read
@@ -76,6 +84,32 @@ jobs:
           }
           python -m unittest discover -s tests -p test_nvp_wo3_protected_contract.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Protected playback command denial failed' }
+          python -m unittest discover -s tests -p test_nvp_webview_ipc_surface.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native WebView IPC regression' }
+          python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Installer source guard regression' }
           python tools/nvp_no_ffmpeg_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+  creator-review-ui:
+    name: WO5 exact React creator review and full UI regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compile and execute exact React candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          cd frontend
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui
+          cd ..
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'

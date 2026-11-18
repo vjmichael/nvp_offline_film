@@ -209,6 +209,8 @@ export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBri
         throw Error('Native completed-film session receipt is invalid');
       if(start>=session.frame_count)throw Error('Seek beyond finished film duration');
       await activated;
+      if(ref.current.generation!==gen)
+        throw Error('Finished-film playback stopped before audio activation');
       if(ctx.state!=='running')
         throw Error('Native WebView2 WebAudio device did not enter running state');
       // Observe actual WebAudio graph samples during playback, in addition

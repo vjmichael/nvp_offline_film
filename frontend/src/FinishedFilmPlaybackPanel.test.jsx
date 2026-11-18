@@ -114,6 +114,32 @@ describe('WO5 finished published picture/mastered sound playback',()=>{
     }finally{window.AudioContext=old;}
   });
 
+  it('stopping while the audio device activates revokes the admitted session',async()=>{
+    let activate;
+    const native={
+      wo5_film_capabilities:vi.fn(async()=>({format:FORMAT,native_finished_mxf_decode_configured:true})),
+      wo5_film_begin:vi.fn(async()=>({format:FORMAT,status:'FINISHED_DCP_READONLY_READY',session_id:'admitted-ticket',
+        native_picture_and_sound_from_published_mxf:true,production_accepted:false,
+        fps:24,sound_rate:48000,sound_samples_per_frame:2000,frame_count:24})),
+      wo5_film_frame:vi.fn(),wo5_film_window:vi.fn(),wo5_film_stop:vi.fn(async()=>({status:'STOPPED'}))
+    };
+    const analyser=vi.fn();
+    const old=window.AudioContext;
+    window.AudioContext=class {state='running';resume(){return new Promise(resolve=>{activate=resolve;});}close(){return Promise.resolve();}createAnalyser(){return analyser();}};
+    try{
+      render(<FinishedFilmPlaybackPanel projectId={pid} featureId={fid} nativeBridge={native}/>);
+      const play=screen.getByRole('button',{name:'Play Finished Film'});
+      await waitFor(()=>expect(play.disabled).toBe(false));
+      fireEvent.click(play);
+      await waitFor(()=>expect(native.wo5_film_begin).toHaveBeenCalledTimes(1));
+      fireEvent.click(screen.getByRole('button',{name:'Stop'}));
+      activate();
+      await waitFor(()=>expect(native.wo5_film_stop).toHaveBeenCalledWith('admitted-ticket'));
+      expect(analyser).not.toHaveBeenCalled();
+      expect(native.wo5_film_window).not.toHaveBeenCalled();
+    }finally{window.AudioContext=old;}
+  });
+
   it('native OS denied playback is not a fake film presentation',async()=>{
     const native={
       wo5_film_capabilities:vi.fn(async()=>({
