@@ -9,6 +9,7 @@ from hashlib import sha256
 import json
 from collections import deque
 import secrets
+import re
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid, _sha
 from backend.nvp_bible_context import canon_snapshot
@@ -213,15 +214,58 @@ class CreatorPlanningActions:
 
 
 
+    def wo6_retake_recover(self, project_id):
+        """Reconcile only this admitted movie; never start a worker or replay consent."""
+        pid=self._wo5_project(project_id)
+        from backend.nvp_resource_ledger import TaskLedger
+        from backend.nvp_worker_host_lease import WorkerHostLease
+        from backend.nvp_wo6_recovery import RetakeRecovery
+        ledger=TaskLedger()
+        lease=WorkerHostLease(ledger.root)
+        try:
+            lease.__enter__()
+        except RuntimeError as exc:
+            if str(exc)=="Another NVP host owns the worker journal; recovery and execution blocked":
+                return {"project_id":pid,"status":"BUSY"}
+            raise
+        try:
+            self._wo5_project(pid)
+            rows=RetakeRecovery(ledger,lease).reconcile(self.index,pid)
+            held=sum(state=="HELD_UNVERIFIED" for _,state in rows)
+        finally:
+            lease.__exit__(None,None,None)
+        self._wo5_project(pid)
+        return {"project_id":pid,"status":"HELD_UNVERIFIED" if held else "RECOVERED",
+                "reconciled":len(rows)-held,"held":held,"worker_replayed":False}
+
+    def wo6_retake_cancel(self, project_id, request_id):
+        """The browser correlation ID is not launch authority or a task ID."""
+        pid=self._wo5_project(project_id)
+        if type(request_id) is not str or re.fullmatch(r"[0-9a-f]{32}",request_id) is None:
+            raise ValueError("Exact Take operation identity required")
+        with self._lock:
+            self._wo5_project(pid)
+            active=getattr(self,"_wo6_execute_pending",None)
+            if active is None or active[:2]!=(pid,request_id):
+                return {"project_id":pid,"request_id":request_id,"status":"NOT_ACTIVE"}
+            control=active[2]
+        return {"project_id":pid,"request_id":request_id,"status":control.request()}
+
     def wo6_retake_execute(self, request):
         """Native creator action on an exact saved plan; no browser grant."""
-        if type(request) is not dict or set(request)!={"project_id","plan_id","plan_sha256"}:
-            raise ValueError("Exact saved plan identity required")
+        if type(request) is not dict or set(request)!={"project_id","plan_id","plan_sha256","request_id"}:
+            raise ValueError("Exact saved plan and operation identity required")
         pid=self._wo5_project(request["project_id"])
+        request_id=request["request_id"]
+        if type(request_id) is not str or re.fullmatch(r"[0-9a-f]{32}",request_id) is None:
+            raise ValueError("Exact Take operation identity required")
+        from backend.nvp_wo6_retake_control import RetakeControl
+        control=RetakeControl()
         with self._lock:
-            if getattr(self,"_wo6_execute_pending",False):
+            self._wo5_project(pid)
+            if getattr(self,"_wo6_execute_pending",None) is not None:
                 raise PermissionError("Another Take operation is pending")
-            self._wo6_execute_pending=True
+            self._wo6_execute_pending=(pid,request_id,control)
         try:
             from backend.nvp_resource_ledger import TaskLedger
             from backend.nvp_wo6_native_take_action import execute_saved_retake
@@ -245,7 +289,8 @@ class CreatorPlanningActions:
                     "\nThis does not apply the written creative changes or render a movie.") is True
             return execute_saved_retake(self.index,TaskLedger(),project_id=pid,
                 plan_id=plan_id,plan_sha256=plan_sha,new_take_id=output,
-                confirm_native=confirm,live_gate=live)
+                confirm_native=confirm,live_gate=live,control=control)
         finally:
+            control.close()
             with self._lock:
-                self._wo6_execute_pending=False
+                self._wo6_execute_pending=None

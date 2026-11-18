@@ -111,4 +111,35 @@ class CreatorPlanTests(unittest.TestCase):
         malformed=self.index.register_revision(self.pid,'Broken','take',{'format':'nvp.digital_take.openusd_temporal.v1','frozen':True})
         with self.assertRaises(PermissionError):self.api.wo6_plan_preview({**self.request,'source_id':'Broken','source_sha256':malformed['document_sha256']})
 
+    def test_recovery_scoped_to_real_open_movie_and_no_execution(self):
+        from backend.nvp_resource_ledger import TaskLedger
+        from backend.nvp_worker_host_lease import WorkerHostLease
+        runtime=Path(self.studio.db_path).parent/'runtime'
+        with patch('backend.nvp_resource_ledger.default_runtime_dir',return_value=runtime):
+            response=self.api.wo6_retake_recover(self.pid)
+            self.assertEqual(response,{'project_id':self.pid,'status':'RECOVERED',
+                                      'reconciled':0,'held':0,'worker_replayed':False})
+            with WorkerHostLease(TaskLedger().root):
+                self.assertEqual(self.api.wo6_retake_recover(self.pid)['status'],'BUSY')
+            self.win.url='http://outside.example/'
+            with self.assertRaises(PermissionError):self.api.wo6_retake_recover(self.pid)
+        self.assertEqual(self.win.prompts,[])
+
+    def test_cancel_is_bound_to_exact_window_project_and_operation(self):
+        from backend.nvp_wo6_retake_control import RetakeControl
+        request_id='a'*32
+        control=RetakeControl()
+        other=self.studio.create_project('Other','Idea')['id']
+        self.bridge._wo6_execute_pending=(self.pid,request_id,control)
+        self.assertEqual(self.api.wo6_retake_cancel(self.pid,request_id)['status'],'NOT_READY')
+        self.assertEqual(self.api.wo6_retake_cancel(other,request_id)['status'],'NOT_ACTIVE')
+        self.assertEqual(self.api.wo6_retake_cancel(self.pid,'b'*32)['status'],'NOT_ACTIVE')
+        with self.assertRaises(ValueError):self.api.wo6_retake_cancel(self.pid,'not-a-task')
+        self.win.url='http://outside.example/'
+        with self.assertRaises(PermissionError):self.api.wo6_retake_cancel(self.pid,request_id)
+        self.win.url='http://127.0.0.1:51213/'
+        self.bridge._close()
+        with self.assertRaises(PermissionError):self.api.wo6_retake_cancel(self.pid,request_id)
+        self.assertEqual(self.win.prompts,[])
+
 if __name__=='__main__':unittest.main()

@@ -24,6 +24,9 @@ from backend.nvp_wo6_saved_retake_authority import SavedRetakeTaskAuthority, RAM
 from backend.nvp_wo6_saved_retake_scope import check_saved_retake_current
 from backend.nvp_w1g_encrypted_source import require_efs_stage
 from backend.nvp_worker_containment import launch_contained
+from backend.nvp_worker_host_lease import WorkerHostLease
+from backend.nvp_wo6_recovery import RetakeRecovery
+from backend.nvp_wo6_retake_control import RetakeControl
 from tools.nvp_wo6_take_worker import MAGIC_IN, MAGIC_OUT, MAX_INPUT, MAX_OUTPUT, LAYER_KEYS
 
 RECEIPT="nvp.wo6.protected_take_execution.v1"
@@ -134,7 +137,7 @@ def _payload(index, scope):
     return raw
 
 
-def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task, ledger, timeout=120):
+def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task, ledger, recovery, timeout=120):
     command,roots,files,actual=command_scope()
     command=command+[scope_sha]
     if sha(command)!=command_sha:
@@ -156,9 +159,12 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
             inp,send=pipe(); receive,out=pipe(); error_in,err=pipe()
             stdout=bytearray(); stderr=bytearray(); errors=[]; threads=[]
             proc=None
+            journal=None
+            bound=False
             try:
                 if not live() or command_scope()[3]!=pin:
                     raise PermissionError("Native authorization changed before launch")
+                recovery.launch_intent(task)
                 proc=launch_contained(command,cwd=str(root),stdin=inp,stdout=out,
                     stderr=err,memory_mb=RAM_MB,windows_appcontainer_required=True,
                     appcontainer_code_roots=roots,appcontainer_code_files=files)
@@ -173,6 +179,8 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
                     journal._record["command_sha256"]!=command_sha or
                     journal._record["state"]!="RUNNING"):
                     raise PermissionError("Original protected launch journal not bound")
+                recovery.running(task,journal.token)
+                bound=True
                 ledger.update(task,"building_scene","Native protected job: "+journal.token)
                 inp.close();out.close();err.close()
                 payload=MAGIC_IN+struct.pack("!Q",len(raw))+raw
@@ -197,6 +205,17 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
                 workspace_dirty=bool(list(root.rglob("*")))
                 still_live=live()
                 pin_matches=command_scope()[3]==pin
+                if (journal.path.is_symlink() or journal.path.stat().st_size>2048):
+                    raise RuntimeError("Original native process journal not readable")
+                evidence=json.loads(journal.path.read_text("utf-8"))
+                if (evidence!=journal._record or evidence["job_id"]!=journal.token or
+                    evidence["command_sha256"]!=command_sha or
+                    evidence["state"]!="TREE_REAPED_VERIFIED" or
+                    evidence["process_tree_custody_verified"] is not True or
+                    evidence["worker_exit_verified"] is not True):
+                    raise RuntimeError("Original native Job tree close unproven")
+                if not alive and not workspace_dirty:
+                    recovery.custody_closed(task,journal.token)
                 _require_clean_worker_result(rc,errors,stderr,stdout,alive,
                     workspace_dirty,still_live,pin_matches,
                     startup_diagnostic=_reviewed_cpython_startup_diagnostic(command,
@@ -212,15 +231,6 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
                 result=json.loads(data)
                 if canonical(result)!=data:
                     raise RuntimeError("Native Take output not canonical")
-                if (journal.path.is_symlink() or journal.path.stat().st_size>2048):
-                    raise RuntimeError("Original native process journal not readable")
-                evidence=json.loads(journal.path.read_text("utf-8"))
-                if (evidence!=journal._record or evidence["job_id"]!=journal.token or
-                    evidence["command_sha256"]!=command_sha or
-                    evidence["state"]!="TREE_REAPED_VERIFIED" or
-                    evidence["process_tree_custody_verified"] is not True or
-                    evidence["worker_exit_verified"] is not True):
-                    raise RuntimeError("Original native Job tree close unproven")
                 return result,journal.token
             finally:
                 if proc is not None:
@@ -228,6 +238,14 @@ def _execute_pipe(raw, pin, live, *, command_scope, scope_sha, command_sha, task
                         if proc.poll() is None:proc.terminate_tree()
                         proc.wait(timeout=12)
                     finally:proc.close()
+                    # AppContainer close proves Job + profile/ACL cleanup.
+                    # Pipe and workspace checks are separate and mandatory.
+                    for endpoint in (inp,out,err):
+                        endpoint.close()
+                    for th in threads:th.join(timeout=6)
+                    if (bound and not any(th.is_alive() for th in threads)
+                        and not list(root.rglob("*"))):
+                        recovery.custody_closed(task,journal.token)
 
 
 def _reviewed_cpython_startup_diagnostic(command, *, platform, implementation,
@@ -283,16 +301,43 @@ def _write_all(file, payload, errors):
 
 
 def execute_saved_retake(index, ledger, *, project_id, plan_id, plan_sha256,
-                        new_take_id, confirm_native, live_gate):
+                        new_take_id, confirm_native, live_gate, control=None):
     """One synchronous native action; no generic executor or caller path."""
-    with _command_scope() as command_scope:
-        return _execute_saved(index,ledger,project_id=project_id,plan_id=plan_id,
-            plan_sha256=plan_sha256,new_take_id=new_take_id,
-            confirm_native=confirm_native,live_gate=live_gate,command_scope=command_scope)
+    if control is None:
+        control=RetakeControl()
+    if type(control) is not RetakeControl:
+        raise TypeError("Private native cancellation control required")
+    # One kernel lease spans reconciliation, admission, native custody and
+    # publication. A live host is never mistaken for a cold-start orphan.
+    try:
+        with WorkerHostLease(ledger.root) as lease:
+            recovery=RetakeRecovery(ledger,lease)
+            try:
+                index.studio.get_project(project_id)
+                if any(state=="HELD_UNVERIFIED" for _,state in recovery.reconcile(index,project_id)):
+                    raise PermissionError("Previous Take cleanup remains unverified")
+                try:
+                    with _command_scope() as command_scope:
+                        return _execute_saved(index,ledger,project_id=project_id,plan_id=plan_id,
+                            plan_sha256=plan_sha256,new_take_id=new_take_id,
+                            confirm_native=confirm_native,live_gate=live_gate,command_scope=command_scope,
+                            recovery=recovery,host_lease=lease,control=control)
+                except Exception:
+                    result=recovery.reconcile(index,project_id)
+                    task=control.task_id
+                    if task is not None and (task,"CANCELLED") in result:
+                        return {"status":"CANCELLED","task_id":task,"project_id":project_id,
+                                "new_take_created":False,"film_approved":False}
+                    raise
+            finally:
+                # Block concurrent cancellation before releasing the OS lease.
+                control.close()
+    finally:
+        control.close()
 
 
 def _execute_saved(index, ledger, *, project_id, plan_id, plan_sha256,
-                   new_take_id, confirm_native, live_gate, command_scope):
+                   new_take_id, confirm_native, live_gate, command_scope, recovery, host_lease, control):
     def seal(scope):
         raw=_payload(index,scope)
         command,_,_,pin=command_scope()
@@ -303,21 +348,23 @@ def _execute_saved(index, ledger, *, project_id, plan_id, plan_sha256,
     try:
         queued=authority.queue(plan_id=plan_id,plan_sha256=plan_sha256,new_take_id=new_take_id)
         task=queued["task_id"]
-        with authority.admitted(task) as spec:
+        with authority.admitted(task,host_lease=host_lease) as spec:
             if spec is None:
                 ledger.cancel_queued(task,owner_key=authority.owner)
                 return {"status":"NOT_ADMITTED","task_id":task,"worker_executed":False}
+            recovery.prepare(task,spec)
+            control.bind(recovery,task)
             scope=spec["scope"]; execution=spec["execution"]
             spec_sha=sha256(canonical_bytes(spec)).hexdigest()
             raw=_payload(index,scope)
             if sha256(raw).hexdigest()!=execution["input_sha256"]:
                 raise PermissionError("Sealed native input changed")
-            live=lambda:authority.grant_live(spec)
+            live=lambda:authority.grant_live(spec) and not recovery.cancelled(task)
             ledger.update(task,"building_scene","Evaluating exact native source in protected worker")
             result,journal_id=_execute_pipe(raw,execution["worker_sha256"],live,
                 command_scope=command_scope,
                 scope_sha=scope["scope_sha256"],command_sha=execution["command_sha256"],
-                task=task,ledger=ledger)
+                task=task,ledger=ledger,recovery=recovery)
             # Successful return requires the actual AppContainer closed and
             # independently audited, NOT merely a worker-generated boolean.
             original=index.read_revision(project_id,scope["original_take_id"],1)
@@ -352,6 +399,7 @@ def _execute_saved(index, ledger, *, project_id, plan_id, plan_sha256,
                     exact.get("protected_retake_receipt_sha256")==sha(receipt))
             capture=OpenUSDTakeCapture(index,verify_creator_action=approve)
             ledger.update(task,"verifying_output","Verifying protected native result and immutable source")
+            recovery.publication_pending(task,receipt)
             saved=capture.freeze(project_id,new_take_id,scene_id=scope["scene_id"],
                 scene_revision=scope["scene_revision"],timeline_id=scope["timeline_id"],
                 timeline_revision=scope["timeline_revision"],sample_ticks=scope["sample_ticks"],
@@ -361,6 +409,7 @@ def _execute_saved(index, ledger, *, project_id, plan_id, plan_sha256,
             if (proof["take_document_sha256"]!=saved["document_sha256"] or
                 row["data"]["protected_retake_execution"]!=receipt or not live()):
                 raise RuntimeError("New immutable Take requires reconciliation")
+            recovery.take_verified(task,receipt)
             ledger.finish(task,"SUCCEEDED","Protected native Take and original source independently verified")
             return {"status":"VERIFIED_NEW_TAKE","task_id":task,"project_id":project_id,
                 "take_id":new_take_id,"take_document_sha256":saved["document_sha256"],

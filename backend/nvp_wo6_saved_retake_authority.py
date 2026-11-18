@@ -8,7 +8,7 @@ and only that host can prove OS cleanup and terminal output.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from hashlib import sha256
 import secrets
@@ -128,14 +128,17 @@ class SavedRetakeTaskAuthority:
                 self._pending = False
 
     @contextmanager
-    def admitted(self, task_id):
+    def admitted(self, task_id, *, host_lease=None):
         """Hold the existing kernel lease across exact native operations.
 
         No unrelated task is ever claimed and no worker is started here.
         If the downstream host cannot prove termination/output, an ACTIVE
         reservation remains unresolved rather than being auto-released.
         """
-        with WorkerHostLease(self.ledger.root):
+        if host_lease is not None and (not isinstance(host_lease,WorkerHostLease) or
+            host_lease.fd is None or host_lease.root != self.ledger.root):
+            raise PermissionError("Exact native host lease required")
+        with (WorkerHostLease(self.ledger.root) if host_lease is None else nullcontext(host_lease)):
             claim = self.bindings.claim_next(owner_key=self.owner,
                                              expected_task_id=task_id)
             if claim is None or not claim["admitted"]:

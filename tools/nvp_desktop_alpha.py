@@ -435,7 +435,7 @@ def run_visible_window_smoke():
                     raise RuntimeError("Missing installed finished-film review methods")
                 _smoke_checkpoint("window_finished_review_ipc_surface_verified")
                 missing_plan_methods=window.evaluate_js(
-                    "['wo6_plan_catalog','wo6_plan_preview','wo6_plan_save','wo6_plan_read','wo6_retake_execute']"
+                    "['wo6_plan_catalog','wo6_plan_preview','wo6_plan_save','wo6_plan_read','wo6_retake_execute','wo6_retake_cancel','wo6_retake_recover']"
                     ".filter(name=>typeof window.pywebview?.api?.[name]!=='function')")
                 if type(missing_plan_methods) is not list or missing_plan_methods:
                     raise RuntimeError("Missing installed creator planning methods")

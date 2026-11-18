@@ -27,6 +27,12 @@ class NativeWebviewIPCSurface:
     def wo6_retake_execute(self, request):
         return self._delegate.wo6_retake_execute(request)
 
+    def wo6_retake_cancel(self, project_id, request_id):
+        return self._delegate.wo6_retake_cancel(project_id, request_id)
+
+    def wo6_retake_recover(self, project_id):
+        return self._delegate.wo6_retake_recover(project_id)
+
     def wo6_plan_catalog(self, project_id):
         return self._delegate.wo6_plan_catalog(project_id)
 

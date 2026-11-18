@@ -118,6 +118,61 @@ class NativeTakeActionTests(unittest.TestCase):
         self.assertEqual(evidence["command_sha256"],receipt["command_sha256"])
         self.assertEqual(receipt["spec_sha256"],seen[0][1])
 
+    @unittest.skipUnless(os.name=="nt","Windows native AppContainer custody required")
+    def test_real_native_cancel_after_launch_reaps_before_release(self):
+        from backend import nvp_wo6_native_take_action as action
+        from backend.nvp_wo6_retake_control import RetakeControl
+        from backend.nvp_w1g_release_gate import release_process_journal_root
+        import json
+        control=RetakeControl()
+        original=action.launch_contained
+        journals=[]
+        def observe_and_cancel(*args,**kwargs):
+            proc=original(*args,**kwargs)
+            try:
+                self.assertIsNone(proc.poll())
+                journal=proc._worker._original_journal
+                self.assertEqual(journal._record["state"],"RUNNING")
+                journals.append(journal.token)
+                self.assertEqual(control.request(),"CANCELLATION_REQUESTED")
+                self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],4096)
+                return proc
+            except BaseException:
+                try:proc.terminate_tree()
+                finally:proc.close()
+                raise
+        with patch.object(action,"launch_contained",observe_and_cancel):
+            result=execute_saved_retake(self.index,self.ledger,**self.args(),
+                confirm_native=lambda *_:True,live_gate=lambda _:True,control=control)
+        self.assertEqual(result["status"],"CANCELLED")
+        self.assertFalse(result["new_take_created"])
+        self.assertEqual(len(journals),1)
+        row=json.loads((release_process_journal_root()/(journals[0]+".json")).read_text("utf8"))
+        self.assertEqual(row["state"],"TREE_REAPED_VERIFIED")
+        self.assertEqual(self.ledger.get_task(result["task_id"])["state"],"CANCELLED")
+        self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],0)
+        self.assertEqual(self.index.read_revision(self.pid,"Original",1)["document_sha256"],
+                         self.original["document_sha256"])
+        with self.assertRaises(KeyError):self.index.read_revision(self.pid,"NewTake")
+        print("WO6_REAL_NATIVE_CANCELLATION_CLOSED_CUSTODY_BEFORE_RESERVATION_RELEASE",flush=True)
+
+    @unittest.skipUnless(os.name=="nt","Windows native scope required")
+    def test_cancel_after_admission_before_launch_creates_no_take(self):
+        from backend import nvp_wo6_native_take_action as action
+        from backend.nvp_wo6_retake_control import RetakeControl
+        control=RetakeControl()
+        bind=control.bind
+        def bind_and_cancel(recovery,task):
+            bind(recovery,task)
+            self.assertEqual(control.request(),"CANCELLATION_REQUESTED")
+        with patch.object(control,"bind",bind_and_cancel),patch.object(action,"launch_contained") as launch:
+            result=execute_saved_retake(self.index,self.ledger,**self.args(),
+                confirm_native=lambda *_:True,live_gate=lambda _:True,control=control)
+            launch.assert_not_called()
+        self.assertEqual(result["status"],"CANCELLED")
+        self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],0)
+        with self.assertRaises(KeyError):self.index.read_revision(self.pid,"NewTake")
+
     @unittest.skipUnless(os.name=="nt","Windows native scope required")
     def test_separate_worker_refusal_creates_no_take(self):
         with self.assertRaises(PermissionError):

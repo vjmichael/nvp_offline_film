@@ -133,3 +133,33 @@ jobs:
           npm run test:ui
           cd ..
           test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+
+  wo6-native-host-death:
+    name: WO6 genuine hard host death / Python ${{ matrix.py }}
+    runs-on: windows-2025
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        py: ['3.11','3.13']
+    env:
+      NVP_WO6_DISPOSABLE_CRASH_VM: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Exact native foundation
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Wrong source SHA' }
+          python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32
+          if ($LASTEXITCODE -ne 0) { throw 'Native dependency failure' }
+      - name: Verify real host death on this disposable runner
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_nvp_wo6_native_host_death.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native host death failed' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }

@@ -2055,6 +2055,13 @@ class TrustedDesktopCameraBridge(CreatorPlanningActions, FinishedReviewActions, 
             if self._closing:
                 return
             self._closing=True
+            # The real operation continues to own its kernel lease and may
+            # release resources only after verified cleanup. Closing a window
+            # revokes live authority even if persisting cancellation fails.
+            active=getattr(self,"_wo6_execute_pending",None)
+            if active is not None:
+                try:active[2].request()
+                except Exception:pass
             if self._edited_export is not None:
                 self._edited_export["cancel"].set()
                 renderer=self._edited_export.get("cycles_renderer")

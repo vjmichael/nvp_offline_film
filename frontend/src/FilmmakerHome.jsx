@@ -79,6 +79,7 @@ export default function FilmmakerHome() {
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [notice,setNotice]=useState('');
+  const [recoveryNotice,setRecoveryNotice]=useState('');
   const [serviceAvailable,setServiceAvailable]=useState(false);
   const [aiStatus,setAiStatus]=useState('AI unavailable');
   const [canEncrypt,setCanEncrypt]=useState(false);
@@ -145,6 +146,29 @@ export default function FilmmakerHome() {
       window.removeEventListener('focus',verify);
       window.clearInterval(poll);
     };
+  },[project?.id,project?.encrypted]);
+  // Reopen only the selected movie's interrupted Take records through the
+  // native window. Never replay creator consent or grant execution from JS.
+  useEffect(()=>{
+    setRecoveryNotice('');
+    if(!project?.id||project.encrypted)return;
+    const pid=project.id;
+    let mounted=true,started=false;
+    const recover=()=>{
+      const api=window.pywebview?.api;
+      if(!mounted||started||typeof api?.wo6_retake_recover!=='function')return;
+      started=true;
+      Promise.resolve().then(()=>api.wo6_retake_recover(pid)).then(result=>{
+        if(!mounted)return;
+        if(result?.project_id!==pid)throw Error();
+        if(result.status==='HELD_UNVERIFIED')setRecoveryNotice('A previous Take has not been verified. New Takes for this movie remain paused.');
+        else if(result.status==='BUSY')setRecoveryNotice('Another production operation is active. Reopen this movie to check an interrupted Take.');
+        else if(result.status==='RECOVERED'&&result.reconciled>0)setRecoveryNotice('Earlier Take status checked. No work was restarted.');
+        else if(result.status!=='RECOVERED')throw Error();
+      }).catch(()=>{if(mounted)setRecoveryNotice('Previous Take status could not be checked.');});
+    };
+    recover();window.addEventListener('pywebviewready',recover);
+    return ()=>{mounted=false;window.removeEventListener('pywebviewready',recover);};
   },[project?.id,project?.encrypted]);
   async function perform(fn) {
     if(busy)return;
@@ -299,6 +323,7 @@ export default function FilmmakerHome() {
       </header>
       {error&&<div role="alert" className="film-error">{error}</div>}
       {notice&&<div role="status" className="film-notice">{notice}</div>}
+      {recoveryNotice&&project&&<div role="status" className="film-notice">{recoveryNotice}</div>}
 
       {flow==='welcome'&&<section className="film-home" aria-label="Chat home">
         <div className="film-home-heading"><div className="film-eyebrow">YOUR CREATIVE SPACE</div>
