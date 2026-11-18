@@ -260,7 +260,7 @@ class FinishedReviewActions:
                          or scope.get("product") in ("ASDCP-asdcp_unwrap","OpenJPEG-opj_decompress")))
         authority=ProtectedCodecAuthority(root,manifest,manifest_sha256=pin,
                     runtime=runtime,project_id=project_id,authorize_stage=permitted,
-                    authorize_execution=permitted,check_cancel=cancel)
+                    authorize_execution=permitted,check_cancel=cancel,installed_release=True)
         return pinned_codec_pair(root,manifest,pin,authority=authority,
                                  project_id=project_id,check_cancel=cancel)
 

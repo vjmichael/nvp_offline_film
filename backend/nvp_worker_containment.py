@@ -112,7 +112,7 @@ class WindowsJobProcess:
             self._release_slot = None
 
 
-def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False, private_isolation_required=False, stdin=None, linux_write_spool=None, env=None, windows_appcontainer_required=False, appcontainer_code_roots=(), appcontainer_code_files=()):
+def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False, private_isolation_required=False, stdin=None, linux_write_spool=None, env=None, windows_appcontainer_required=False, appcontainer_code_roots=(), appcontainer_code_files=(), appcontainer_machine_codec_pin=None):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -126,7 +126,7 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
         raise ValueError("Private source isolation mode must be boolean")
     if type(windows_appcontainer_required) is not bool:
         raise ValueError("Windows AppContainer requirement must be boolean")
-    if not windows_appcontainer_required and (appcontainer_code_roots or appcontainer_code_files):
+    if not windows_appcontainer_required and (appcontainer_code_roots or appcontainer_code_files or appcontainer_machine_codec_pin is not None):
         raise PermissionError("AppContainer source grants require real kernel isolation")
     if env is not None and (type(env) is not dict or any(
             type(k) is not str or type(v) is not str or
@@ -148,7 +148,8 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
                 command,cwd=cwd,stdin=stdin,stdout=stdout,stderr=stderr,
                 memory_mb=memory_mb,env=env,code_roots=appcontainer_code_roots,
                 code_files=appcontainer_code_files,release_slot=slot,
-                original_journal=journal)
+                original_journal=journal,
+                **({"machine_codec_pin":appcontainer_machine_codec_pin} if appcontainer_machine_codec_pin is not None else {}))
         except BaseException:
             slot.release()
             raise

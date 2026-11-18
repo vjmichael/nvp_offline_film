@@ -11,6 +11,7 @@ certification. Independent MXF/bitstream QC remains mandatory.
 from __future__ import annotations
 import hashlib
 import os
+import sys
 from pathlib import Path
 import json
 import re
@@ -117,7 +118,7 @@ class ProtectedCodecAuthority:
     fallback to a plain subprocess. Non-Windows protected jobs fail closed.
     """
     def __init__(self,bundle,manifest,*,manifest_sha256,runtime,project_id,
-                 authorize_stage,authorize_execution,check_cancel):
+                 authorize_stage,authorize_execution,check_cancel,installed_release=False):
         if os.name!="nt":
             raise PermissionError("WO3 protected execution requires Windows EFS/AppContainer")
         if (not all(callable(x) for x in
@@ -141,6 +142,15 @@ class ProtectedCodecAuthority:
             raise PermissionError("Codec bundle must be disjoint and below HKLM Program Files")
         self.manifest=json.loads(json.dumps(manifest,allow_nan=False))
         self.pin=_sha(manifest_sha256)
+        if type(installed_release) is not bool:
+            raise PermissionError("Explicit native codec custody mode required")
+        self._installed_release=installed_release
+        if installed_release:
+            from backend._nvp_wo5_release_pin import RELEASE_CODEC_MANIFEST_SHA256
+            from backend.nvp_wo5_codec_provision import check_installed
+            if (getattr(sys,"frozen",False) is not True or self.pin!=RELEASE_CODEC_MANIFEST_SHA256
+                    or check_installed(self.pin)!=self.bundle):
+                raise PermissionError("Exact installed machine codec release required")
         self.project_id=project_id
         self.approve_stage=authorize_stage
         self.approve_execute=authorize_execution
@@ -327,7 +337,8 @@ class ProtectedCodecAuthority:
                     proc=launch_contained([str(identity[1]),*args],cwd=str(root),
                         stdin=inp,stdout=stdout,stderr=stderr,memory_mb=4096,
                         windows_appcontainer_required=True,
-                        appcontainer_code_roots=(str(self.bundle),))
+                        appcontainer_code_roots=(str(self.bundle),),
+                        **({"appcontainer_machine_codec_pin":self.pin} if self._installed_release else {}))
                     if getattr(proc,"sandbox_identity",None)!=(
                             "windows-appcontainer-with-zero-network-capabilities"):
                         raise RuntimeError("Native codec isolation not proved")

@@ -163,10 +163,16 @@ class _MachineACL:
         self.app = self.program / "NVP"
         self.root = self.app / "native-codecs"
         self.admins = {"S-1-5-18", "S-1-5-32-544"}
+        # Public codec binaries may be read/executed by a normal zero-capability
+        # AppContainer; protected media never receives this ACE. Parent folders
+        # receive traverse-only package access, never inherited package reads.
+        base = "O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)"
+        self.parent_descriptor = win32security.ConvertStringSecurityDescriptorToSecurityDescriptor(
+            base + "(A;;GX;;;AC)", 1)
         self.descriptor = win32security.ConvertStringSecurityDescriptorToSecurityDescriptor(
-            "O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)", 1)
+            base + "(A;OICI;GRGX;;;AC)", 1)
 
-    def check(self, path):
+    def check(self, path, *, package_read=False, package_traverse=False):
         path = _plain(path, directory=Path(path).is_dir())
         sec = self.security
         desc = sec.GetNamedSecurityInfo(str(path), sec.SE_FILE_OBJECT,
@@ -177,6 +183,7 @@ class _MachineACL:
         if owner not in self.admins or dacl is None or not control & 0x1000:
             raise PermissionError("Codec path lacks trusted machine owner/DACL")
         writers = set()
+        package_mask = 0
         # DELETE, WRITE_DAC, WRITE_OWNER, write/append data, attributes,
         # extended attributes, delete child, generic write/all.
         write_mask = 0x500D0156
@@ -190,12 +197,19 @@ class _MachineACL:
                 raise PermissionError("Nonadministrative codec write authority")
             if mask & write_mask:
                 writers.add(identity)
+            if identity == "S-1-15-2-1":
+                package_mask |= mask
         if writers != self.admins:
             raise PermissionError("Codec ACL does not admit both trusted machine owners")
+        execute = bool(package_mask & 0x20000000 or package_mask & 0x20)
+        read = bool(package_mask & 0x80000000 or package_mask & 0x01)
+        if (package_read or package_traverse) and not execute or package_read and not read:
+            raise PermissionError("Pre-provisioned AppContainer codec read/execute ACL absent")
 
     def mkdir(self, path):
         attrs = self.pytypes.SECURITY_ATTRIBUTES()
-        attrs.SECURITY_DESCRIPTOR = self.descriptor
+        attrs.SECURITY_DESCRIPTOR = (self.descriptor if path.parent == self.root
+                                     else self.parent_descriptor)
         self.winfile.CreateDirectory(str(path), attrs)
         self.check(path)
 
@@ -223,13 +237,26 @@ def check_installed(pin):
     """Runtime check of fixed machine path; no creation, elevation or repair."""
     require_pin(pin)
     acl = _MachineACL()
-    acl.check(acl.app)
-    acl.check(acl.root)
+    acl.check(acl.app, package_traverse=True)
+    acl.check(acl.root, package_traverse=True)
     target = acl.root / pin
-    acl.check(target)
+    acl.check(target, package_read=True)
     for leaf in verify_payload(target, pin):
-        acl.check(target / leaf)
+        acl.check(target / leaf, package_read=True)
     return target
+
+
+def require_machine_codec_scope(roots, files, executable, *, pin, compiled_pin, frozen):
+    """Only a frozen host's exact public codec release avoids mutable code ACLs."""
+    require_pin(pin)
+    if frozen is not True or pin != compiled_pin:
+        raise PermissionError("No independent installed codec release authority")
+    root = check_installed(pin)
+    exe = Path(executable)
+    names = {row[2] for row in ROSTER.values()}
+    if tuple(roots) != (root,) or files or exe.parent != root or exe.name not in names:
+        raise PermissionError("Machine codec access cannot authorize any other code or media")
+    return root
 
 
 def provision_machine(source, pin):

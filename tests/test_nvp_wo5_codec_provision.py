@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 from backend.nvp_wo5_codec_provision import (
     FORMAT, ROSTER, MANIFEST, verify_payload, provision_immutable, check_installed,
+    require_machine_codec_scope,
 )
 
 
@@ -89,6 +90,25 @@ class ProvisionTests(unittest.TestCase):
         self.assertFalse((self.root/self.pin).exists())
         self.assertTrue(any(p.name.startswith('.pending-') for p in self.root.iterdir()))
         self.assertEqual(self.install().name, self.pin)
+
+    def test_exact_machine_scope_only(self):
+        target = self.install()
+        exe = target / next(iter(ROSTER.values()))[2]
+        with patch('backend.nvp_wo5_codec_provision.check_installed', return_value=target):
+            self.assertEqual(require_machine_codec_scope([target], [], exe,
+                pin=self.pin, compiled_pin=self.pin, frozen=True), target)
+            for roots, files, binary, frozen, pin in (
+                ([self.root], [], exe, True, self.pin),
+                ([target, self.root], [], exe, True, self.pin),
+                ([target], [exe], exe, True, self.pin),
+                ([target], [], target/'unapproved.exe', True, self.pin),
+                ([target], [], exe, False, self.pin),
+                ([target], [], exe, True, '0'*64),
+            ):
+                with self.subTest(roots=roots, files=files, frozen=frozen, pin=pin):
+                    with self.assertRaises(PermissionError):
+                        require_machine_codec_scope(roots, files, binary,
+                            pin=pin, compiled_pin=self.pin, frozen=frozen)
 
     def test_non_windows_machine_gate(self):
         import os

@@ -341,13 +341,18 @@ class AppContainerJobProcess:
 
 
 def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
-                        code_roots,code_files,release_slot,original_journal):
+                        code_roots,code_files,release_slot,original_journal,machine_codec_pin=None):
     """Create real AppContainer token + restricted pipes + suspended Job.
 
     Code roots MUST contain reviewed standalone binaries only, never a film
     workspace or personal data. No capabilities (network, camera, etc) granted.
     """
     exe,work,roots,files=_paths(command,cwd,code_roots,code_files)
+    if machine_codec_pin is not None:
+        from backend._nvp_wo5_release_pin import RELEASE_CODEC_MANIFEST_SHA256
+        from backend.nvp_wo5_codec_provision import require_machine_codec_scope
+        require_machine_codec_scope(roots,files,exe,pin=machine_codec_pin,
+            compiled_pin=RELEASE_CODEC_MANIFEST_SHA256,frozen=getattr(sys,"frozen",False))
     if release_slot is None or original_journal is None:
         raise AppContainerFailure("Native AppContainer requires independent release slot and original durable journal")
     if (type(memory_mb) is not int or not 128<=memory_mb<=65536
@@ -373,7 +378,13 @@ def launch_appcontainer(command,*,cwd,stdin,stdout,stderr,memory_mb,env,
         baseline=_profile_inventory(profile_folder)
         # No ACL mutation on protected machine or creator ancestors.
         # Exactly the reviewed runtime and one disposable job receive grants.
-        _grant_scoped_access(work,roots,files,sid,grants)
+        # A frozen, independently pinned public codec release already has
+        # machine-provisioned package RX. A standard-user host must not
+        # mutate that DACL. Private media always retains the exact job SID.
+        if machine_codec_pin is not None:
+            require_machine_codec_scope(roots,files,exe,pin=machine_codec_pin,
+                compiled_pin=RELEASE_CODEC_MANIFEST_SHA256,frozen=getattr(sys,"frozen",False))
+        _grant_scoped_access(work,roots if machine_codec_pin is None else (),files,sid,grants)
         # Workspace is disposable and writable only for this package SID.
         # It must carry low mandatory integrity as AppContainer is Low-IL.
         integrity=subprocess.run(["icacls",str(work),"/setintegritylevel",
