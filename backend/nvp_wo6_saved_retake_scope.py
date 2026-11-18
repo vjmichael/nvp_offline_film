@@ -116,3 +116,23 @@ def prepare_saved_retake(index, *, project_id, plan_id, plan_sha256,
     }
     scope["scope_sha256"] = digest(scope)
     return scope
+
+
+
+def check_saved_retake_current(index, scope):
+    """Read-only guard for the FilmIndex write transaction before publication."""
+    pid=scope["project_id"]
+    row=_current(index,pid,scope["plan_id"],1,scope["plan_document_sha256"],"presentation")
+    plan=row["data"]["plan"]
+    _current(index,pid,scope["original_take_id"],1,scope["original_take_sha256"],"take")
+    _current(index,pid,scope["scene_id"],scope["scene_revision"],scope["scene_sha256"],"scene")
+    _current(index,pid,scope["timeline_id"],scope["timeline_revision"],scope["timeline_sha256"],"temporal")
+    if (preview_source_impact(index,plan["request"])!=plan or
+        plan["preview_sha256"]!=scope["preview_sha256"] or
+        plan["story_context"]!=scope["story_context"]):
+        raise PermissionError("Saved creative plan changed before publication")
+    try:
+        index.read_revision(pid,scope["new_take_id"])
+    except KeyError:
+        return
+    raise PermissionError("New Take identity already committed")

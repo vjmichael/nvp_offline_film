@@ -210,3 +210,39 @@ class CreatorPlanningActions:
             raise PermissionError('Invalid saved plan receipt')
         self._wo5_project(pid)
         return {'record': _summary(row), 'data': data, 'worker_authorized': False}
+
+
+
+    def wo6_retake_execute(self, request):
+        """Native creator action on an exact saved plan; no browser grant."""
+        if type(request) is not dict or set(request)!={"project_id","plan_id","plan_sha256"}:
+            raise ValueError("Exact saved plan identity required")
+        pid=self._wo5_project(request["project_id"])
+        with self._lock:
+            if getattr(self,"_wo6_execute_pending",False):
+                raise PermissionError("Another Take operation is pending")
+            self._wo6_execute_pending=True
+        try:
+            from backend.nvp_resource_ledger import TaskLedger
+            from backend.nvp_wo6_native_take_action import execute_saved_retake
+            plan_id=_id(request["plan_id"],"saved plan")
+            plan_sha=_sha(request["plan_sha256"])
+            output="Take"+secrets.token_hex(16)
+            def live(doc):
+                return self._wo5_project(pid)==pid and doc["project_id"]==pid
+            def confirm(doc,spec_sha):
+                scope=doc["scope"]
+                return self._native_window().create_confirmation_dialog(
+                    "NVP — Create new Take",
+                    "Create a separate frozen Take from the unchanged original scene and timing?\n"+
+                    "Saved plan: "+plan_id+"\nOriginal Take: "+scope["original_take_id"]+
+                    "\nNew Take: "+output+"\nSource scene: "+scope["scene_sha256"]+
+                    "\nSource timing: "+scope["timeline_sha256"]+
+                    "\nAuthorized operation: "+spec_sha+
+                    "\nThis does not apply the written creative changes or render a movie.") is True
+            return execute_saved_retake(self.index,TaskLedger(),project_id=pid,
+                plan_id=plan_id,plan_sha256=plan_sha,new_take_id=output,
+                confirm_native=confirm,live_gate=live)
+        finally:
+            with self._lock:
+                self._wo6_execute_pending=False

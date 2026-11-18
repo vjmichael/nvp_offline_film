@@ -29,7 +29,8 @@ GRANT_SECONDS = 300
 class SavedRetakeTaskAuthority:
     """Native-host-owned object; never mount on a model or browser API."""
 
-    def __init__(self, index, ledger, project_id, *, confirm_native, live_gate):
+    def __init__(self, index, ledger, project_id, *, confirm_native, live_gate,
+                 seal_execution=None):
         if (not isinstance(index, FilmIndex) or not isinstance(ledger, TaskLedger)
             or not callable(confirm_native) or not callable(live_gate)):
             raise TypeError("Native index, ledger and two host authorities required")
@@ -37,6 +38,9 @@ class SavedRetakeTaskAuthority:
         self.project_id = _require_pid(project_id)
         self.owner = "wo6take_" + self.project_id
         self.confirm_native, self.live_gate = confirm_native, live_gate
+        if seal_execution is not None and not callable(seal_execution):
+            raise TypeError("Host-only execution pin callback required")
+        self._seal_execution = seal_execution
         self._lock = threading.RLock()
         self._grants = {}
         self._pending = False
@@ -71,6 +75,9 @@ class SavedRetakeTaskAuthority:
                 return False
             if not self._fresh(document["scope"]):
                 return False
+            if self._seal_execution is not None and (
+                document.get("execution") != self._seal_execution(document["scope"])):
+                return False
             return (not self._closed and
                     self._grants.get(task) == (approval_id, spec_sha256) and
                     time.time() < document["expires_at"] and
@@ -91,6 +98,8 @@ class SavedRetakeTaskAuthority:
                 "native_approval_id": approval_id, "ram_mb": RAM_MB,
                 "expires_at": int(time.time()) + GRANT_SECONDS, "scope": scope,
             }
+            if self._seal_execution is not None:
+                document["execution"]=self._seal_execution(scope)
             spec_sha = sha256(canonical_bytes(document)).hexdigest()
             if self.live_gate(deepcopy(document)) is not True:
                 raise PermissionError("Native project/window grant unavailable")
@@ -141,6 +150,16 @@ class SavedRetakeTaskAuthority:
                 if row is not None and row["state"] == "ACTIVE":
                     self.ledger.update(task_id, "recovering",
                         "Native completion or process-tree proof incomplete; reservation held")
+
+    def grant_live(self, document):
+        # In the FilmIndex writer lease this is deliberately read-only;
+        # do not reopen a native Take (its constructor can initialize SQL).
+        with self._lock:
+            return (not self._closed and time.time() < document["expires_at"]
+                    and self._grants.get(document["task_id"]) ==
+                    (document["native_approval_id"],
+                     sha256(canonical_bytes(document)).hexdigest())
+                    and self.live_gate(deepcopy(document)) is True)
 
     def revoke(self, task_id):
         """Revocation is not proof of worker termination."""

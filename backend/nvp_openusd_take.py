@@ -140,7 +140,8 @@ class OpenUSDTakeCapture:
                native_capture_attestations=None,
                original_camera_timeline_id=None,
                original_camera_timeline_revision=None,
-               original_camera_timeline_sha256=None):
+               original_camera_timeline_sha256=None,
+               protected_retake_receipt=None, precommit_guard=None):
         """Publish a single-commit take by freezing exact existing source data.
 
         Authorization is checked against the fully evaluated source scope;
@@ -234,6 +235,17 @@ class OpenUSDTakeCapture:
         if audit_digest is not None:
             scoped["native_original_capture_attestations_sha256"]=audit_digest
             scoped["original_camera_timeline_document_sha256"]=original_camera_timeline_sha256
+        if protected_retake_receipt is not None:
+            if (not callable(precommit_guard) or audit_digest is not None or
+                type(protected_retake_receipt) is not dict or
+                protected_retake_receipt.get("format")!="nvp.wo6.protected_take_execution.v1" or
+                protected_retake_receipt.get("sample_digest_sha256")!=snapshot_sha or
+                protected_retake_receipt.get("new_take_id")!=take_id or
+                protected_retake_receipt.get("project_id")!=project_id or
+                protected_retake_receipt.get("scene_sha256")!=source["document_sha256"] or
+                protected_retake_receipt.get("timeline_sha256")!=timeline["document_sha256"]):
+                raise PermissionError("Separate verified native retake evidence required")
+            scoped["protected_retake_receipt_sha256"]=sha(protected_retake_receipt)
         if self._approve(creator_event,dict(scoped)) is not True:
             raise PermissionError("Creator did not authorize exact Digital Take freeze")
         # Metadata dependency versions are immutable and validated again in
@@ -289,9 +301,17 @@ class OpenUSDTakeCapture:
                 "revision":original_camera_timeline_revision,
                 "role":"camera",
             })
+        if protected_retake_receipt is not None:
+            # The new immutable Take owns actual operation provenance;
+            # do not copy historical microphone or rendering attestations.
+            manifest["protected_retake_execution"]=json.loads(canonical(protected_retake_receipt))
+            dependencies.extend([
+                {"object_id":protected_retake_receipt["original_take_id"],"revision":1,"role":"source_take"},
+                {"object_id":protected_retake_receipt["plan_id"],"revision":1,"role":"presentation"},
+            ])
         return self.index.register_revision(
             project_id,take_id,"take",manifest,expected_revision=0,
-            dependencies=dependencies)
+            dependencies=dependencies,precommit_guard=precommit_guard)
 
     def verify_take(self, project_id, take_id):
         # A journaled filming Take is not readable while its multi-object
@@ -361,6 +381,23 @@ class OpenUSDTakeCapture:
             poses.append(checkpoint)
         if sha(poses)!=manifest["sample_digest_sha256"]:
             raise RuntimeError("Frozen Digital Take sampled state digest changed")
+        retake=manifest.get("protected_retake_execution")
+        if retake is not None:
+            if (retake.get("format")!="nvp.wo6.protected_take_execution.v1" or
+                retake.get("project_id")!=project_id or retake.get("new_take_id")!=take_id or
+                retake.get("sample_digest_sha256")!=manifest["sample_digest_sha256"] or
+                retake.get("scene_sha256")!=src["document_sha256"] or
+                retake.get("timeline_sha256")!=timeline["document_sha256"] or
+                retake.get("process_tree_custody_verified") is not True):
+                raise RuntimeError("Protected retake provenance mismatch")
+            for role,key,sha_key,kind in (
+                ("source_take","original_take_id","original_take_sha256","take"),
+                ("presentation","plan_id","plan_document_sha256","presentation")):
+                oid=retake[key]
+                original=self.index.read_revision(project_id,oid,1)
+                if (original["kind"]!=kind or original["document_sha256"]!=retake[sha_key] or
+                    {"object_id":oid,"revision":1,"role":role} not in take["dependencies"]):
+                    raise RuntimeError("Protected retake original dependency changed")
         native_attestations_verified=verify_published_native_attestations(
             self.index,project_id,take_id,manifest,self.temporal)
         return {"status":"VERIFIED_FROZEN_DATA_TAKE",

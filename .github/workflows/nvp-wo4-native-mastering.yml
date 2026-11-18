@@ -9,8 +9,9 @@ on:
       - 'tests/test_nvp_production_*.py'
       - 'tests/test_nvp_wo4_*.py'
       - 'backend/nvp_wo5_*.py'
-      - 'backend/nvp_wo6_creator_planning_desktop.py'
-      - 'tests/test_nvp_wo6_creator_plan.py'
+      - 'backend/nvp_wo6_*.py'
+      - 'tests/test_nvp_wo6_*.py'
+      - 'tools/nvp_wo6_take_worker.py'
       - 'tests/test_nvp_wo5_*.py'
       - 'backend/nvp_wo3_native_codecs.py'
       - 'tests/test_nvp_wo3_protected_contract.py'
@@ -30,8 +31,9 @@ on:
       - 'tests/test_nvp_production_*.py'
       - 'tests/test_nvp_wo4_*.py'
       - 'backend/nvp_wo5_*.py'
-      - 'backend/nvp_wo6_creator_planning_desktop.py'
-      - 'tests/test_nvp_wo6_creator_plan.py'
+      - 'backend/nvp_wo6_*.py'
+      - 'tests/test_nvp_wo6_*.py'
+      - 'tools/nvp_wo6_take_worker.py'
       - 'tests/test_nvp_wo5_*.py'
       - 'backend/nvp_wo3_native_codecs.py'
       - 'tests/test_nvp_wo3_protected_contract.py'
@@ -88,8 +90,16 @@ jobs:
           }
           python -m unittest discover -s tests -p test_nvp_wo3_protected_contract.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Protected playback command denial failed' }
+          python -m unittest discover -s tests -p 'test_nvp_wo6_*retake*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 native source or task authorization regression' }
           python -m unittest discover -s tests -p test_nvp_wo6_creator_plan.py -v
           if ($LASTEXITCODE -ne 0) { throw 'WO6 creator planning scope or source custody regression' }
+          python -m unittest discover -s tests -p test_nvp_wo6_native_take_action.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 genuine protected native Take regression' }
+          python -m unittest discover -s tests -p test_owned_native_operations.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native owned task admission regression' }
+          python -m unittest discover -s tests -p test_resource_scheduler.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native scheduler regression' }
           python -m unittest discover -s tests -p test_nvp_webview_ipc_surface.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Native WebView IPC regression' }
           python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v

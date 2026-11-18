@@ -46,7 +46,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
     def test_no_public_graph_references_or_dynamic_reflection(self):
         names={name for name in dir(self.api) if not name.startswith("_")}
         expected={
-            "wo6_plan_catalog","wo6_plan_preview","wo6_plan_save","wo6_plan_read",
+            "wo6_plan_catalog","wo6_plan_preview","wo6_plan_save","wo6_plan_read","wo6_retake_execute",
             "wo5_review_catalog","wo5_review_read_intent","wo5_review_save_intent",
             "wo5_review_inspect_feature","wo5_review_save_observations","wo5_film_capabilities",
             "wo5_film_begin","wo5_film_frame","wo5_film_window","wo5_film_stop",
@@ -88,7 +88,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_film_stage_chunk_poll","data_av_film_stage_chunk_cancel",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),76)
+        self.assertEqual(len(names),77)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)
