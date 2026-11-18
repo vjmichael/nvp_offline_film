@@ -80,8 +80,15 @@ class NativeTakeActionTests(unittest.TestCase):
                          self.original["document_sha256"])
         verified=self.capture.verify_take(self.pid,"NewTake")
         self.assertEqual(verified["take_document_sha256"],result["take_document_sha256"])
-        self.assertTrue(self.index.read_revision(self.pid,"NewTake",1)["data"]
-                        ["protected_retake_execution"]["process_tree_custody_verified"])
+        receipt=self.index.read_revision(self.pid,"NewTake",1)["data"]["protected_retake_execution"]
+        self.assertTrue(receipt["process_tree_custody_verified"])
+        from backend.nvp_w1g_release_gate import release_process_journal_root
+        import json
+        evidence=json.loads((release_process_journal_root()/
+            (receipt["original_process_journal_id"]+".json")).read_text("utf-8"))
+        self.assertEqual(evidence["state"],"TREE_REAPED_VERIFIED")
+        self.assertEqual(evidence["command_sha256"],receipt["command_sha256"])
+        self.assertEqual(receipt["spec_sha256"],seen[0][1])
 
     @unittest.skipUnless(os.name=="nt","Windows native scope required")
     def test_separate_worker_refusal_creates_no_take(self):

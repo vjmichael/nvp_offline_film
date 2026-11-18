@@ -388,7 +388,12 @@ class OpenUSDTakeCapture:
                 retake.get("sample_digest_sha256")!=manifest["sample_digest_sha256"] or
                 retake.get("scene_sha256")!=src["document_sha256"] or
                 retake.get("timeline_sha256")!=timeline["document_sha256"] or
-                retake.get("process_tree_custody_verified") is not True):
+                retake.get("process_tree_custody_verified") is not True or
+                type(retake.get("original_process_journal_id")) is not str or
+                not retake["original_process_journal_id"].startswith("nvpjob_") or
+                len(retake["original_process_journal_id"])!=39 or
+                type(retake.get("command_sha256")) is not str or
+                len(retake["command_sha256"])!=64):
                 raise RuntimeError("Protected retake provenance mismatch")
             for role,key,sha_key,kind in (
                 ("source_take","original_take_id","original_take_sha256","take"),

@@ -87,8 +87,10 @@ def evaluate_input(raw):
             "checkpoint_count":len(checkpoints)}
 
 
-def worker_entry():
+def worker_entry(expected_scope):
     try:
+        if type(expected_scope) is not str or not re.fullmatch(r"[a-f0-9]{64}",expected_scope):
+            raise ValueError("Exact native scope identity required")
         inp,out,_err=_binary_stdio()
         header=read_exact(inp,len(MAGIC_IN)+8)
         if header[:len(MAGIC_IN)]!=MAGIC_IN:
@@ -97,8 +99,8 @@ def worker_entry():
         if not 0<size<=MAX_INPUT:
             raise ValueError("Native source budget exceeded")
         raw=read_exact(inp,size)
-        if inp.read(1):
-            raise ValueError("Trailing native input")
+        if inp.read(1) or json.loads(raw).get("scope_sha256")!=expected_scope:
+            raise ValueError("Trailing input or scope mismatch")
         result=canonical(evaluate_input(raw))
         if len(result)>MAX_OUTPUT:
             raise ValueError("Native output budget exceeded")
@@ -111,4 +113,4 @@ def worker_entry():
 
 
 if __name__=="__main__":
-    raise SystemExit(worker_entry())
+    raise SystemExit(worker_entry(sys.argv[1] if len(sys.argv)==2 else None))

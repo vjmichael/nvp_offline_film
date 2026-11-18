@@ -1241,9 +1241,9 @@ def run_g03_vault_smoke():
 
 def main(argv=None):
     args=list(sys.argv[1:] if argv is None else argv)
-    if args==["--wo6-protected-take-worker"]:
+    if len(args)==2 and args[0]=="--wo6-protected-take-worker":
         from tools.nvp_wo6_take_worker import worker_entry
-        return worker_entry()
+        return worker_entry(args[1])
     if args and args[0]=="--verify-wo5-installer-pin":
         # Read-only frozen release gate, before project/server/window initialization.
         from backend.nvp_wo5_install_contract import installer_entry

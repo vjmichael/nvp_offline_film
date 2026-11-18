@@ -82,8 +82,11 @@ def _payload(index, scope):
     return raw
 
 
-def _execute_pipe(raw, pin, live, *, timeout=120):
+def _execute_pipe(raw, pin, live, *, scope_sha, command_sha, task, ledger, timeout=120):
     command,roots,files,actual=_command()
+    command=command+[scope_sha]
+    if sha(command)!=command_sha:
+        raise PermissionError("Sealed exact worker command changed")
     if actual!=pin or not live():
         raise PermissionError("Worker or native scope changed before launch")
     if type(timeout) is not int or not 5<=timeout<=120:
@@ -110,6 +113,15 @@ def _execute_pipe(raw, pin, live, *, timeout=120):
                 from backend.nvp_g03_windows_appcontainer import AppContainerJobProcess
                 if type(proc) is not AppContainerJobProcess:
                     raise PermissionError("Native AppContainer custody unavailable")
+                # Bind the original existing kernel launch journal to this
+                # exact task, without a second competing custody journal.
+                journal=proc._worker._original_journal
+                from backend.nvp_w1g_release_gate import OriginalWindowsLaunchJournal
+                if (type(journal) is not OriginalWindowsLaunchJournal or
+                    journal._record["command_sha256"]!=command_sha or
+                    journal._record["state"]!="RUNNING"):
+                    raise PermissionError("Original protected launch journal not bound")
+                ledger.update(task,"building_scene","Native protected job: "+journal.token)
                 inp.close();out.close();err.close()
                 payload=MAGIC_IN+struct.pack("!Q",len(raw))+raw
                 for fn,args in ((_stream_write,(send,payload,errors)),
@@ -142,7 +154,16 @@ def _execute_pipe(raw, pin, live, *, timeout=120):
                 result=json.loads(data)
                 if canonical(result)!=data:
                     raise RuntimeError("Native Take output not canonical")
-                return result
+                if (journal.path.is_symlink() or journal.path.stat().st_size>2048):
+                    raise RuntimeError("Original native process journal not readable")
+                evidence=json.loads(journal.path.read_text("utf-8"))
+                if (evidence!=journal._record or evidence["job_id"]!=journal.token or
+                    evidence["command_sha256"]!=command_sha or
+                    evidence["state"]!="TREE_REAPED_VERIFIED" or
+                    evidence["process_tree_custody_verified"] is not True or
+                    evidence["worker_exit_verified"] is not True):
+                    raise RuntimeError("Original native Job tree close unproven")
+                return result,journal.token
             finally:
                 if proc is not None:
                     try:
@@ -157,7 +178,9 @@ def execute_saved_retake(index, ledger, *, project_id, plan_id, plan_sha256,
     _command()
     def seal(scope):
         raw=_payload(index,scope)
-        return {"worker_sha256":_command()[3],"input_sha256":sha256(raw).hexdigest()}
+        command,_,_,pin=_command()
+        return {"worker_sha256":pin,"input_sha256":sha256(raw).hexdigest(),
+                "command_sha256":sha(command+[scope["scope_sha256"]])}
     authority=SavedRetakeTaskAuthority(index,ledger,project_id,
         confirm_native=confirm_native,live_gate=live_gate,seal_execution=seal)
     try:
@@ -174,7 +197,9 @@ def execute_saved_retake(index, ledger, *, project_id, plan_id, plan_sha256,
                 raise PermissionError("Sealed native input changed")
             live=lambda:authority.grant_live(spec)
             ledger.update(task,"building_scene","Evaluating exact native source in protected worker")
-            result=_execute_pipe(raw,execution["worker_sha256"],live)
+            result,journal_id=_execute_pipe(raw,execution["worker_sha256"],live,
+                scope_sha=scope["scope_sha256"],command_sha=execution["command_sha256"],
+                task=task,ledger=ledger)
             # Successful return requires the actual AppContainer closed and
             # independently audited, NOT merely a worker-generated boolean.
             original=index.read_revision(project_id,scope["original_take_id"],1)
@@ -193,6 +218,7 @@ def execute_saved_retake(index, ledger, *, project_id, plan_id, plan_sha256,
                 "original_take_sha256":scope["original_take_sha256"],
                 "new_take_id":new_take_id,"scene_sha256":scope["scene_sha256"],
                 "timeline_sha256":scope["timeline_sha256"],
+                "original_process_journal_id":journal_id,
                 "process_tree_custody_verified":True}
             def guard(_db):
                 if not live():

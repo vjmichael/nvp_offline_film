@@ -101,6 +101,27 @@ class RetakeAuthorityTests(unittest.TestCase):
                 self.fail("Revoked grant admitted")
         self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],0)
 
+    def test_exact_execution_pin_change_denied_before_admission(self):
+        pin={"worker_sha256":"d"*64,"input_sha256":"e"*64}
+        self.host._seal_execution=lambda _:dict(pin)
+        queued=self.queue()
+        task=queued["task_id"]
+        self.assertEqual(self.prompts[0][0]["execution"],pin)
+        pin["worker_sha256"]="f"*64
+        with self.assertRaises(PermissionError):
+            with self.host.admitted(task):
+                self.fail("Changed sealed worker admitted")
+        self.assertEqual(self.ledger.get_task(task)["state"],"QUEUED")
+        self.assertEqual(self.ledger.snapshot()["reservations"]["ram_mb"],0)
+
+    def test_live_grant_is_bound_to_exact_spec_and_revoked_on_close(self):
+        self.queue()
+        doc=self.prompts[0][0]
+        self.assertTrue(self.host.grant_live(doc))
+        self.assertFalse(self.host.grant_live({**doc,"ram_mb":1024}))
+        self.host.close()
+        self.assertFalse(self.host.grant_live(doc))
+
     def test_never_claim_another_task(self):
         first=self.queue()["task_id"]
         second=self.queue()["task_id"]
