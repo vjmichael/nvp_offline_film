@@ -287,8 +287,9 @@ def create_trusted_camera_bridge(port):
     codec_bundle=None
     if os.name=="nt" and getattr(sys,"frozen",False) and RELEASE_CODEC_MANIFEST_SHA256:
         import winreg
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r"SOFTWARE\Microsoft\Windows\CurrentVersion") as key:
-            codec_bundle=Path(winreg.QueryValueEx(key,"ProgramFilesDir")[0]).resolve(strict=True)/"NVP"/"native-codecs"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r"SOFTWARE\Microsoft\Windows\CurrentVersion",0,
+                            winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+            codec_bundle=Path(winreg.QueryValueEx(key,"ProgramFilesDir")[0]).resolve(strict=True)/"NVP"/"native-codecs"/RELEASE_CODEC_MANIFEST_SHA256
     return TrustedDesktopCameraBridge(
         FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
         project_lock_check=film_access().any_protected,

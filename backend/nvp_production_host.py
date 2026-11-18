@@ -15,11 +15,25 @@ from backend.nvp_production_journal import SingletonSupervisor
 from backend.nvp_production_supervisor import ProductionSupervisor
 from backend.nvp_production_monitor import ProductionMonitor
 from backend.nvp_wo4_feature_journal import FeatureJournal
+from backend.nvp_wo5_review_storage import ReadOnlyProductionStorage
 from backend.nvp_wo4_pcm_stream import _protected_path
 from backend.nvp_w1g_release_gate import inspect_original_process_journals
 
 
+class ProductionReviewJournal(ReadOnlyProductionStorage, FeatureJournal):
+    """Existing EFS journal view; no constructor migrations or service lease."""
+    def __init__(self, state_root):
+        ReadOnlyProductionStorage.__init__(self,state_root,verify_path=_protected_path)
+
+
 class NativeProductionHost:
+    @staticmethod
+    def open_review_journal(state_root, index):
+        if not isinstance(index,FilmIndex):
+            raise PermissionError("Trusted native FilmIndex required")
+        _protected_path(Path(index.studio.db_path))
+        return ProductionReviewJournal(state_root)
+
     def __init__(self,state_root,*,resolve_project,codec_factory,verify_creator_action):
         if not all(callable(x) for x in (resolve_project,codec_factory,verify_creator_action)):
             raise PermissionError("Trusted native service project and creator authority required")

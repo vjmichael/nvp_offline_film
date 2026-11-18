@@ -9,7 +9,8 @@ from copy import deepcopy
 from hashlib import sha256
 
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
-from backend.nvp_wo4_feature_journal import FeatureJournal, ASSEMBLY_FORMAT
+from backend.nvp_wo4_feature_journal import ASSEMBLY_FORMAT
+from backend.nvp_production_host import NativeProductionHost
 from backend.nvp_wo5_original_feature import inspect_indexed_feature
 from backend.nvp_wo5_director_review import (
     INTENT_FORMAT, REVIEW_FORMAT,
@@ -32,15 +33,14 @@ class FinishedReviewActions:
 
     def _wo5_journal_for_review(self):
         self._native_window()
-        from backend.nvp_wo4_pcm_stream import _protected_path
         root = self._wo5_production_root
         if root is None:
             raise PermissionError("No native cinema production journal is admitted")
-        _protected_path(root, directory=True)
-        _protected_path(root / "production-journal.sqlite3")
-        if self._wo5_review_journal is None:
-            self._wo5_review_journal = FeatureJournal(root)
-        return self._wo5_review_journal
+        with self._lock:
+            if self._wo5_review_journal is None:
+                self._wo5_review_journal = NativeProductionHost.open_review_journal(root,self.index)
+            self._wo5_review_journal._check_storage()
+            return self._wo5_review_journal
 
     def _wo5_existing_journal(self):
         root = self._wo5_production_root
@@ -127,8 +127,8 @@ class FinishedReviewActions:
                 """SELECT feature_id,assembly_id,assembly_revision,
                    assembly_sha256,project_id,state,updated_at FROM
                    production_features WHERE project_id=?
-                   ORDER BY created_at DESC LIMIT ?""",
-                    (project_id, MAX_CATALOG))]
+                   AND project_db=? ORDER BY created_at DESC LIMIT ?""",
+                    (project_id, str(Path(self.index.studio.db_path).resolve(strict=True)), MAX_CATALOG))]
         features = [{
             "feature_id": r["feature_id"],
             "assembly_id": r["assembly_id"],
@@ -204,32 +204,19 @@ class FinishedReviewActions:
     def _wo5_distribution(self):
         """Read independently build-pinned, static Program Files codec roster."""
         from backend._nvp_wo5_release_pin import RELEASE_CODEC_MANIFEST_SHA256 as pin
-        from backend.nvp_wo3_dcp_structure import _linked_entry
-        from backend.nvp_wo3_codec_bundle_provenance import verify_native_codec_bundle
+        from backend.nvp_wo5_codec_provision import check_installed
         if (os.name != "nt" or not getattr(sys, "frozen", False) or not pin or
                 self._wo5_review_bundle is None):
             return None
-        root = self._wo5_review_bundle
-        file = root / "nvp-codec-manifest.json"
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r"SOFTWARE\Microsoft\Windows\CurrentVersion") as key:
-            program=Path(winreg.QueryValueEx(key,"ProgramFilesDir")[0]).resolve(strict=True)
-        if (root != program/"NVP"/"native-codecs" or not root.is_absolute() or
-                any(_linked_entry(p) for p in (file,*file.parents)) or
-                not file.is_file() or not 1 <= file.stat().st_size <= 128*1024):
-            return None
-        raw = file.read_bytes()
-        if sha256(raw).hexdigest() != pin:
-            return None
-        manifest = json.loads(raw)
-        canonical = json.dumps(manifest,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode("ascii")
-        if raw != canonical:
-            return None
-        verify_native_codec_bundle(root,manifest)
-        allowed={"nvp-codec-manifest.json"}
-        for item in manifest["tools"].values():
-            allowed.update((item["filename"],item["license_notice"]))
-        if {p.name for p in root.iterdir()} != allowed or any(_linked_entry(p) or not p.is_file() for p in root.iterdir()):
+        try:
+            root=check_installed(pin)
+            if root != self._wo5_review_bundle:
+                raise PermissionError("Codec location differs from build-pinned machine release")
+            raw=(root/"nvp-codec-manifest.json").read_bytes()
+            if sha256(raw).hexdigest()!=pin:
+                raise PermissionError("Codec manifest changed after machine admission")
+            manifest=json.loads(raw)
+        except (PermissionError, OSError, ValueError):
             return None
         return root,manifest,pin
 

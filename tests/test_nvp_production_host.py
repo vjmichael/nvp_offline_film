@@ -53,6 +53,24 @@ class NativeProductionHostTests(unittest.TestCase):
         with self.host.service_session():
             self.assertEqual(self.host.journal.status(job)["state"],"CANCELLED")
 
+    def test_review_reconnect_uses_existing_protected_journal_without_constructor_or_lease(self):
+        from backend.nvp_wo4_feature_journal import FeatureJournal
+        import sqlite3
+        with self.host.service_session():
+            with patch.object(FeatureJournal,"__init__",side_effect=AssertionError("must not initialize")):
+                view=NativeProductionHost.open_review_journal(self.root,self.index)
+            self.assertIsInstance(view,FeatureJournal)
+            with view._read() as db:
+                self.assertIsNotNone(db.execute("SELECT count(*) FROM production_features").fetchone())
+                with self.assertRaises(sqlite3.OperationalError):
+                    db.execute("DELETE FROM production_features")
+            with self.assertRaises(PermissionError):
+                view._tx()
+            with self.assertRaises(AnotherSupervisorRunning):
+                with self.host.service_session():
+                    self.fail("Review must not change service ownership")
+        self.assertFalse((self.root/"review-copy.sqlite3").exists())
+
     def test_service_session_owns_exclusive_recovery_and_run_lease(self):
         with self.host.service_session() as runner:
             self.assertEqual(runner.run_one()["status"],"IDLE")

@@ -163,13 +163,21 @@ def main():
     audit=sub.add_parser("verify")
     audit.add_argument("--bundle",required=True,type=Path)
     audit.add_argument("--pin",required=True)
+    provision=sub.add_parser("provision-machine")
+    provision.add_argument("--payload",required=True,type=Path)
+    provision.add_argument("--approved-pin",required=True)
     args=ap.parse_args()
     if args.cmd=="stage":
         report=stage_bundle(args.destination,
             {role:getattr(args,role.replace("-","_")) for role in EXES},
             args.openjpeg_license,args.asdcp_license,args.dll)
         write_compiled_pin(args.pin_module,report["manifest_sha256"])
-    else:report=verify_bundle(args.bundle,args.pin)
+    elif args.cmd=="verify":report=verify_bundle(args.bundle,args.pin)
+    else:
+        from backend.nvp_wo5_codec_provision import provision_machine
+        target=provision_machine(args.payload,args.approved_pin)
+        report={"status":"MACHINE_CODEC_PAYLOAD_VERIFIED","manifest_sha256":target.name,
+                "native_playback_accepted":False}
     print(json.dumps(report,sort_keys=True,indent=2),flush=True)
 
 if __name__=="__main__":main()

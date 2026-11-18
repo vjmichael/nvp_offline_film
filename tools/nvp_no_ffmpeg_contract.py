@@ -37,6 +37,8 @@ ENTRYPOINTS=(
     "backend/nvp_wo5_finished_playback.py",
     "backend/nvp_wo5_director_review.py",
     "backend/nvp_wo5_desktop_review.py",
+    "backend/nvp_wo5_codec_provision.py",
+    "backend/nvp_wo5_review_storage.py",
     "tools/nvp_wo5_release_codecs.py",
     "backend/nvp_wo4_loudness_stream.py",
     "backend/nvp_wo4_master_delivery.py",

@@ -46,7 +46,13 @@ def desktop_finished_decoder_provider(bundle_root,*,authority_factory=None):
     if not callable(authority_factory):
         return None
     pin=_sha(RELEASE_CODEC_MANIFEST_SHA256)
-    root=Path(bundle_root)/"native-codecs"
+    from backend.nvp_wo5_codec_provision import check_installed
+    try:
+        root=check_installed(pin)
+    except (OSError,ValueError,PermissionError):
+        return None
+    if root!=Path(bundle_root)/"native-codecs"/pin:
+        return None
     manifest_file=root/"nvp-codec-manifest.json"
     if (not root.is_absolute() or any(_linked_entry(p) for p in (manifest_file,*manifest_file.parents)) or
             not manifest_file.is_file() or not 1<=manifest_file.stat().st_size<=128*1024):
