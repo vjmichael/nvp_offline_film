@@ -61,9 +61,12 @@ def _stage_at(raw,objects,tick):
     return poses
 
 
-def _snapshot(db,editor,pid,tick):
-    revision,doc=_project(db,pid)
-    length,segments=editor._validate(db,pid,doc)
+def _snapshot(db,editor,pid,tick,*,selection=None):
+    if selection is None:
+        revision,doc=_project(db,pid)
+        length,segments=editor._validate(db,pid,doc)
+    else:
+        revision,length,segments=selection
     if not segments:
         return {"format":"nvp.g07.picture_preview.v1","revision":revision,
                 "duration_seconds":0,"position_seconds":0,"shots":[],
@@ -132,76 +135,104 @@ def audio_window(editor:G07Editor,pid,start_seconds,duration_seconds):
     if samples>MAX_AUDIO_PREVIEW_SECONDS*RATE:
         raise ValueError("Listening request too large")
     def read(db,movie):
-        revision,doc=_project(db,pid)
+        _,doc=_project(db,pid)
         total,segments=editor._validate(db,pid,doc)
-        if not segments or start>=total:
-            raise ValueError("This film has no source sound at that moment")
-        end=min(total,start+duration)
-        count=max(0,(end-start)//TICKS_PER_SAMPLE)
-        left=[0.]*count;right=[0.]*count
-        cache={}
-        master=doc["master_gain"]
-        # Sum only the portion of each source segment that intersects the
-        # requested window. Dissolve weights are evaluated per sample.
-        for index,seg in enumerate(segments):
-            lo=max(start,seg["start_tick"])
-            hi=min(end,seg["end_tick"])
-            if hi<=lo:continue
-            row,take,sounds=editor._take(db,pid,seg["take_id"],cache)
-            source_by_id={item["clip_id"]:item for item in sounds}
-            for selection in seg["audio"]:
-                if not selection["enabled"] or not selection["gain"]:
-                    continue
-                original=source_by_id[selection["clip_id"]]
-                clip=db.execute("""SELECT pcm,pcm_sha256,sample_count FROM g06_original_pcm
-                    WHERE project_id=? AND scene_id=? AND id=?""",
-                    (pid,row["scene_id"],original["clip_id"])).fetchone()
-                if clip is None or _sha(clip["pcm"])!=clip["pcm_sha256"] or (
-                        clip["pcm_sha256"]!=original["pcm_sha256"]):
-                    raise RuntimeError("Original sound cannot be evaluated safely")
-                raw=bytes(clip["pcm"])
-                lead=(original["start_tick"]+selection["offset_tick"])
-                sound_start=seg["start_tick"]+lead-seg["source_in_tick"]
-                sound_end=sound_start+original["duration_tick"]
-                a=max(lo,sound_start);b=min(hi,sound_end)
-                if a>=b:continue
-                lpan,rpan=_stereo_gain(original["emitter_position"],
-                                     seg["camera"],selection["pan"],
-                                     selection["spatial"])
-                coeff=selection["gain"]*master
-                src=memoryview(raw)
-                first=max(0,(a-start+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE)
-                last=min(count,(b-start+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE)
-                for j in range(first,last):
-                    moment=start+j*TICKS_PER_SAMPLE
-                    original_tick=moment-sound_start
-                    original_index=original_tick//TICKS_PER_SAMPLE
-                    if not 0<=original_index<clip["sample_count"]:
-                        continue
-                    pos=original_index*2
-                    value=int.from_bytes(src[pos:pos+2],"little",signed=True)
-                    # Per-sample editorial crossfade, not a destructive
-                    # resampling of the original PCM source.
-                    weight=1.
-                    if (index>0 and seg["transition"]["duration_tick"] and
-                        moment<seg["start_tick"]+seg["transition"]["duration_tick"]):
-                        weight=(moment-seg["start_tick"])/seg["transition"]["duration_tick"]
-                    elif (index+1<len(segments) and
-                          segments[index+1]["transition"]["duration_tick"] and
-                          moment>=segments[index+1]["start_tick"]):
-                        next_seg=segments[index+1]
-                        weight=1.-(moment-next_seg["start_tick"])/next_seg["transition"]["duration_tick"]
-                    weight=max(0.,min(1.,weight))
-                    left[j]+=value*coeff*lpan*weight
-                    right[j]+=value*coeff*rpan*weight
-        output=bytearray()
-        for j in range(count):
-            l=max(-32768,min(32767,round(left[j])))
-            r=max(-32768,min(32767,round(right[j])))
-            output.extend(struct.pack("<hh",l,r))
-        out=io.BytesIO()
-        with wave.open(out,"wb") as wav:
-            wav.setnchannels(2);wav.setsampwidth(2)
-            wav.setframerate(RATE);wav.writeframes(bytes(output))
-        return out.getvalue()
+        return _mix_window(db,editor,pid,start,duration,total,segments,doc['master_gain'])
     return editor._execute(pid,read)
+
+
+def _mix_window(db,editor,pid,start,duration,total,segments,master):
+    if not segments or start>=total:
+        raise ValueError("This film has no source sound at that moment")
+    end=min(total,start+duration)
+    count=max(0,(end-start)//TICKS_PER_SAMPLE)
+    left=[0.]*count;right=[0.]*count
+    cache={}
+    # Sum only the portion of each source segment that intersects the
+    # requested window. Dissolve weights are evaluated per sample.
+    for index,seg in enumerate(segments):
+        lo=max(start,seg["start_tick"])
+        hi=min(end,seg["end_tick"])
+        if hi<=lo:continue
+        row,take,sounds=editor._take(db,pid,seg["take_id"],cache)
+        source_by_id={item["clip_id"]:item for item in sounds}
+        for selection in seg["audio"]:
+            if not selection["enabled"] or not selection["gain"]:
+                continue
+            original=source_by_id[selection["clip_id"]]
+            clip=editor.filming._pcm(db,pid,row["scene_id"],original["clip_id"],metadata_only=True)
+            if clip["pcm_sha256"]!=original["pcm_sha256"]:
+                raise RuntimeError("Original sound cannot be evaluated safely")
+            lead=(original["start_tick"]+selection["offset_tick"])
+            sound_start=seg["start_tick"]+lead-seg["source_in_tick"]
+            sound_end=sound_start+original["duration_tick"]
+            a=max(lo,sound_start);b=min(hi,sound_end)
+            if a>=b:continue
+            lpan,rpan=_stereo_gain(original["emitter_position"],
+                                 seg["camera"],selection["pan"],
+                                 selection["spatial"])
+            coeff=selection["gain"]*master
+            first=max(0,(a-start+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE)
+            last=min(count,(b-start+TICKS_PER_SAMPLE-1)//TICKS_PER_SAMPLE)
+            if last<=first:continue
+            source_first=max(0,(start+first*TICKS_PER_SAMPLE-sound_start)//TICKS_PER_SAMPLE)
+            source_end=min(clip["sample_count"],(start+(last-1)*TICKS_PER_SAMPLE-sound_start)//TICKS_PER_SAMPLE+1)
+            if source_end<=source_first:continue
+            raw=editor.filming._pcm(db,pid,row["scene_id"],original["clip_id"],first=source_first*2,count=(source_end-source_first)*2)["pcm"]
+            src=memoryview(raw)
+            for j in range(first,last):
+                moment=start+j*TICKS_PER_SAMPLE
+                original_tick=moment-sound_start
+                original_index=original_tick//TICKS_PER_SAMPLE
+                if not 0<=original_index<clip["sample_count"]:
+                    continue
+                pos=(original_index-source_first)*2
+                value=int.from_bytes(src[pos:pos+2],"little",signed=True)
+                # Per-sample editorial crossfade, not a destructive
+                # resampling of the original PCM source.
+                weight=1.
+                if (index>0 and seg["transition"]["duration_tick"] and
+                    moment<seg["start_tick"]+seg["transition"]["duration_tick"]):
+                    weight=(moment-seg["start_tick"])/seg["transition"]["duration_tick"]
+                elif (index+1<len(segments) and
+                      segments[index+1]["transition"]["duration_tick"] and
+                      moment>=segments[index+1]["start_tick"]):
+                    next_seg=segments[index+1]
+                    weight=1.-(moment-next_seg["start_tick"])/next_seg["transition"]["duration_tick"]
+                weight=max(0.,min(1.,weight))
+                left[j]+=value*coeff*lpan*weight
+                right[j]+=value*coeff*rpan*weight
+    output=bytearray()
+    for j in range(count):
+        l=max(-32768,min(32767,round(left[j])))
+        r=max(-32768,min(32767,round(right[j])))
+        output.extend(struct.pack("<hh",l,r))
+    out=io.BytesIO()
+    with wave.open(out,"wb") as wav:
+        wav.setnchannels(2);wav.setsampwidth(2)
+        wav.setframerate(RATE);wav.writeframes(bytes(output))
+    return out.getvalue()
+
+
+def paged_picture(service,pid,revision,digest,tick):
+    from backend.nvp_g07_paged_media import window,admit
+    def read(db,movie):
+        doc,segments=window(service,db,pid,revision,digest,tick,tick+1)
+        admit(service,db,pid,segments)
+        result=_snapshot(db,service.editor,pid,tick,selection=(revision,doc['duration_tick'],segments))
+        return {**result,'project_id':pid,'active_digest':digest,'position_tick':str(tick)}
+    return service._run(pid,read)
+
+
+def paged_sound(service,pid,revision,digest,start,duration):
+    from backend.nvp_g07_paged_media import window,admit,_scope
+    if (type(start) is not int or type(duration) is not int or start<0 or not 0<duration<=5*TICKS_PER_SECOND or start%TICKS_PER_SAMPLE or duration%TICKS_PER_SAMPLE):
+        raise ValueError('Choose up to five seconds of aligned original sound')
+    def read(db,movie):
+        doc,_,_=_scope(service,db,pid,revision,digest)
+        end=min(doc['duration_tick'],start+duration)
+        if end-start<TICKS_PER_SAMPLE:raise ValueError('No complete audio sample')
+        doc,segments=window(service,db,pid,revision,digest,start,end)
+        admit(service,db,pid,segments)
+        return _mix_window(db,service.editor,pid,start,duration,doc['duration_tick'],segments,doc['master_gain'])
+    return service._run(pid,read)

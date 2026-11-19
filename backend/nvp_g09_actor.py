@@ -494,9 +494,7 @@ class G09Actors:
             selected=next((x for x in audio if x["clip_id"]==clip_id),None)
             if selected is None or not selected["actor_id"]:
                 raise KeyError("This is not an original actor voice in the Take")
-            clip=db.execute("""SELECT pcm,pcm_sha256,sample_count,actor_id
-                FROM g06_original_pcm WHERE project_id=? AND scene_id=? AND id=?""",
-                (pid,row["scene_id"],clip_id)).fetchone()
+            clip=self.editor.filming._pcm(db,pid,row["scene_id"],clip_id)
             if (clip is None or clip["actor_id"]!=selected["actor_id"] or
                 len(clip["pcm"])!=clip["sample_count"]*2 or
                 _sha(clip["pcm"])!=selected["pcm_sha256"] or
@@ -531,9 +529,7 @@ class G09Actors:
                 "stage_setting":source["stage_setting"],"events":source["events"],
                 "duration_tick":source["duration_tick"],"audio":[]}
             for entry in audio:
-                clip=db.execute("""SELECT pcm,pcm_sha256 FROM g06_original_pcm
-                    WHERE project_id=? AND scene_id=? AND id=?""",
-                    (pid,row["scene_id"],entry["clip_id"])).fetchone()
+                clip=self.editor.filming._pcm(db,pid,row["scene_id"],entry["clip_id"])
                 if clip is None or _sha(clip["pcm"])!=entry["pcm_sha256"]:
                     raise RuntimeError("The original actor sound was changed")
                 record["audio"].append({**entry,"pcm16le":bytes(clip["pcm"])})

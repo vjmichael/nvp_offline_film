@@ -37,3 +37,11 @@ describe('Large-film section browser',()=>{
     await screen.findByRole('alert');expect(screen.queryByText('Wrong footage')).toBeNull();
   });
 });
+
+it('saves exact original section through the native bridge only',async()=>{
+ const source={...item,view:'takes'};
+ const api=vi.fn(async path=>path.includes('family=takes')?{...base('takes'),items:[source],next_after:null}:{...base('scenes'),items:[],next_after:null});
+ const nativeBridge={slate_publish_section:vi.fn(async()=>({format:'nvp.slate.section_saved.v1',project_id:pid,source_modified:false,render_approved:false}))};
+ const {container}=render(<DirectorOriginalSections projectId={pid} api={api} nativeBridge={nativeBridge}/>);open(container);await screen.findByText('Nothing to show on this page.');fireEvent.click(screen.getByRole('button',{name:'Takes',exact:true}));fireEvent.click(await screen.findByRole('button',{name:'Add to section'}));fireEvent.change(screen.getByLabelText('Section name'),{target:{value:'Act A'}});fireEvent.click(screen.getByRole('button',{name:'Save original section'}));await screen.findByText('Section saved. Your original cuts are unchanged.');
+ expect(nativeBridge.slate_publish_section).toHaveBeenCalledWith({project_id:pid,family:'takes',title:'Act A',children:[{object_id:item.object_id,revision:1,document_sha256:sha}]});expect(api.mock.calls.every(c=>c[1]==='GET')).toBe(true);
+});

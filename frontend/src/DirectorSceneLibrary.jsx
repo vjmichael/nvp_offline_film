@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useState} from 'react';
 import './director-scene-library.css';
 import DirectorWorldStage from './DirectorWorldStage.jsx';
 import DirectorOriginalSections from './DirectorOriginalSections.jsx';
+import DirectorEditorialSections from './DirectorEditorialSections.jsx';
 
 // Only creative details belong in a filmmaking screen. Project authorization,
 // source hashes, model selection and production worker decisions belong to NVP.
@@ -198,10 +199,11 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
         <div className="film-eyebrow">YOUR SCENE LIBRARY</div>
         <h2>Set Up Scenes</h2>
         <p className="film-muted">Build your film scene by scene. You make the creative decisions.</p>
-        {!movie.encrypted&&<DirectorOriginalSections key={movie.id} projectId={movie.id} api={action}/>}
       </div>
       <button className="film-secondary" onClick={onScript}>Edit Screenplay</button>
     </div>
+    <DirectorEditorialSections key={movie.id+':sections'} projectId={movie.id} encrypted={movie.encrypted} api={action} browseOnly/>
+    {!movie.encrypted&&<details className="film-sections film-sections-advanced"><summary>More source tools</summary><DirectorOriginalSections key={movie.id} projectId={movie.id} api={action}/></details>}
     {data.title_conflict&&<div className="director-review-alert" role="status">
       Your script is titled <strong>{data.title_conflict.script_title}</strong>, while your
       movie is named <strong>{data.title_conflict.movie_title}</strong>. Both are preserved.

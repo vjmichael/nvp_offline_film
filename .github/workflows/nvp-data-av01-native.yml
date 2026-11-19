@@ -42,6 +42,11 @@ on:
       - 'frontend/src/DirectorSceneLibrary.movie.test.jsx'
       - 'tools/nvp_data_av_installed_acceptance.py'
       - 'tools/nvp_desktop_alpha.py'
+      - 'tools/nvp_perf03g_gui_smoke.py'
+      - 'frontend/src/DirectorPagedTimeline*'
+      - 'frontend/src/DirectorEditorialSections*'
+      - 'frontend/src/DirectorFilmEditor.jsx'
+      - 'backend/nvp_g07_*.py'
       - 'tests/test_nvp_data_av_native.py'
       - 'tests/test_nvp_webview_ipc_surface.py'
       - '.github/workflows/nvp-data-av01-native.yml'
@@ -259,7 +264,7 @@ jobs:
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --collect-all _sounddevice_data --hidden-import tools.nvp_native_device_producer_worker --hidden-import tools.nvp_p1b_physical_device_acceptance --hidden-import tools.nvp_data_av_installed_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all miniaudio --collect-all PIL --collect-all pxr --hidden-import backend.nvp_native_cpu_raster --hidden-import backend.nvp_final_2d_native --hidden-import backend.nvp_data_av_source --hidden-import backend.nvp_data_av_scene --hidden-import backend.nvp_data_av_usd --hidden-import backend.nvp_data_av_desktop --hidden-import backend.nvp_slate08b_native_camera_ipc --hidden-import backend.nvp_plan02c_desktop --hidden-import backend.nvp_plan02c_rails --hidden-import backend.nvp_plan02c_usd_rail --hidden-import backend.nvp_plan02c_model_advice --hidden-import backend.nvp_wo6_verified_local_model --hidden-import backend.nvp_native_capture_desktop --hidden-import backend.nvp_native_live_take --hidden-import backend.nvp_native_independent_take --hidden-import backend.nvp_independent_device_sync --hidden-import backend.nvp_capture_recovery --collect-all sounddevice --collect-all _sounddevice_data --hidden-import tools.nvp_native_device_producer_worker --hidden-import tools.nvp_p1b_physical_device_acceptance --hidden-import tools.nvp_data_av_installed_acceptance --hidden-import tools.nvp_perf03g_gui_smoke tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { throw 'Installed NVP executable could not be produced' }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'NVP.exe missing' }
           $bundled=@(Get-ChildItem dist/NVP -Recurse -File | Where-Object { $_.Name -in @('ffmpeg.exe','ffprobe.exe') })
@@ -381,6 +386,22 @@ jobs:
           $uiLeftovers=@(Get-CimInstance Win32_Process -Filter "Name = 'NVP.exe'" |
             Where-Object { $_.ExecutablePath -eq $installed })
           if ($uiLeftovers.Count -ne 0) { throw 'Installed WebView2 left NVP.exe running' }
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-chapter-editor.txt'
+          Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
+          $chapter=Start-Process -FilePath $installed -ArgumentList '--smoke-perf03g-window' -PassThru
+          if (-not $chapter.WaitForExit(240000)) {
+            $chapter.Refresh()
+            if (-not $chapter.HasExited) { $chapter.Kill($true); if (-not $chapter.WaitForExit(10000)) { throw 'Timed-out chapter editor could not be stopped' } }
+            throw 'Installed protected chapter editor timed out; native acceptance failed'
+          }
+          if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output }
+          if ($chapter.ExitCode -ne 0) { throw "Installed protected chapter editor failed (exit $($chapter.ExitCode))" }
+          if (-not (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH)) { throw 'Installed chapter editor receipt missing' }
+          $chapterReport=Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw
+          if (-not ($chapterReport.Contains('NVP_SMOKE_STAGE perf03g_real_webview2_protected_paged_editor_verified') -and $chapterReport.Contains('NVP_SMOKE_STAGE perf03g_real_webview2_loop_exited') -and $chapterReport.Contains('NVP_SMOKE_STAGE perf03g_real_webview2_sampled_media_recovery_review_verified') -and $chapterReport.Contains('NVP_SMOKE_STAGE perf03g_real_webview2_review_clip_and_backup_controls_verified'))) { throw 'Real protected chapter editor DOM and clean exit were not verified' }
+          $chapterLeftovers=@(Get-CimInstance Win32_Process -Filter "Name = 'NVP.exe'" | Where-Object { $_.ExecutablePath -eq $installed })
+          if ($chapterLeftovers.Count -ne 0) { throw 'Installed chapter editor left NVP.exe running' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift after installed chapter editor' }
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
           $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait -PassThru

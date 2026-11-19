@@ -171,7 +171,7 @@ def _check_clip_shape(clip):
     for source in audio:_sound(source)
 
 
-def _project(db,pid):
+def _project(db,pid,*,allow_paged=False):
     row=db.execute("SELECT 1 FROM g07_edit_heads WHERE project_id=?",(pid,)).fetchone()
     if row is None:return 0,_blank()
     head=db.execute("SELECT revision,document_sha256 FROM g07_edit_heads WHERE project_id=?",
@@ -185,6 +185,12 @@ def _project(db,pid):
     if _sha(raw.encode("utf8"))!=version["document_sha256"]:
         raise RuntimeError("A movie edit revision was altered")
     document=json.loads(raw)
+    from backend.nvp_g07_paged_active import FORMAT as PAGED, check
+    if isinstance(document,dict) and document.get("format")==PAGED:
+        check(document)
+        if not allow_paged:
+            raise ValueError("This chapter-based edit must be opened through its section timeline. Picture and export are not ready for this edit.")
+        return head["revision"],document
     if not isinstance(document,dict) or document.get("format")!=FORMAT:
         raise RuntimeError("The saved edit has an unknown format")
     return head["revision"],document
@@ -312,8 +318,8 @@ class G07Editor:
     def _view(self,db,pid,doc,revision):
         history=[{"revision":r["revision"],"created_at":r["created_at"]}
             for r in db.execute("""SELECT revision,created_at
-                FROM g07_edit_versions WHERE project_id=?
-                ORDER BY revision DESC LIMIT 40""",(pid,))]
+                FROM g07_edit_versions WHERE project_id=? AND json_extract(document_json,'$.format')=?
+                ORDER BY revision DESC LIMIT 40""",(pid,FORMAT))]
         available=[]
         for row in db.execute("""SELECT take_id,scene_id,source_stage_revision,
              take_sha256,performance_json,frozen_at FROM g06_frozen_takes
@@ -371,7 +377,11 @@ class G07Editor:
 
     def view(self,pid):
         def read(db,movie):
-            revision,doc=_project(db,pid)
+            revision,doc=_project(db,pid,allow_paged=True)
+            from backend.nvp_g07_paged_active import FORMAT as PAGED
+            if doc['format']==PAGED:
+                from backend.nvp_g07_sections import EditorialSections
+                return EditorialSections(self)._active_view(db,pid,revision,doc)
             return self._view(db,pid,doc,revision)
         return self._execute(pid,read)
 
@@ -516,7 +526,7 @@ class G07Editor:
                 type(expected_revision) is not int or expected_revision<0):
             raise ValueError("Choose a previous edit version")
         def change(db,movie):
-            rev,doc=_project(db,pid)
+            rev,doc=_project(db,pid,allow_paged=True)
             if expected_revision!=rev:
                 raise RuntimeError("The movie edit has newer changes")
             row=db.execute("""SELECT document_json,document_sha256
@@ -528,7 +538,18 @@ class G07Editor:
                 raise RuntimeError("An older edit history entry is damaged")
             older=json.loads(row["document_json"])
             self._validate(db,pid,older)
+            from backend.nvp_g07_sections import EditorialSections, _digest, _schema as section_schema
+            from backend.nvp_g07_paged_active import FORMAT as PAGED
+            service=EditorialSections(self)
+            if doc.get("format")==PAGED:
+                service._paged_root(db,pid,rev,doc)
+            original_group=service.verify_activated_edit(db,pid,source_revision,older)
             new=self._save(db,pid,older,rev,expected_revision)
+            if original_group is not None:
+                section_schema(db)
+                scope={"project_id":pid,"section_id":original_group["section_id"],"section_digest":original_group["section_digest"],
+                       "expected_revision":rev,"edit_digest":_digest(older)}
+                db.execute("INSERT INTO g07_section_activations VALUES(?,?,?,?,?,?,?)", (pid,new,scope['section_id'],scope['section_digest'],rev,scope['edit_digest'],_digest(scope)))
             return self._view(db,pid,older,new)
         return self._execute(pid,change,mutate=True)
 
@@ -701,6 +722,8 @@ class G07Editor:
                 if row is None or _sha(row["document_json"].encode("utf8"))!=row["document_sha256"]:
                     raise RuntimeError("An earlier edit is unavailable")
                 document=json.loads(row["document_json"])
+            from backend.nvp_g07_sections import EditorialSections
+            EditorialSections(self).verify_activated_edit(db,pid,source_revision,document)
             total,segments=self._validate(db,pid,document)
             if window is not None:
                 from backend.nvp_g08_native_avi import TICKS_FRAME,MAX_SECONDS
@@ -753,20 +776,13 @@ class G07Editor:
                         source_audio=[]
                         for item in audio:
                             if participating is not None:
-                                length=db.execute("""SELECT length(pcm)
-                                    FROM g06_original_pcm WHERE project_id=?
-                                    AND scene_id=? AND id=?""",
-                                    (pid,row["scene_id"],item["clip_id"])).fetchone()
-                                if length is None or length[0] is None:
-                                    raise RuntimeError("Original microphone clip was removed")
-                                if length[0]>64*1024*1024:
+                                length=self.filming._pcm(db,pid,row["scene_id"],item["clip_id"],metadata_only=True)["pcm_bytes"]
+                                if length>64*1024*1024:
                                     raise ValueError("This long original microphone Take needs the later incremental source-PCM reader")
-                                source_budget+=length[0]
+                                source_budget+=length
                                 if source_budget>256*1024*1024:
                                     raise ValueError("Simultaneous original Takes exceed the 256 MiB window budget")
-                            pcm=db.execute("""SELECT pcm,pcm_sha256 FROM g06_original_pcm
-                                WHERE project_id=? AND scene_id=? AND id=?""",
-                                (pid,row["scene_id"],item["clip_id"])).fetchone()
+                            pcm=self.filming._pcm(db,pid,row["scene_id"],item["clip_id"])
                             if pcm is None or _sha(pcm["pcm"])!=pcm["pcm_sha256"]:
                                 raise RuntimeError("Original sound cannot be reopened")
                             source_audio.append({**item,"pcm16le":bytes(pcm["pcm"])})

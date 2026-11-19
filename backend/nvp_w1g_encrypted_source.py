@@ -22,12 +22,25 @@ FILE_IS_ENCRYPTED=1
 def _efs_status(path: Path) -> bool:
     if os.name!="nt":
         return False
+    # Capture the Win32 error at the call boundary, not after another API
+    # call. SQLite can remove an optional sidecar between stat and this call.
+    # Only an explicit missing-file/path error is classified as absence.
+    query=ctypes.WinDLL("advapi32",use_last_error=True).FileEncryptionStatusW
+    query.argtypes=(ctypes.c_wchar_p,ctypes.POINTER(ctypes.c_uint32))
+    query.restype=ctypes.c_int
     status=ctypes.c_uint32()
-    ok=ctypes.windll.advapi32.FileEncryptionStatusW(
-        str(path),ctypes.byref(status))
-    if ok==0:
-        raise PermissionError("Windows EFS encryption status is unavailable")
+    ctypes.set_last_error(0)
+    ok=query(str(path),ctypes.byref(status))
+    if not ok:
+        code=ctypes.get_last_error()
+        _raise_efs_query_failure(code)
     return status.value==FILE_IS_ENCRYPTED
+
+
+def _raise_efs_query_failure(code):
+    if code in (2,3):  # ERROR_FILE_NOT_FOUND / ERROR_PATH_NOT_FOUND
+        raise FileNotFoundError("Windows EFS target disappeared")
+    raise PermissionError(f"Windows EFS encryption status is unavailable (Win32 {int(code)})")
 
 
 def require_efs_stage(jobdir: Path):

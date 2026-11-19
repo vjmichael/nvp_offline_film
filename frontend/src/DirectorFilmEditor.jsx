@@ -6,6 +6,9 @@ import DirectorActorStudio from './DirectorActorStudio.jsx';
 import DirectorAVMonitor from './DirectorAVMonitor.jsx';
 import DirectorSoundStage from './DirectorSoundStage.jsx';
 import DirectorOriginalSections from './DirectorOriginalSections.jsx';
+import DirectorEditorialSections from './DirectorEditorialSections.jsx';
+import DirectorPagedTimeline from './DirectorPagedTimeline.jsx';
+import {DirectorStorageReview} from './DirectorPagedMedia.jsx';
 
 const EPS=.0001;
 const TPS=7056000000;
@@ -419,7 +422,7 @@ export default function DirectorFilmEditor({movie}){
     try{
       const result=await directorCall(base+'/restore','POST',{
         expected_revision:edit.revision,source_revision:version});
-      setEdit(result);setPosition(0);setPlaying(false);
+      setEdit(result);setPosition(0);setPlaying(false);setTitle(result.title);setFilmNotes(result.notes);setMaster(result.master_gain);setSelectedId(null);
       setNotice('An earlier edit was restored as a new version.');
     }catch(e){setError(e.message)}
     finally{busyRef.current=false;setBusy(false)}
@@ -462,6 +465,16 @@ export default function DirectorFilmEditor({movie}){
     if(seg){setPosition(seg.start_seconds);setPlaying(false)}
   }
 
+  if(edit?.format==='nvp.g07.paged_active_edit.v1')return <div className="film-editor-shell" aria-label="Edit Film">
+    <div className="film-editor-toolbar"><div><div className="film-eyebrow">YOUR EDITING ROOM</div><h2>Make your movie</h2></div><div className="film-editor-save-state">{busy?'Saving your edit…':`Edit saved · Version ${edit.revision}`}</div></div>
+    {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
+    <DirectorPagedTimeline projectId={movie.id} encrypted={movie.encrypted} edit={edit} api={directorCall} sceneTitles={scenes} disabled={busy} renderPicture={props=><PicturePreview {...props}/>}/>
+    <DirectorEditorialSections key={movie.id+':sections'} projectId={movie.id} encrypted={movie.encrypted} api={directorCall} activeRevision={edit.revision} disabled={busy} beginAction={()=>{if(busyRef.current)return false;busyRef.current=true;setBusy(true);return true;}} endAction={()=>{busyRef.current=false;setBusy(false);}} onActivated={async revision=>{
+      const current=await directorCall(base);if(current.revision<revision)throw Error('The new edit could not be reopened');setEdit(current);setPosition(0);setSelectedId(null);setTitle(current.title);setFilmNotes(current.notes);setMaster(current.master_gain);
+    }}/>
+    {movie.encrypted&&<DirectorStorageReview key={movie.id+':recovery'} projectId={movie.id} api={directorCall}/>}
+    <details className="film-sections"><summary>Earlier edits</summary><p className="film-muted">Open an earlier ordinary edit to return to individual shot editing. Your current arrangement remains saved.</p>{(edit.history||[]).filter(x=>x.revision!==edit.revision).map(x=><button key={x.revision} className="film-secondary" disabled={busy} onClick={()=>restore(x.revision)}>Restore version {x.revision}</button>)}</details>
+  </div>;
   return <div className="film-editor-shell" aria-label="Edit Film">
     <div className="film-editor-toolbar">
       <div>
@@ -474,8 +487,8 @@ export default function DirectorFilmEditor({movie}){
         'Saving your edit…':edit?'Edit saved · Version '+edit.revision:
           'Opening your film…'}</div>
     </div>
-    {!movie.encrypted&&<DirectorOriginalSections key={movie.id} projectId={movie.id} api={directorCall}/>}
     {error&&<div className="film-editor-error" role="alert">{error}</div>}
+    {movie.encrypted&&!edit&&error&&<DirectorStorageReview key={movie.id+':recovery'} projectId={movie.id} api={directorCall}/>}
     {notice&&<div className="film-editor-notice" role="status">{notice}</div>}
     {edit?.missing_sources?.length>0&&<div className="film-editor-warning"
       role="alert">Some original footage or sound needs attention.
@@ -559,6 +572,13 @@ export default function DirectorFilmEditor({movie}){
         {edit.timeline.length>0&&<div className="film-editor-timeline-help">
           Select a shot to edit it. Drag shots to rearrange them, or use
           the move controls below.</div>}
+    <DirectorEditorialSections key={movie.id+':sections'} projectId={movie.id} encrypted={movie.encrypted} api={directorCall} activeRevision={edit?.revision??null} disabled={busy||!edit} beginAction={()=>{if(busyRef.current)return false;busyRef.current=true;setBusy(true);return true;}} endAction={()=>{busyRef.current=false;setBusy(false);}} onActivated={async revision=>{
+      setPlaying(false);previewController.current?.abort();audioController.current?.abort();setListenUrl('');setSample(null);
+      const current=await directorCall(base);
+      if(current.revision<revision)throw Error('The new edit could not be reopened');
+      setEdit(current);setTitle(current.title);setFilmNotes(current.notes);setMaster(current.master_gain);setPosition(0);setSelectedId(null);
+    }}/>
+      {!movie.encrypted&&<details className="film-sections film-sections-advanced"><summary>More source tools</summary><DirectorOriginalSections key={movie.id} projectId={movie.id} api={directorCall}/></details>}
       </section>
       <section className="film-editor-assistant">
         <div className="film-editor-section-heading">

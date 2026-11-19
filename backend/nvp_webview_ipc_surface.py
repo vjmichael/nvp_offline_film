@@ -24,6 +24,9 @@ class NativeWebviewIPCSurface:
             raise TypeError("Native per-window camera bridge required")
         self._delegate = delegate
 
+    def slate_publish_section(self, request):
+        return self._delegate.slate_publish_section(request)
+
     def wo6_retake_execute(self, request):
         return self._delegate.wo6_retake_execute(request)
 

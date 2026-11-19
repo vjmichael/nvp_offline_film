@@ -255,6 +255,8 @@ class G06Filming:
             sample_rate INTEGER NOT NULL,channels INTEGER NOT NULL,
             sample_count INTEGER NOT NULL,recorded_at TEXT NOT NULL,
             CHECK(source_kind='native_microphone_pcm16le'))""")
+        from backend.nvp_g03_pcm_pages import schema as pcm_page_schema
+        pcm_page_schema(db)
         db.execute("""CREATE TABLE IF NOT EXISTS g06_frozen_takes(
             take_id TEXT PRIMARY KEY,project_id TEXT NOT NULL,
             scene_id TEXT NOT NULL,source_stage_revision INTEGER NOT NULL,
@@ -288,6 +290,14 @@ class G06Filming:
             model_receipt_json TEXT NOT NULL,status TEXT NOT NULL,
             created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
             CHECK(status IN ('proposed','accepted','rejected')))""")
+
+    def _pcm(self,db,pid,scene_id,clip_id,*,metadata_only=False,verify_only=False,first=0,count=None):
+        from backend.nvp_g03_pcm_pages import metadata,read_pcm
+        from backend.nvp_g03_windows_vault import VaultError
+        try:
+            if metadata_only:return metadata(db,self,pid,scene_id,clip_id)
+            return read_pcm(db,self,pid,scene_id,clip_id,first=first,count=count,verify_only=verify_only)
+        except VaultError as exc:raise RuntimeError("Original recording integrity check failed") from exc
 
     def _with(self,pid,scene_id,callback,mutate=False):
         def operation(db,movie,source):
@@ -702,11 +712,20 @@ class G06Filming:
             if actor_id is not None and actor_id not in actors:
                 raise ValueError("Recorded speaker is not in this scene")
             cid=uuid.uuid4().hex
+            from backend.nvp_g03_pcm_pages import context as pcm_context,_seal
+            import io
+            ctx=pcm_context(self,pid)
+            digest=_sha(pcm);stored_pcm=pcm
+            if ctx is not None:
+                folder,key=ctx
+                root_sha=_seal(folder,key,pid,cid,digest,len(pcm),io.BytesIO(pcm),lambda:pcm_context(self,pid))
+                db.execute('INSERT INTO g03_pcm_pages VALUES(?,?,?,?,?,?)',(pid,cid,scene_id,digest,len(pcm),root_sha))
+                stored_pcm=b''
             db.execute("""INSERT INTO g06_original_pcm
                 (id,project_id,scene_id,actor_id,source_kind,pcm,pcm_sha256,
                  sample_rate,channels,sample_count,recorded_at)
                 VALUES (?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?)""",
-                (cid,pid,scene_id,actor_id,pcm,_sha(pcm),RATE,1,len(pcm)//2,_now()))
+                (cid,pid,scene_id,actor_id,stored_pcm,digest,RATE,1,len(pcm)//2,_now()))
             if capture_receipt is not None:
                 from backend.nvp_g09c_capture import G09CCaptureJournal
                 if (capture_receipt.get("original_pcm_sha256")!=_sha(pcm) or
@@ -746,14 +765,9 @@ class G06Filming:
             animated=_author_performance(original,plan,working)
             audio=[]
             for clip_id in clip_ids:
-                clip=db.execute("""SELECT id,actor_id,pcm,pcm_sha256,
-                    sample_rate,channels,sample_count FROM g06_original_pcm
-                    WHERE project_id=? AND scene_id=? AND id=?""",
-                    (pid,scene_id,clip_id)).fetchone()
-                if clip is None:raise KeyError("Original recording not in this scene")
-                if (_sha(clip["pcm"])!=clip["pcm_sha256"] or
-                    clip["sample_rate"]!=RATE or clip["channels"]!=1 or
-                    len(clip["pcm"])!=clip["sample_count"]*2):
+                clip=self._pcm(db,pid,scene_id,clip_id,verify_only=True)
+                if (clip["sample_rate"]!=RATE or clip["channels"]!=1 or
+                    clip["pcm_bytes"]!=clip["sample_count"]*2):
                     raise RuntimeError("Original source audio failed its integrity check")
                 start_tick=_seconds(clip_starts.get(clip_id,"0"))
                 duration_tick=clip["sample_count"]*SAMPLE_TICKS
@@ -813,10 +827,7 @@ class G06Filming:
         if type(clip_id) is not str or not HEX.fullmatch(clip_id):
             raise ValueError("Select an original sound recording")
         def read(db,movie,source):
-            row=db.execute("""SELECT actor_id,pcm,pcm_sha256,sample_rate,
-                channels,sample_count FROM g06_original_pcm
-                WHERE project_id=? AND scene_id=? AND id=?""",
-                (pid,scene_id,clip_id)).fetchone()
+            row=self._pcm(db,pid,scene_id,clip_id)
             if row is None:raise KeyError("Original sound is not in this scene")
             if (_sha(row["pcm"])!=row["pcm_sha256"] or
                     row["sample_rate"]!=RATE or row["channels"]!=1 or
@@ -867,11 +878,7 @@ class G06Filming:
         if audio!=data["audio"] or len(audio)>64:
             raise RuntimeError("The original sound manifest is incomplete")
         for item in audio:
-            clip=db.execute("""SELECT actor_id,pcm_sha256,
-                sample_count,length(pcm) AS pcm_bytes
-                FROM g06_original_pcm WHERE project_id=?
-                AND scene_id=? AND id=?""",
-                (pid,row["scene_id"],item["clip_id"])).fetchone()
+            clip=self._pcm(db,pid,row["scene_id"],item["clip_id"],metadata_only=True)
             if (clip is None or clip["actor_id"]!=item["actor_id"] or
                 clip["pcm_sha256"]!=item["pcm_sha256"] or
                 clip["sample_count"]!=item["sample_count"] or
@@ -906,12 +913,8 @@ class G06Filming:
         if audio!=data["audio"]:
             raise RuntimeError("Original audio binding was changed")
         for entry in audio:
-            clip=db.execute("""SELECT actor_id,pcm,pcm_sha256,
-                sample_count FROM g06_original_pcm
-                WHERE project_id=? AND scene_id=? AND id=?""",
-                (pid,row["scene_id"],entry["clip_id"])).fetchone()
+            clip=self._pcm(db,pid,row["scene_id"],entry["clip_id"],verify_only=True)
             if (clip is None or clip["actor_id"]!=entry["actor_id"] or
-                _sha(clip["pcm"])!=clip["pcm_sha256"] or
                 clip["pcm_sha256"]!=entry["pcm_sha256"] or
                 clip["sample_count"]!=entry["sample_count"]):
                 raise RuntimeError("Take's original recorded sound is missing")
@@ -954,10 +957,7 @@ class G06Filming:
             row,document,audio=self._take(db,pid,take_id)
             clips=[]
             for item in audio:
-                source=db.execute("""SELECT pcm,pcm_sha256,sample_count
-                    FROM g06_original_pcm WHERE project_id=? AND
-                    scene_id=? AND id=?""",
-                    (pid,row["scene_id"],item["clip_id"])).fetchone()
+                source=self._pcm(db,pid,row["scene_id"],item["clip_id"])
                 if (source is None or
                     _sha(source["pcm"])!=item["pcm_sha256"] or
                     source["pcm_sha256"]!=item["pcm_sha256"]):

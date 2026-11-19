@@ -490,7 +490,7 @@ def run_visible_window_smoke():
                     raise RuntimeError("Missing installed finished-film review methods")
                 _smoke_checkpoint("window_finished_review_ipc_surface_verified")
                 missing_plan_methods=window.evaluate_js(
-                    "['wo6_plan_catalog','wo6_plan_preview','wo6_plan_save','wo6_plan_read','wo6_retake_execute','wo6_retake_cancel','wo6_retake_recover']"
+                    "['slate_publish_section','wo6_plan_catalog','wo6_plan_preview','wo6_plan_save','wo6_plan_read','wo6_retake_execute','wo6_retake_cancel','wo6_retake_recover']"
                     ".filter(name=>typeof window.pywebview?.api?.[name]!=='function')")
                 if type(missing_plan_methods) is not list or missing_plan_methods:
                     raise RuntimeError("Missing installed creator planning methods")
@@ -1319,6 +1319,8 @@ def main(argv=None):
                         help="Reopen same project after fully exiting previous installed app")
     parser.add_argument("--smoke-window",action="store_true",
                         help="Launch a real native Windows WebView2 and verify page loaded")
+    parser.add_argument("--smoke-perf03g-window",action="store_true",
+                        help="Verify protected chapter timeline in the installed Windows editor")
     parser.add_argument("--smoke-g03-window",action="store_true",
                         help="Test director-first New/Resume, actor-free scene and edit window in native WebView2")
     parser.add_argument("--smoke-vault",action="store_true",
@@ -1349,7 +1351,7 @@ def main(argv=None):
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(args)
     if sum((args.smoke,args.smoke_create,args.smoke_reopen,
-            args.smoke_window,args.smoke_g03_window,args.smoke_vault,
+            args.smoke_window,args.smoke_g03_window,args.smoke_perf03g_window,args.smoke_vault,
             args.smoke_live_create,args.smoke_live_reopen,
             args.g03_protected_scene_worker,args.g03_protected_capture_worker,
             args.smoke_live_worker,args.smoke_capture_denied,
@@ -1379,6 +1381,10 @@ def main(argv=None):
         return run_smoke()
     if args.smoke_window:
         return run_visible_window_smoke()
+    if args.smoke_perf03g_window:
+        from tools.nvp_perf03g_gui_smoke import run
+        return run(create_app=create_app,serve=serve,start_private=_start_private_webview,
+                   await_loaded=_await_native_window_load,checkpoint=_smoke_checkpoint)
     if args.smoke_g03_window:
         return run_g03_window_smoke()
     if args.smoke_vault:
@@ -1415,6 +1421,7 @@ def main(argv=None):
     app=create_app()
     server,worker,port,sock=serve(app)
     bridge=None
+    recovery_dialog=None
     try:
         import webview
         bridge=create_trusted_camera_bridge(port)
@@ -1422,9 +1429,14 @@ def main(argv=None):
             "http://127.0.0.1:"+str(port),
             width=1280,height=800,min_size=(960,600),js_api=NativeWebviewIPCSurface(bridge))
         bridge._attach_window(window)
+        from backend.nvp_g07_recovery_dialog import NativeRecoveryDialog
+        recovery_dialog=NativeRecoveryDialog(window,"http://127.0.0.1:"+str(port))
+        app.state.nvp_editorial_recovery_dialog=recovery_dialog
         _start_private_webview(webview)
         return 0
     finally:
+        if recovery_dialog is not None:recovery_dialog.close()
+        app.state.nvp_editorial_recovery_dialog=None
         try:
             if bridge is not None:
                 bridge._close()

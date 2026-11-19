@@ -214,12 +214,26 @@ class ProductionJournal:
             raise PermissionError("Production journal storage identity changed")
         for suffix in ("-wal","-shm","-journal"):
             sidecar=Path(str(self.db_path)+suffix)
-            if sidecar.exists() or _linked_entry(sidecar):
+            # lstat observes dangling reparse entries as well as regular files;
+            # only documented absence may be ignored, never access denial.
+            try:
+                sidecar.lstat()
+            except FileNotFoundError:
+                continue
+            try:
+                _protected_path(sidecar)
+            except FileNotFoundError:
+                # WAL/SHM/journal may disappear during concurrent SQLite close.
+                # A replacement (including a dangling link), permission error,
+                # or changed protected parent remains a hard refusal.
                 try:
-                    _protected_path(sidecar)
+                    sidecar.lstat()
                 except FileNotFoundError:
-                    if sidecar.exists() or _linked_entry(sidecar):
-                        raise
+                    if (_protected_path(self.root,directory=True)!=self.root_identity or
+                            _protected_path(self.db_path)!=self.db_identity):
+                        raise PermissionError("Production journal storage identity changed")
+                else:
+                    raise
 
     @contextmanager
     def _tx(self):

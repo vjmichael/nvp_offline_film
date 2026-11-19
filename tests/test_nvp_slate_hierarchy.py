@@ -124,6 +124,33 @@ class SectionsTest(unittest.TestCase):
             self.assertEqual(page["items"][0]["document_sha256"],leaf["document_sha256"])
             verified.assert_called_once_with(self.pid,"source_root",1)
 
+    def test_native_host_authoring_requires_window_consent_and_live_scope(self):
+        from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+        from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
+        leaf,_,_=self.graph(1)
+        class Window:
+            url='http://127.0.0.1:7777/'
+            allowed=False
+            count=0
+            def get_current_url(self):return self.url
+            def create_confirmation_dialog(self,*_):self.count+=1;return self.allowed
+        window=Window();host=TrustedDesktopCameraBridge(self.index,origin='http://127.0.0.1:7777');host._attach_window(window);self.addCleanup(host._close)
+        api=NativeWebviewIPCSurface(host);request={'project_id':self.pid,'family':'takes','title':'Act I','children':[ref(leaf)]}
+        with self.assertRaises(PermissionError):api.slate_publish_section(request)
+        window.allowed=True
+        with self.assertRaises(ValueError):api.slate_publish_section({**request,'approved':True})
+        self.assertEqual(window.count,1)
+        receipt=api.slate_publish_section(request);self.assertFalse(receipt['render_approved'])
+        self.assertEqual(self.b.page(self.pid,receipt['object_id'],1,digest=receipt['document_sha256'],family='takes')['items'][0]['object_id'],leaf['object_id'])
+        window.url='http://127.0.0.1:8888/'
+        with self.assertRaises(PermissionError):api.slate_publish_section(request)
+        window.url='http://127.0.0.1:7777/'
+        def revoke(*_):window.url='http://127.0.0.1:8888/';return True
+        window.create_confirmation_dialog=revoke
+        before=self.index.object_page(self.pid,kind='presentation')['items']
+        with self.assertRaises(PermissionError):api.slate_publish_section(request)
+        self.assertEqual(self.index.object_page(self.pid,kind='presentation')['items'],before)
+
     def test_directory_limit_even_when_unrelated_rows_hide_results(self):
         for i in range(33):self.index.register_revision(self.pid,f'aaa{i:03}','presentation',{'format':'not-a-catalog'})
         leaf,_,_=self.graph(1)

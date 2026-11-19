@@ -879,6 +879,32 @@ class TrustedDesktopCameraBridge(CreatorPlanningActions, FinishedReviewActions, 
     # P1-D true non-destructive creator source cut assembly.
     # The UI can supply only bounded original segment IDs, source graph refs
     # and integer Film Time cuts. Source scenes/Takes/shot layers are frozen.
+    def slate_publish_section(self, request):
+        """Only the native window may authorize organizing exact originals."""
+        self._native_window()
+        if type(request) is not dict or set(request)!={"project_id","family","title","children"}:
+            raise ValueError("Choose original film sections")
+        from uuid import uuid4
+        from backend.nvp_slate_hierarchy import SlateHierarchy, _title
+        pid=_require_pid(request["project_id"])
+        title=_title(request["title"])
+        ident="Section_"+uuid4().hex
+        def approve(event,scope):
+            if event!="native_creator":return False
+            accepted=self._native_window().create_confirmation_dialog(
+                "NVP — Save film section",
+                "Save section: "+title+"\nOriginal selections: "+str(len(request["children"]))+
+                "\nExact arrangement: "+scope["section_sha256"]+
+                "\nThis preserves every original and does not activate a cut or approve a render.") is True
+            self._native_window()
+            return accepted
+        result=SlateHierarchy(self.index,approve=approve,live_guard=self._native_window).publish(
+            pid,ident,family=request["family"],title=title,children=request["children"],creator_event="native_creator")
+        self._native_window()
+        return {"format":"nvp.slate.section_saved.v1","project_id":pid,"object_id":result["object_id"],
+                "revision":result["revision"],"document_sha256":result["document_sha256"],
+                "source_modified":False,"render_approved":False}
+
     def data_av_film_stage_graph_catalog(self,project_id):
         self._native_window()
         pid=_require_pid(project_id)
@@ -1000,7 +1026,13 @@ class TrustedDesktopCameraBridge(CreatorPlanningActions, FinishedReviewActions, 
         pid=_require_pid(project_id)
         assembly=self._edited_assembly()
         edits=[]
-        for row in self.index.list_objects(pid,kind="edit")[:64]:
+        from backend.nvp_slate_edit_assembly import FORMAT as SEQUENCE_FORMAT
+        for row in self.index.object_page(pid,kind="edit",limit=64)["items"]:
+            candidate=self.index.read_revision(pid,row["object_id"],row["head_revision"])
+            # Other immutable edit kinds (hierarchy, conform, feature delivery)
+            # are browsed through their original verified adapters, not this
+            # finite single-graph continuity/render interface.
+            if candidate["data"].get("format")!=SEQUENCE_FORMAT:continue
             rec=assembly.open_edit(pid,row["object_id"],row["head_revision"])
             data=rec["data"]
             # Creator can choose only actual USD cameras/listeners shared

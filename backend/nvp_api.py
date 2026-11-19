@@ -1929,6 +1929,8 @@ mount_g06_routes(app,studio,live_films,COOKIE)
 # routes retain G03 host project/key checks and do not authorize rendering.
 from backend.nvp_g07_routes import mount_g07_routes
 mount_g07_routes(app,studio,live_films,COOKIE)
+from backend.nvp_g07_section_routes import mount_section_routes
+mount_section_routes(app,lambda:studio,live_films,film_access,COOKIE)
 
 # G08 first-party export route and OS-custodied worker manager. Fixed
 # software renderer/AVI container is not a legacy FFmpeg/ProRes pipeline.

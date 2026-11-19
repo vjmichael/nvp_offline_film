@@ -267,21 +267,21 @@ class LiveFilmStore:
         output=folder/"revisions"/name
         _encrypt_file(io.BytesIO(raw),output,key=key,project_id=pid,
                       name=f"live-sqlite-v1/{seq}")
-        data_hash=hashlib.sha256(output.read_bytes()).hexdigest()
+        with output.open("rb") as source:
+            data_hash=hashlib.file_digest(source,"sha256").hexdigest()
         return {"sequence":seq,"name":name,"sha256":data_hash}
 
     def _read_db(self,folder,pid,key):
         head=self._head(folder)
         file=folder/"revisions"/head["name"]
         _no_link(file)
-        ciphertext=file.read_bytes()
-        if hashlib.sha256(ciphertext).hexdigest()!=head["sha256"]:
-            raise LiveFilmError("Encrypted SQLite HEAD integrity mismatch")
-        if len(ciphertext)>MAX_DB_BYTES+4096:
-            raise LiveFilmError("Encrypted SQLite snapshot oversized")
         memory=io.BytesIO()
-        _decrypt_file(file,memory,key=key,project_id=pid,
-                      name=f"live-sqlite-v1/{head['sequence']}")
+        try:
+            _decrypt_file(file,memory,key=key,project_id=pid,
+                          name=f"live-sqlite-v1/{head['sequence']}",
+                          expected_ciphertext_sha256=head["sha256"],max_plain_bytes=MAX_DB_BYTES)
+        except VaultError as exc:
+            raise LiveFilmError("Encrypted SQLite HEAD integrity or size mismatch") from exc
         db=self._open_sqlite(memory.getvalue())
         return db,head
 
@@ -341,29 +341,35 @@ class LiveFilmStore:
             finally:
                 db.close()
 
-    def _change(self,pid,token,mutator):
+    def _change(self,pid,token,mutator,*,compact=False):
         with self._guard:
             key=self._session(pid,token)
             folder=self._folder(pid)
             with self._write_mutex(folder):
-                return self._change_locked(pid,token,mutator,key,folder)
+                return self._change_locked(pid,token,mutator,key,folder,compact=compact)
 
-    def _change_locked(self,pid,token,mutator,key,folder):
+    def _change_locked(self,pid,token,mutator,key,folder,*,compact=False):
         db,head=self._read_db(folder,pid,key)
         try:
             result=mutator(db,key,folder)
             db.commit()
+            if compact:
+                # Only explicit compatible media migration requests compaction.
+                db.execute("VACUUM")
+                self._session(pid,token)
+            if db.execute("PRAGMA page_count").fetchone()[0]*db.execute("PRAGMA page_size").fetchone()[0]>MAX_DB_BYTES:
+                raise LiveFilmError("Live encrypted film database too large")
             raw=db.serialize()
             if len(raw)>MAX_DB_BYTES:
                 raise LiveFilmError("Live encrypted film database too large")
             # Crash between an immutable revision write and HEAD publish
             # leaves an encrypted orphan. Never clobber it on restart.
-            nums=[head["sequence"]]
+            highest=head["sequence"]
             for candidate in (folder/"revisions").glob("db.*.nvpsealed"):
                 match=re.fullmatch(r"db\.(\d{12})\.nvpsealed",candidate.name)
                 if match:
-                    nums.append(int(match.group(1)))
-            next_seq=max(nums)+1
+                    highest=max(highest,int(match.group(1)))
+            next_seq=highest+1
             record=self._seal_db(folder,pid,key,raw,next_seq)
             self._session(pid,token)
             self._publish_head(folder,record)
@@ -620,7 +626,7 @@ class LiveFilmStore:
             _no_link(path)
             buffer=io.BytesIO()
             _decrypt_file(path,buffer,key=key,project_id=pid,
-                          name=f"live-sqlite-v1/{commit_sequence}")
+                          name=f"live-sqlite-v1/{commit_sequence}",max_plain_bytes=MAX_DB_BYTES)
             old=self._open_sqlite(buffer.getvalue())
             try:
                 previous=old.execute(
@@ -675,7 +681,8 @@ class LiveFilmStore:
         with self._guard:
             key=self._session(pid,token)
             folder=self._folder(pid)
-            _,head=self._read_db(folder,pid,key)
+            current,head=self._read_db(folder,pid,key)
+            current.close()
             entries=[]
             for seq in range(head["sequence"]+1):
                 path=folder/"revisions"/f"db.{seq:012d}.nvpsealed"
@@ -684,7 +691,7 @@ class LiveFilmStore:
                 try:
                     raw=io.BytesIO()
                     _decrypt_file(path,raw,key=key,project_id=pid,
-                                  name=f"live-sqlite-v1/{seq}")
+                                  name=f"live-sqlite-v1/{seq}",max_plain_bytes=MAX_DB_BYTES)
                     con=self._open_sqlite(raw.getvalue())
                     value=con.execute("SELECT revision FROM film_metadata").fetchone()[0]
                     con.close()

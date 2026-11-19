@@ -23,9 +23,11 @@ def _title(value):
 
 
 class SlateHierarchy:
-    def __init__(self, index, *, approve):
+    def __init__(self, index, *, approve, live_guard=None):
         if not isinstance(index, FilmIndex) or not callable(approve):
             raise TypeError('Trusted film index and approval required')
+        if live_guard is not None and not callable(live_guard):raise TypeError("Trusted live guard required")
+        self.live_guard=live_guard
         self.index = index
         self.approve = approve
         self.catalog = SlatePagedCatalog(index, verify_catalog_action=lambda *_: False)
@@ -82,6 +84,7 @@ class SlateHierarchy:
                 'duration_tick':duration,'depth':depth,'source_modified':False,'render_approved':False}, _deps(deps,ident)
 
     def publish(self,pid,ident,*,family,title,children,creator_event,expected_revision=0):
+        if self.live_guard:self.live_guard()
         _require_pid(pid);_id(ident,'section');_int(expected_revision,'expected section revision')
         frozen=deepcopy(children)
         doc,deps=self._compose(pid,ident,family,title,frozen)
@@ -105,6 +108,7 @@ class SlateHierarchy:
         if self._compose(pid,ident,family,title,frozen)!=(doc,deps):
             raise RuntimeError('Section changed during consent')
         def guard(db):
+            if self.live_guard:self.live_guard()
             for child in frozen:
                 row=self.index._read_revision(db,pid,child['object_id'],child['revision'])
                 if row is None or row['document_sha']!=child['document_sha256']:

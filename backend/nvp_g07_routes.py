@@ -3,7 +3,7 @@ and disposable sound envelopes are exposed to the Post-Production UI."""
 from __future__ import annotations
 
 from fastapi import HTTPException,Request
-from fastapi.responses import Response
+from fastapi.responses import Response,JSONResponse
 from pydantic import BaseModel,Field
 
 from backend.nvp_g07_edit import G07Editor
@@ -62,7 +62,7 @@ def mount_g07_routes(app,studio,live_films,cookie_name):
                 name="g07_"+handler.__name__+"_"+tag)
 
     def view(project_id:str,request:Request):
-        return _safe(lambda:editor(project_id,request).view(project_id))
+        return JSONResponse(_safe(lambda:editor(project_id,request).view(project_id)),headers={"Cache-Control":"private, no-store, max-age=0"})
     routes("GET","",view)
 
     def change(project_id:str,request:Request,payload:EditChange):

@@ -5,6 +5,30 @@ on:
   pull_request:
     paths:
       - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_g07_section*.py'
+      - 'tests/test_nvp_efs_sidecar_race.py'
+      - 'backend/nvp_w1g_encrypted_source.py'
+      - 'tests/test_nvp_perf03g_sections.py'
+      - 'tests/test_nvp_perf03g_r1_storage.py'
+      - 'tests/test_nvp_perf03g_r2_paged_active.py'
+      - 'tests/test_nvp_perf03g_r3_media.py'
+      - 'tests/test_nvp_perf03g_r4_protected_output.py'
+      - 'backend/nvp_g07_review_reels.py'
+      - 'backend/nvp_g03_live_backup.py'
+      - 'backend/nvp_g03_pcm_pages.py'
+      - 'backend/nvp_g06_filming.py'
+      - 'backend/nvp_g09_actor.py'
+      - 'backend/nvp_g07_paged_media.py'
+      - 'backend/nvp_g07_preview.py'
+      - 'backend/nvp_g07_storage_migration.py'
+      - 'backend/nvp_g07_recovery_dialog.py'
+      - 'backend/nvp_g07_paged_active.py'
+      - 'backend/nvp_g07_routes.py'
+      - 'backend/nvp_g07_edit.py'
+      - 'backend/nvp_g03_live_store.py'
+      - 'backend/nvp_g03_windows_vault.py'
+      - 'backend/nvp_slate_hierarchy.py'
+      - 'tests/test_nvp_slate_hierarchy.py'
       - 'backend/nvp_production_*.py'
       - 'tests/test_nvp_production_*.py'
       - 'backend/nvp_paged_production_manifest.py'
@@ -29,6 +53,30 @@ on:
     branches: [main]
     paths:
       - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_g07_section*.py'
+      - 'tests/test_nvp_efs_sidecar_race.py'
+      - 'backend/nvp_w1g_encrypted_source.py'
+      - 'tests/test_nvp_perf03g_sections.py'
+      - 'tests/test_nvp_perf03g_r1_storage.py'
+      - 'tests/test_nvp_perf03g_r2_paged_active.py'
+      - 'tests/test_nvp_perf03g_r3_media.py'
+      - 'tests/test_nvp_perf03g_r4_protected_output.py'
+      - 'backend/nvp_g07_review_reels.py'
+      - 'backend/nvp_g03_live_backup.py'
+      - 'backend/nvp_g03_pcm_pages.py'
+      - 'backend/nvp_g06_filming.py'
+      - 'backend/nvp_g09_actor.py'
+      - 'backend/nvp_g07_paged_media.py'
+      - 'backend/nvp_g07_preview.py'
+      - 'backend/nvp_g07_storage_migration.py'
+      - 'backend/nvp_g07_recovery_dialog.py'
+      - 'backend/nvp_g07_paged_active.py'
+      - 'backend/nvp_g07_routes.py'
+      - 'backend/nvp_g07_edit.py'
+      - 'backend/nvp_g03_live_store.py'
+      - 'backend/nvp_g03_windows_vault.py'
+      - 'backend/nvp_slate_hierarchy.py'
+      - 'tests/test_nvp_slate_hierarchy.py'
       - 'backend/nvp_production_*.py'
       - 'tests/test_nvp_production_*.py'
       - 'backend/nvp_paged_production_manifest.py'
@@ -72,7 +120,7 @@ jobs:
         run: |
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Wrong source SHA' }
       - name: Native foundation
-        run: python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32
+        run: python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32 httpx 'cryptography>=43,<49'
       - name: Verify actual PCM, XYZ12, QC, FilmIndex and encrypted streaming
         shell: pwsh
         run: |
@@ -82,6 +130,8 @@ jobs:
             python -m unittest discover -s tests -p ("test_nvp_wo4_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO4 original source suite failed: $f" }
           }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_efs_sidecar_race.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==7 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected SQLite sidecar race regression failed' }
           foreach ($f in @('journal','monitor','supervisor_process','cinema','delivery','host')) {
             python -m unittest discover -s tests -p ("test_nvp_production_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO4 durable production suite failed: $f" }
@@ -114,6 +164,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native WebView IPC regression' }
           python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Installer source guard regression' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_sections.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==12 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected creator section acceptance failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r1_storage.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==7 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected storage and grouped cut regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r2_paged_active.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==11 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected chapter timeline and backup recovery failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r3_media.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==10 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected source preview, continuity and recovery regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r4_protected_output.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==7 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected review reel, recording migration and full backup recovery failed' }
+          python -m unittest discover -s tests -p test_nvp_g03_live_store.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Original encrypted live store regression failed' }
+          python -m unittest discover -s tests -p test_nvp_g03_windows_vault.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Original encrypted vault regression failed' }
+          python -m unittest discover -s tests -p test_nvp_slate_hierarchy.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'PERF-03G native section authority regression failed' }
           python tools/nvp_no_ffmpeg_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }

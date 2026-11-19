@@ -159,23 +159,33 @@ def _encrypt_file(input_file, destination: Path, *, key: bytes,
 
 
 def _decrypt_file(path: Path, output_file, *, key: bytes,
-                  project_id: str, name: str):
+                  project_id: str, name: str, expected_ciphertext_sha256=None,
+                  max_plain_bytes=None):
+    """Authenticate the exact bytes streamed from one open descriptor.
+
+    The sink is private staging until GCM and the optional pinned hash pass.
+    Callers with finite memory must supply a plaintext byte limit.
+    """
     Cipher, algorithms, modes, InvalidTag = _crypto()
-    length = path.stat().st_size
-    if length < len(MAGIC) + NONCE_BYTES + TAG_BYTES:
-        raise VaultError("Truncated source archive")
     with path.open("rb") as inp:
+        length = os.fstat(inp.fileno()).st_size
+        overhead = len(MAGIC) + NONCE_BYTES + TAG_BYTES
+        if length < overhead:
+            raise VaultError("Truncated source archive")
+        if max_plain_bytes is not None and length-overhead > max_plain_bytes:
+            raise VaultError("Encrypted source exceeds its byte limit")
         header = inp.read(len(MAGIC) + NONCE_BYTES)
-        if header[:len(MAGIC)] != MAGIC:
+        if len(header) != len(MAGIC)+NONCE_BYTES or header[:len(MAGIC)] != MAGIC:
             raise VaultError("Unknown encrypted source archive version")
         inp.seek(length - TAG_BYTES)
         tag = inp.read(TAG_BYTES)
+        if len(tag)!=TAG_BYTES:
+            raise VaultError("Truncated encrypted source tag")
         inp.seek(len(header))
-        decryptor = Cipher(
-            algorithms.AES(key), modes.GCM(header[len(MAGIC):], tag)
-        ).decryptor()
+        decryptor = Cipher(algorithms.AES(key), modes.GCM(header[len(MAGIC):], tag)).decryptor()
         decryptor.authenticate_additional_data(_aad(project_id, name))
         checksum = hashlib.sha256()
+        sealed = hashlib.sha256(header)
         count = 0
         left = length - len(header) - TAG_BYTES
         while left:
@@ -183,6 +193,7 @@ def _decrypt_file(path: Path, output_file, *, key: bytes,
             if not block:
                 raise VaultError("Unexpected encrypted archive EOF")
             left -= len(block)
+            sealed.update(block)
             plain = decryptor.update(block)
             checksum.update(plain)
             count += len(plain)
@@ -191,6 +202,11 @@ def _decrypt_file(path: Path, output_file, *, key: bytes,
             decryptor.finalize()
         except InvalidTag as exc:
             raise VaultError("Encrypted source failed authentication") from exc
+        if inp.read(TAG_BYTES)!=tag or inp.read(1):
+            raise VaultError("Encrypted source changed during read")
+        sealed.update(tag)
+        if expected_ciphertext_sha256 is not None and not hmac.compare_digest(sealed.hexdigest(),expected_ciphertext_sha256):
+            raise VaultError("Encrypted source ciphertext identity mismatch")
     return {"sha256": checksum.hexdigest(), "size_bytes": count}
 
 
