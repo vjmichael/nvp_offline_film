@@ -117,6 +117,29 @@ class SlateBranchNativeTests(unittest.TestCase):
             self.pid,graph_id,scene_id="scene_01",scene_label="01",
             nodes=nodes if nodes is not None else self.graph_nodes())
 
+    def test_hierarchical_original_catalog_and_committed_edit_navigation(self):
+        from backend.nvp_slate_hierarchy import SlateHierarchy
+        from backend.nvp_slate_navigation import SlateNavigation
+        graph=self.publish()
+        hierarchy=SlateHierarchy(self.index,approve=lambda event,scope:
+            event=="group_originals" and scope["operation"]=="nvp.slate.publish_hierarchy.v1")
+        ref=lambda row:{k:row[k] for k in ("object_id","revision","document_sha256")}
+        group=hierarchy.publish(self.pid,"act_one",family="takes",title="Act One",
+            children=[ref(graph)],creator_event="group_originals")
+        browse=SlateNavigation(self.index)
+        page=browse.page(self.pid,"act_one",1,digest=group["document_sha256"],family="takes")
+        self.assertEqual(page["items"][0]["document_sha256"],graph["document_sha256"])
+        takes=browse.page(self.pid,graph["object_id"],1,digest=graph["document_sha256"],family="takes",first=3,limit=2)
+        self.assertEqual([x["branch_id"] for x in takes["items"]],["take_2_branch","wild_take_3"])
+        engine=SlateSequenceAssembly(self.slate,verify_editor_action=lambda event,scope:event=="make_active")
+        cut=engine.commit(self.pid,"act_cut",graph_id=graph["object_id"],graph_revision=1,
+            segments=[{"segment_id":"original_cut","branch_id":"master_take_1","source_in_tick":0,"source_out_tick":T}],editor_event="make_active")
+        edit=hierarchy.publish(self.pid,"film_sections",family="edit",title="First act",children=[ref(cut)],creator_event="group_originals")
+        self.assertEqual(browse.page(self.pid,"film_sections",1,digest=edit["document_sha256"],family="edit")["items"][0]["end_tick"],str(T))
+        self.assertFalse(hierarchy.open(self.pid,"film_sections",1)["data"]["render_approved"])
+        reread=SlateNavigation(FilmIndex(Studio(self.folder/"film.sqlite")))
+        self.assertEqual(reread.page(self.pid,"act_cut",1,digest=cut["document_sha256"],family="edit")["items"][0]["take"],"take_1")
+
     def test_graph_has_parallel_camera_views_and_distinct_frozen_performances(self):
         graph=self.publish()
         self.assertEqual(graph["kind"],"presentation")

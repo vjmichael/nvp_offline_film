@@ -15,6 +15,9 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
   const [loadingPose,setLoadingPose]=useState(false);
   const [error,setError]=useState('');
   const [truncated,setTruncated]=useState(false);
+  const [location,setLocation]=useState(null);
+  const cursor=location?.projectId===projectId?location.after:null;
+  const [nextCursor,setNextCursor]=useState(null);
   // DA-06: retired Blender still IPC is never discovered or invoked here.
   // Native Film Time/scene inspection remains read-only until the data-first
   // live scene renderer is independently accepted.
@@ -25,7 +28,7 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
     let active=true;
     setScenes([]);setSceneId('');setCameraPath('');
     setSnapshot(null);setError('');setLoadingList(true);
-    api('/projects/'+encodeURIComponent(projectId)+'/film/camera-scenes')
+    api('/projects/'+encodeURIComponent(projectId)+'/film/camera-scenes'+(cursor?'?after='+encodeURIComponent(cursor):''))
       .then(result=>{
         if(!active)return;
         if(result?.format!=='nvp.slate08.camera_source_list.v1'
@@ -35,12 +38,13 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
         }
         setScenes(result.scenes);
         setTruncated(result.truncated===true);
+        setNextCursor(result.next_after??null);
         setSceneId(result.scenes[0]?.scene_id||'');
       })
       .catch(err=>{if(active)setError(err.message);})
       .finally(()=>{if(active)setLoadingList(false);});
     return ()=>{active=false;};
-  },[api,projectId]);
+  },[api,projectId,cursor]);
 
   useEffect(()=>{
     setCameraPath(scene?.cameras?.[0]?.path||'');
@@ -99,10 +103,14 @@ export default function FilmCameraSourcePanel({projectId,api,nativeBridge=null})
     <p className="fineprint">Choose an authored OpenUSD scene and camera. The source
       remains immutable; lens changes update only an instant framing diagram.</p>
     {loadingList&&<p role="status">Loading published film scenes…</p>}
-    {!loadingList && scenes.length===0 &&
+    {!loadingList && scenes.length===0 && !nextCursor &&
       <p>No native OpenUSD camera source is published in this film yet.
          Stage and publish a native scene before testing lenses.</p>}
-    {truncated&&<p className="fineprint">Showing a bounded set of source scenes.</p>}
+    {truncated&&<p className="fineprint">More scenes are available.</p>}
+    {(cursor||nextCursor)&&<div className="actions" aria-label="Camera scene pages">
+      <button type="button" disabled={!cursor||loadingList} onClick={()=>setLocation(null)}>First page</button>
+      <button type="button" disabled={!nextCursor||loadingList} onClick={()=>setLocation({projectId,after:nextCursor})}>Next scenes</button>
+    </div>}
     {scenes.length>0&&<div className="actions">
       <label>Published scene
         <select aria-label="Published film scene" value={sceneId}

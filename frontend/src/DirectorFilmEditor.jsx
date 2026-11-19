@@ -5,6 +5,7 @@ import DirectorEnvironmentLook from './DirectorEnvironmentLook.jsx';
 import DirectorActorStudio from './DirectorActorStudio.jsx';
 import DirectorAVMonitor from './DirectorAVMonitor.jsx';
 import DirectorSoundStage from './DirectorSoundStage.jsx';
+import DirectorOriginalSections from './DirectorOriginalSections.jsx';
 
 const EPS=.0001;
 const TPS=7056000000;
@@ -473,6 +474,7 @@ export default function DirectorFilmEditor({movie}){
         'Saving your edit…':edit?'Edit saved · Version '+edit.revision:
           'Opening your film…'}</div>
     </div>
+    {!movie.encrypted&&<DirectorOriginalSections key={movie.id} projectId={movie.id} api={directorCall}/>}
     {error&&<div className="film-editor-error" role="alert">{error}</div>}
     {notice&&<div className="film-editor-notice" role="status">{notice}</div>}
     {edit?.missing_sources?.length>0&&<div className="film-editor-warning"

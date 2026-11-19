@@ -128,6 +128,8 @@ class FilmIndex:
                     ON DELETE CASCADE,
                 FOREIGN KEY(project_id, target_id, target_revision)
                     REFERENCES film_object_revisions(project_id, object_id, revision))""")
+            db.execute("""CREATE INDEX IF NOT EXISTS film_objects_kind_seek
+                ON film_objects(project_id,kind,object_id)""")
             db.execute("""CREATE INDEX IF NOT EXISTS film_dependencies_reverse
                 ON film_dependencies(project_id, target_id, target_revision)""")
 
@@ -485,6 +487,25 @@ class FilmIndex:
                     (? IS NULL OR kind=?) ORDER BY kind,object_id""",
                     (project_id,kind,kind)).fetchall()
         return [dict(row) for row in rows]
+
+    def object_page(self, project_id, *, kind, after=None, limit=64):
+        """Keyset page over current unretired objects; exact revisions in results."""
+        _require_pid(project_id)
+        if kind not in KINDS or type(limit) is not int or not 1 <= limit <= 64:
+            raise ValueError("Choose a bounded film object page")
+        if after is not None:
+            _id(after, "film page cursor")
+        with self.studio._connection() as db:
+            self._project(db, project_id)
+            lifecycle=db.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='nvp_film_source_retirements'""").fetchone()
+            retirement=(""" AND NOT EXISTS (SELECT 1 FROM nvp_film_source_retirements r
+                WHERE r.project_id=f.project_id AND r.object_id=f.object_id
+                AND r.state!='RESTORED')""" if lifecycle else "")
+            rows=[dict(row) for row in db.execute("""SELECT object_id,kind,head_revision FROM film_objects f
+                WHERE project_id=? AND kind=? AND object_id>?"""+retirement+
+                " ORDER BY object_id LIMIT ?",(project_id,kind,after or "",limit+1))]
+        return {"items":rows[:limit],"next_after":rows[limit-1]["object_id"] if len(rows)>limit else None}
 
     def direct_dependents(self, project_id, object_id, revision):
         _require_pid(project_id)

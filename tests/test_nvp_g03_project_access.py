@@ -65,6 +65,29 @@ class ProjectAccessTests(unittest.TestCase):
             json={"stage":"logline","content":"Untrusted write"}).status_code,423)
         self.assertEqual(self.client.get("/api/projects/"+self.b["id"]).status_code,200)
 
+    def test_large_film_section_reads_use_original_lock_and_project_scope(self):
+        from unittest.mock import patch
+        from backend.nvp_film_index import FilmIndex
+        row=FilmIndex(nvp_api.studio).register_revision(self.a["id"],"scene_original","scene",{
+            "native_schema_version":1,"prim_roles":{"/World/Camera":"camera"}})
+        base=self.base+"/film/sections"
+        result=self.client.get(base,params={"family":"scenes","limit":1})
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(result.json()["items"][0]["object_id"],row["object_id"])
+        args={"family":"scenes","revision":1,"digest":row["document_sha256"]}
+        self.assertEqual(self.client.get(base+"/scene_original",params=args).status_code,200)
+        self.assertEqual(self.client.get(base+"/scene_original",params={**args,"digest":"f"*64}).status_code,403)
+        self.assertEqual(self.client.get(base,params={"family":"scenes","limit":65}).status_code,422)
+        self.assertEqual(self.client.get("/api/projects/"+self.b["id"]+"/film/sections/scene_original",params=args).status_code,404)
+        # Simulate encrypted-store presence; this is a route denial, not EFS proof.
+        with patch.object(nvp_api.live_films(),"exists",return_value=True):
+            self.assertEqual(self.client.get(base,params={"family":"scenes"}).status_code,403)
+        self.protect()
+        self.assertEqual(self.client.get(base,params={"family":"scenes"}).status_code,423)
+        self.assertEqual(self.client.get(base+"/scene_original",params=args).status_code,423)
+        self.unlock()
+        self.assertEqual(self.client.get(base+"/scene_original",params=args).status_code,200)
+
     def test_wrong_password_header_and_cross_project_token_denied(self):
         self.protect()
         self.assertEqual(self.client.post(self.base+"/unlock",json={

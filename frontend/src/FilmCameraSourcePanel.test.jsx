@@ -45,6 +45,16 @@ describe('SLATE-08 main UI read-only real scene camera',()=>{
     expect(screen.queryByLabelText('Virtual Camera Workbench')).toBeNull();
   });
 
+  it('continues past an empty camera scene page and retains exact source selection',async()=>{
+    const api=vi.fn(async path=>path.endsWith('/film/camera-scenes')?{...list,scenes:[],truncated:true,next_after:'scene256'}:
+      path.includes('camera-scenes?after=scene256')?{...list,next_after:null}:snapshot);
+    render(<FilmCameraSourcePanel projectId={pid} api={api}/>);
+    fireEvent.click(await screen.findByRole('button',{name:'Next scenes'}));
+    expect(await screen.findByText(/50 mm · 39.6° horizontal FOV/)).toBeTruthy();
+    expect(api.mock.calls.some(([path])=>path.includes('after=scene256'))).toBe(true);
+    expect(screen.getByRole('button',{name:'Next scenes'}).disabled).toBe(true);
+  });
+
   it('rejects a stale source SHA before ever publishing a lens snapshot',async()=>{
     const api=vi.fn(async path=>path.endsWith('/film/camera-scenes')
       ?list:{...snapshot,scene_document_sha256:'f'.repeat(64)});

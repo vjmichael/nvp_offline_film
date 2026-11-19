@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import './director-scene-library.css';
 import DirectorWorldStage from './DirectorWorldStage.jsx';
+import DirectorOriginalSections from './DirectorOriginalSections.jsx';
 
 // Only creative details belong in a filmmaking screen. Project authorization,
 // source hashes, model selection and production worker decisions belong to NVP.
@@ -25,9 +26,9 @@ const HEADERS = {
 const DIRECTOR = {'x-nvp-director':'1'};
 const emptyNotes=()=>Object.fromEntries(FIELDS.map(([key])=>[key,'']));
 
-async function action(url,method='GET',data) {
+async function action(url,method='GET',data,signal) {
   const response=await fetch(url,{
-    method,credentials:'same-origin',
+    method,credentials:'same-origin',signal,
     headers:{'Content-Type':'application/json',...DIRECTOR},
     ...(data===undefined?{}:{body:JSON.stringify(data)}),
   });
@@ -197,6 +198,7 @@ export default function DirectorSceneLibrary({movie,onScript,onFilm}) {
         <div className="film-eyebrow">YOUR SCENE LIBRARY</div>
         <h2>Set Up Scenes</h2>
         <p className="film-muted">Build your film scene by scene. You make the creative decisions.</p>
+        {!movie.encrypted&&<DirectorOriginalSections key={movie.id} projectId={movie.id} api={action}/>}
       </div>
       <button className="film-secondary" onClick={onScript}>Edit Screenplay</button>
     </div>

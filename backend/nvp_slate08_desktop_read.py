@@ -23,45 +23,38 @@ class FilmCameraReadBridge:
         self.index = index
         self.camera = VirtualCameraWorkbench(index)
 
-    def scenes(self, project_id: str):
-        """Read only bounded current native scene metadata; never load USD."""
+    def scenes(self, project_id: str, *, after=None):
+        """Read one bounded metadata page, with continuation past non-camera scenes."""
         _require_pid(project_id)
-        rows = self.index.list_objects(project_id, kind="scene")
-        items = []
-        for row in rows[:MAX_SCANNED_SCENES]:
-            record = self.index.read_revision(
-                project_id, row["object_id"], row["head_revision"])
-            data = record["data"]
-            if data.get("native_schema_version") is None:
-                continue
-            roles = data.get("prim_roles")
-            if not isinstance(roles, dict):
-                raise RuntimeError("Native scene has invalid source prim roles")
-            cameras = [{"path":path,"label":path.rsplit("/",1)[-1]}
-                for path,role in sorted(roles.items()) if role=="camera"]
-            if not cameras:
-                continue
-            if len(cameras)>MAX_CAMERA_CHOICES:
-                raise RuntimeError("Native scene camera choices exceed editor limit")
-            if len(items)==MAX_LISTED_SCENES:
+        items=[];cursor=after;scanned=0;continuation=None
+        while scanned<MAX_SCANNED_SCENES and len(items)<MAX_LISTED_SCENES:
+            page=self.index.object_page(project_id,kind="scene",after=cursor,
+                limit=min(64,MAX_SCANNED_SCENES-scanned))
+            rows=page["items"]
+            if not rows:
                 break
-            items.append({
-                "scene_id":record["object_id"],
-                "revision":record["revision"],
-                "document_sha256":record["document_sha256"],
-                "cameras":cameras,
-                "frozen_take_created":False,
-            })
-        return {
-            "format":"nvp.slate08.camera_source_list.v1",
-            "project_id":project_id,
-            "scenes":items,
-            "truncated":len(rows)>MAX_SCANNED_SCENES
-                or len(items)==MAX_LISTED_SCENES,
-            "usd_loaded":False,
-            "worker_started":False,
-            "source_scene_modified":False,
-        }
+            for pos,row in enumerate(rows):
+                cursor=row["object_id"];scanned+=1
+                record=self.index.read_revision(project_id,cursor,row["head_revision"])
+                data=record["data"]
+                if data.get("native_schema_version") is not None:
+                    roles=data.get("prim_roles")
+                    if not isinstance(roles,dict):
+                        raise RuntimeError("Native scene has invalid source prim roles")
+                    cameras=[{"path":path,"label":path.rsplit("/",1)[-1]}
+                        for path,role in sorted(roles.items()) if role=="camera"]
+                    if len(cameras)>MAX_CAMERA_CHOICES:
+                        raise RuntimeError("Native scene camera choices exceed editor limit")
+                    if cameras:
+                        items.append({"scene_id":cursor,"revision":record["revision"],
+                            "document_sha256":record["document_sha256"],"cameras":cameras,
+                            "frozen_take_created":False})
+                continuation=cursor if pos+1<len(rows) or page["next_after"] is not None else None
+                if len(items)==MAX_LISTED_SCENES:break
+            if continuation is None:break
+        return {"format":"nvp.slate08.camera_source_list.v1","project_id":project_id,
+                "scenes":items,"truncated":continuation is not None,"next_after":continuation,
+                "usd_loaded":False,"worker_started":False,"source_scene_modified":False}
 
     def snapshot(self, project_id: str, scene_id: str, revision: int,
                  *, tick: int, camera_path: str):

@@ -262,6 +262,13 @@ class NativeEditActorAudioTests(unittest.TestCase):
         self.assertEqual(film["duration_tick"],8*3600*T)
         self.assertEqual(engine.manifest_page(self.pid,"hier_film",1,
             first_index=7,limit=1)["entries"][0]["end_tick"],8*3600*T)
+        from backend.nvp_slate_navigation import SlateNavigation
+        browse=SlateNavigation(self.index)
+        section=browse.page(self.pid,"hier_film",1,digest=film["document_sha256"],
+                            family="edit",first=7,limit=1)
+        self.assertEqual(section["items"][0]["end_tick"],str(8*3600*T))
+        self.assertEqual(section["items"][0]["document_sha256"],hour["document_sha256"])
+        self.assertIsNone(section["next_first"])
         scheduler=P1FReelPlan(self.index)
         receipt=scheduler.publish(self.pid,"hier_reels",edit_id="hier_film",
             edit_revision=1,expected_edit_document_sha256=film["document_sha256"])

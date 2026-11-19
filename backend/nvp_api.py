@@ -1822,8 +1822,8 @@ from backend.nvp_film_index import FilmIndex as _FilmCameraIndex
 from backend.nvp_slate08_desktop_read import FilmCameraReadBridge as _FilmCameraReadBridge
 
 @app.get('/api/projects/{project_id}/film/camera-scenes')
-def film_camera_source_list(project_id: str):
-    return run(lambda: _FilmCameraReadBridge(_FilmCameraIndex(studio)).scenes(project_id))
+def film_camera_source_list(project_id: str, after: str | None=None):
+    return run(lambda: _FilmCameraReadBridge(_FilmCameraIndex(studio)).scenes(project_id,after=after))
 
 @app.get('/api/projects/{project_id}/film/camera-scenes/{scene_id}/snapshot')
 def film_camera_source_snapshot(
@@ -1834,6 +1834,25 @@ def film_camera_source_snapshot(
 ):
     return run(lambda: _FilmCameraReadBridge(_FilmCameraIndex(studio)).snapshot(
         project_id,scene_id,revision,tick=source_tick,camera_path=camera_path))
+
+# PERF-03E: bounded read-only original-film navigation, existing project lock gate.
+from backend.nvp_slate_navigation import SlateNavigation as _SlateNavigation
+
+@app.get('/api/projects/{project_id}/film/sections')
+def film_sections(project_id: str, family: str, after: str | None=None,
+                  limit: int=_FilmCameraQuery(default=32,ge=1,le=64)):
+    return run(lambda:_SlateNavigation(_FilmCameraIndex(studio)).directory(
+        project_id,family=family,after=after,limit=limit))
+
+@app.get('/api/projects/{project_id}/film/sections/{section_id}')
+def film_section_page(project_id: str, section_id: str, family: str,
+                      revision: int, digest: str, first: int=_FilmCameraQuery(default=0,ge=0),
+                      limit: int=_FilmCameraQuery(default=32,ge=1,le=64)):
+    try:
+        return run(lambda:_SlateNavigation(_FilmCameraIndex(studio)).page(
+            project_id,section_id,revision,digest=digest,family=family,first=first,limit=limit))
+    except PermissionError as error:
+        raise HTTPException(status_code=403,detail="Selected film section no longer matches") from error
 
 # DA-01 — New native scene authoring is exact Film Time, never 24 fps.
 # This is an EDITORIAL source-revision writer, not an implicit Digital Take

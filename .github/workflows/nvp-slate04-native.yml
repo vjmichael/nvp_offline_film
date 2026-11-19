@@ -10,6 +10,12 @@ on:
       - "backend/nvp_slate_edit_assembly.py"
       - "backend/nvp_film_index.py"
       - "tests/test_nvp_digital_slate_branches_native.py"
+      - "backend/nvp_slate_hierarchy.py"
+      - "backend/nvp_slate_navigation.py"
+      - "tests/test_nvp_slate_hierarchy.py"
+      - "frontend/src/DirectorOriginalSections*"
+      - "frontend/src/DirectorFilmEditor.jsx"
+      - "frontend/src/DirectorSceneLibrary.jsx"
       - "frontend/src/SlateBranchTimelinePane*"
       - "docs/NVP_SLATE04_REFERENCE_ONLY_EDITING_LAZY_PREVIEW.md"
       - ".github/workflows/nvp-slate04-native.yml"
@@ -20,6 +26,12 @@ on:
       - "backend/nvp_slate_edit_assembly.py"
       - "backend/nvp_film_index.py"
       - "tests/test_nvp_digital_slate_branches_native.py"
+      - "backend/nvp_slate_hierarchy.py"
+      - "backend/nvp_slate_navigation.py"
+      - "tests/test_nvp_slate_hierarchy.py"
+      - "frontend/src/DirectorOriginalSections*"
+      - "frontend/src/DirectorFilmEditor.jsx"
+      - "frontend/src/DirectorSceneLibrary.jsx"
       - "frontend/src/SlateBranchTimelinePane*"
       - "docs/NVP_SLATE04_REFERENCE_ONLY_EDITING_LAZY_PREVIEW.md"
       - ".github/workflows/nvp-slate04-native.yml"
@@ -56,6 +68,7 @@ jobs:
       - name: Native thin Film Time assembly, lazy 3D preview and deletion guards
         shell: bash
         run: |
+          python -m unittest discover -s tests -p "test_nvp_slate_hierarchy.py" -v
           python -m unittest discover -s tests -p "test_nvp_digital_slate_branches_native.py" -v
           python -m unittest discover -s tests -p "test_nvp_openusd_shot_overrides_native.py" -v
       - name: FilmIndex custody and original immutable revision regressions
@@ -79,4 +92,4 @@ jobs:
       - name: Build source-reference editor
         run: npm run build
       - name: Check committed cut stays green during draft cut/copy/paste
-        run: npm run test:ui -- src/SlateBranchTimelinePane.test.jsx
+        run: npm run test:ui -- src/SlateBranchTimelinePane.test.jsx src/DirectorOriginalSections.test.jsx
