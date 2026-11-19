@@ -13,7 +13,7 @@ from backend.nvp_performance_probe import measured, observe
 from backend.nvp_p1f_sustained_delivery import FPS, MAX_CHUNK_FRAMES
 from backend.nvp_p2_longform_source_plan import MAX_TOTAL_FRAMES, MAX_CHUNKS, MAX_PAGE
 
-MINUTES = (30, 60, 180, 360)
+MINUTES = (30, 60, 180, 360, 480, 720)
 PAYLOAD = bytes(range(256)) * 256
 
 

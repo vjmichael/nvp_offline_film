@@ -179,11 +179,11 @@ class GPUObservationTests(unittest.TestCase):
 class BenchmarkTests(unittest.TestCase):
     def test_duration_cardinality_and_limits(self):
         rows=list(b.duration_cases())
-        self.assertEqual([r["frames"] for r in rows],[43200,86400,259200,518400])
-        self.assertEqual([r["minimum_chunks"] for r in rows],[1800,3600,10800,21600])
-        self.assertEqual([r["blocked_by_frame_limit"] for r in rows],[False,False,True,True])
-        self.assertEqual([r["blocked_by_chunk_limit"] for r in rows],[False,False,False,True])
-        self.assertEqual(rows[-1]["pcm_stereo_s16_48khz_bytes"],4147200000)
+        self.assertEqual([r["frames"] for r in rows],[43200,86400,259200,518400,691200,1036800])
+        self.assertEqual([r["minimum_chunks"] for r in rows],[1800,3600,10800,21600,28800,43200])
+        self.assertEqual([r["blocked_by_frame_limit"] for r in rows],[False]*6)
+        self.assertEqual([r["blocked_by_chunk_limit"] for r in rows],[False]*6)
+        self.assertEqual(rows[-1]["pcm_stereo_s16_48khz_bytes"],8294400000)
         self.assertTrue(all(not r["production_accepted"] for r in rows))
 
     def test_page_bound_and_partial_chunk(self):

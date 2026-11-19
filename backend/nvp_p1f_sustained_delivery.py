@@ -24,7 +24,7 @@ import tempfile
 import wave
 
 from backend.nvp_data_av_scene import FrozenSceneAV,MAX_SAMPLES,TICKS_PER_SAMPLE
-from backend.nvp_final_2d_native import _png_header,_file_sha256
+from backend.nvp_final_2d_native import _png_header,_file_sha256,MAX_PNG_BYTES as RASTER_PNG_LIMIT
 from backend.nvp_film_index import _id,_require_pid,_sha
 from backend.nvp_p1d_editorial_continuity import NativeEditorialContinuity
 from backend.nvp_p1e_actor_spatial_bus import NativeActorSpatialBus
@@ -37,6 +37,46 @@ FRAME_TICKS=tick_from_frame(1,FPS,1)
 AUDIO_PER_FRAME=48000//FPS
 MAX_CHUNK_FRAMES=24
 MAX_PNG_BYTES=48*1024*1024
+
+
+MAX_MANIFEST_BYTES=2*1024*1024
+VERIFY_BLOCK_BYTES=1024*1024
+
+
+def _bounded_file_digest(path, maximum, *, header_bytes=0):
+    """Hash on one descriptor in bounded blocks; refuse oversized files."""
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("Original derivative missing or linked")
+    h=hashlib.sha256()
+    with path.open("rb") as stream:
+        before=os.fstat(stream.fileno())
+        if not header_bytes<=before.st_size<=maximum:
+            raise RuntimeError("Original derivative size outside finite bounds")
+        header=stream.read(header_bytes)
+        if len(header)!=header_bytes:
+            raise RuntimeError("Original derivative truncated during audit")
+        h.update(header)
+        total=len(header)
+        while block:=stream.read(min(VERIFY_BLOCK_BYTES,maximum-total+1)):
+            total+=len(block)
+            if total>maximum:
+                raise RuntimeError("Original derivative exceeded finite bounds")
+            h.update(block)
+        after=os.fstat(stream.fileno())
+        if (total!=before.st_size or total!=after.st_size or
+                before.st_mtime_ns!=after.st_mtime_ns):
+            raise RuntimeError("Original derivative changed during audit")
+    return h.hexdigest(),header
+
+
+def _bounded_manifest(path):
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("Chunk lacks bounded independent manifest")
+    with path.open("rb") as stream:
+        raw=stream.read(MAX_MANIFEST_BYTES+1)
+    if len(raw)>MAX_MANIFEST_BYTES:
+        raise RuntimeError("Chunk lacks bounded independent manifest")
+    return raw
 
 
 def _canon(value):
@@ -363,10 +403,8 @@ class NativeSustainedPictureSound:
         if root.is_symlink() or not root.is_dir():
             raise RuntimeError("Untrusted or absent output directory")
         manifest_file=root/"manifest.json"
-        if (manifest_file.is_symlink() or not manifest_file.is_file()
-                or manifest_file.stat().st_size>2*1024*1024):
-            raise RuntimeError("Chunk lacks bounded independent manifest")
-        manifest=json.loads(manifest_file.read_bytes())
+        raw_manifest=_bounded_manifest(manifest_file)
+        manifest=json.loads(raw_manifest)
         if (type(manifest) is not dict or
             manifest.get("format")!=FORMAT or
             manifest.get("status")!="SOURCE_BOUNDED_PICTURE_PCM_CHUNK" or
@@ -408,7 +446,8 @@ class NativeSustainedPictureSound:
             file=pic_dir/name
             if file.is_symlink() or not file.is_file():
                 raise RuntimeError("Original output picture missing or linked")
-            payload=file.read_bytes()
+            picture_sha,header=_bounded_file_digest(
+                file,min(MAX_PNG_BYTES,RASTER_PNG_LIMIT),header_bytes=32)
             receipt=pic.get("native_worker_receipt")
             if receipt is not None:
                 required={
@@ -438,15 +477,21 @@ class NativeSustainedPictureSound:
                 if (self.native_worker_verifier is not None and
                         self.native_worker_verifier(dict(receipt)) is not True):
                     raise RuntimeError("Original Blender journal cannot independently reopen frame")
-            if (len(payload)>MAX_PNG_BYTES or
-                hashlib.sha256(payload).hexdigest()!=pic["sha256"] or
-                list(_png_header(payload))!=manifest["picture_dimensions"]):
+            if (picture_sha!=pic["sha256"] or
+                list(_png_header(header))!=manifest["picture_dimensions"]):
                 raise RuntimeError("Rendered original picture digest/dimensions changed")
-        if len(list(pic_dir.iterdir()))!=len(frames):
+        count=0
+        for _ in pic_dir.iterdir():
+            count+=1
+            if count>len(frames):
+                raise RuntimeError("Unexpected files in verified picture set")
+        if count!=len(frames):
             raise RuntimeError("Unexpected files in verified picture set")
         wav_path=root/"soundtrack.wav"
-        if wav_path.is_symlink() or not wav_path.is_file() or (
-                _file_sha256(wav_path)!=manifest["audio_sha256"]):
+        # Native writer emits finite PCM plus a small RIFF header. Bound the
+        # hash even if an output was replaced by an unexpectedly large file.
+        wav_bound=plan["frame_count"]*AUDIO_PER_FRAME*4+65536
+        if _bounded_file_digest(wav_path,wav_bound)[0]!=manifest["audio_sha256"]:
             raise RuntimeError("Original source audio derivative changed")
         with wave.open(str(wav_path),"rb") as wav:
             if (wav.getnchannels()!=2 or wav.getsampwidth()!=2 or
@@ -454,16 +499,28 @@ class NativeSustainedPictureSound:
                 wav.getnframes()!=plan["frame_count"]*AUDIO_PER_FRAME or
                 wav.getnframes()!=manifest["audio_samples"]):
                 raise RuntimeError("Stereo original sound has incomplete 48kHz samples")
-        if {x.name for x in root.iterdir()}!={"manifest.json","soundtrack.wav","pictures"}:
+        expected_names={"manifest.json","soundtrack.wav","pictures"}
+        for item in root.iterdir():
+            if item.name not in expected_names:
+                raise RuntimeError("Unrecognized files in authoritative finite source package")
+            expected_names.remove(item.name)
+        if expected_names:
             raise RuntimeError("Unrecognized files in authoritative finite source package")
+        # Tie returned proof to the EXACT parsed bytes, not a second unchecked
+        # manifest read. Refuse replacement during the independent scan.
+        if _bounded_manifest(manifest_file)!=raw_manifest:
+            raise RuntimeError("Original chunk manifest changed during audit")
         return {"format":FORMAT,"status":"INDEPENDENT_SOURCE_CHUNK_VERIFIED",
                 "chunk_id":manifest["chunk_id"],
                 "first_frame":plan["first_frame"],
                 "frame_count":plan["frame_count"],
                 "plan_sha256":manifest["plan_sha256"],
-                "manifest_sha256":_file_sha256(manifest_file),
+                "manifest_sha256":hashlib.sha256(raw_manifest).hexdigest(),
                 "audio_sha256":manifest["audio_sha256"],
                 "source_edit_sha256":plan["edit_document_sha256"],
+                "continuity_document_sha256":plan["continuity_document_sha256"],
+                "listener_path":plan["listener_path"],
+                "camera_path":plan["camera_path"],
                 "source_take_id":plan["source_take_id"],
                 "source_take_sha256":plan["source_take_sha256"],
                 "source_shot_id":plan["source_shot_id"],

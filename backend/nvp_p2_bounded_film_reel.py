@@ -63,10 +63,10 @@ class NativeFilmReelBatch:
         if parent.is_symlink() or not parent.is_dir():
             raise RuntimeError("Native derivative root is not a trusted plain directory")
         parent=parent.resolve()
-        film=self.planner.open(project_id,plan_id,revision)
+        film,schedule=self.planner._open_schedule(project_id,plan_id,revision,
+                                                  cancelled=self.cancelled)
         data=film["data"]
-        page=self.planner.page(project_id,plan_id,revision,
-                               first_index=first_index,limit=limit)
+        page=self.planner._page(film,schedule,first_index,limit)
         verifier=NativeSustainedPictureSound(
             self.planner.assembly,self.planner.continuity,
             native_creator_approval=lambda *_:False,

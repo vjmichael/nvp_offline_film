@@ -2,7 +2,7 @@
 
 A long source cut is indexed by constant-size 24fps film-time chunks without
 expanding/storing every source video frame. Publication requires an independent
-creator approval. The schedule may be 30 minutes to 2 hours; the *render* is
+creator approval. The schedule uses exact bounded chunk identities; the *render* is
 NOT considered complete merely because a schedule exists. Reconciliation
 independently reopens each actual P1-F picture+PCM chunk and its SHA receipts.
 
@@ -15,7 +15,6 @@ from backend.nvp_performance_probe import measured, span, observe_windows_job
 
 import hashlib
 import json
-import math
 from pathlib import Path
 
 from backend.nvp_film_index import FilmIndex,_id,_require_pid
@@ -24,11 +23,9 @@ from backend.nvp_p1f_sustained_delivery import (
     NativeSustainedPictureSound,MAX_CHUNK_FRAMES,FRAME_TICKS)
 from backend.nvp_slate_edit_assembly import SlateSequenceAssembly
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND,_int
+from backend.nvp_longfilm_schedule import ChunkSchedule,MAX_TOTAL_FRAMES,MAX_CHUNKS,MAX_PAGE
 
 FORMAT="nvp.p2.original_film_longform_source_schedule.v1"
-MAX_TOTAL_FRAMES=2*60*60*24
-MAX_CHUNKS=12000
-MAX_PAGE=64
 LONGFORM_FRAMES=30*60*24
 
 
@@ -38,35 +35,8 @@ def _canon(value):
 
 
 def _sequence(segments):
-    """Yield bounded original-time chunk references in immutable cut order."""
-    chunk=0
-    cursor=0
-    for segment in segments:
-        first=segment["timeline_start_tick"]
-        end=segment["timeline_end_tick"]
-        source=segment["source_in_tick"]
-        if (first!=cursor or first%FRAME_TICKS or end%FRAME_TICKS or
-            source%FRAME_TICKS or segment["source_out_tick"]%FRAME_TICKS or
-            end-first != segment["source_out_tick"]-source):
-            raise RuntimeError("Feature-length source has a gap or requires hidden retiming")
-        i=first//FRAME_TICKS
-        stop=end//FRAME_TICKS
-        while i<stop:
-            n=min(MAX_CHUNK_FRAMES,stop-i)
-            if chunk>=MAX_CHUNKS:
-                raise ValueError("Long-form film exceeds bounded source chunk budget")
-            yield {"index":chunk,"chunk_id":"P2FilmChunk"+str(chunk).zfill(6),
-                   "first_frame":i,"frame_count":n,
-                   "segment_id":segment["segment_id"],
-                   "source_take_id":segment["source_take_id"],
-                   "source_take_sha256":segment["source_take_document_sha256"],
-                   "source_shot_id":segment["source_shot_id"],
-                   "source_shot_sha256":segment["source_shot_document_sha256"],
-                   "source_start_tick":str(
-                       source+(i-first//FRAME_TICKS)*FRAME_TICKS)}
-            chunk+=1
-            i+=n
-        cursor=end
+    """Preserve the original canonical v1 chunk sequence."""
+    yield from ChunkSchedule(segments).entries()
 
 
 class NativeLongformFilmPlan:
@@ -90,8 +60,13 @@ class NativeLongformFilmPlan:
         edit=self.assembly.open_edit(project_id,doc["edit_id"],doc["edit_revision"])
         return record,edit
 
-    @measured("reel.plan")
     def _prepare(self,project_id,continuity_id,revision,listener_path,camera_path):
+        return self._prepare_schedule(project_id,continuity_id,revision,
+                                      listener_path,camera_path)[0]
+
+    @measured("reel.plan")
+    def _prepare_schedule(self,project_id,continuity_id,revision,listener_path,camera_path,*,
+                          cancelled=lambda:False):
         record,edit=self._source(project_id,continuity_id,revision)
         if (type(listener_path) is not str or
             not listener_path.startswith("/World/") or len(listener_path)>240 or
@@ -103,14 +78,12 @@ class NativeLongformFilmPlan:
             raise ValueError("Longform film cannot silently round the source cut")
         frames=duration//FRAME_TICKS
         if not 1<=frames<=MAX_TOTAL_FRAMES:
-            raise ValueError("Longform schedule must remain inside 2-hour source ceiling")
-        digest=hashlib.sha256()
-        count=0
-        for chunk in _sequence(edit["data"]["segments"]):
-            digest.update(_canon(chunk)+b"\n")
-            count+=1
-        if not count or count>MAX_CHUNKS:
-            raise ValueError("Feature original source requires bounded chunk count")
+            raise ValueError("Longform schedule exceeds exact source address range")
+        schedule=ChunkSchedule(edit["data"]["segments"])
+        if schedule.total_frames!=frames:
+            raise RuntimeError("Original schedule does not cover the exact edit duration")
+        digest=schedule.digest(cancelled=cancelled)
+        count=schedule.total_chunks
         return {"format":FORMAT,"continuity_id":continuity_id,
                 "continuity_revision":revision,
                 "continuity_document_sha256":record["document_sha256"],
@@ -119,12 +92,12 @@ class NativeLongformFilmPlan:
                 "listener_path":listener_path,"camera_path":camera_path,
                 "duration_tick":str(duration),"total_frames":frames,
                 "total_chunks":count,
-                "chunk_manifest_sha256":digest.hexdigest(),
+                "chunk_manifest_sha256":digest,
                 "is_thirty_minute_longform":frames>=LONGFORM_FRAMES,
                 "source_frames_rendered":0,
                 "original_source_modified":False,
                 "final_film_master_approved":False,
-                "publication_is_only_a_source_plan":True}
+                "publication_is_only_a_source_plan":True},schedule
 
     @measured("reel.publish")
     def publish(self,project_id,plan_id,*,continuity_id,
@@ -168,6 +141,11 @@ class NativeLongformFilmPlan:
             ])
 
     def open(self,project_id,plan_id,revision):
+        return self._open_schedule(project_id,plan_id,revision)[0]
+
+    def _open_schedule(self,project_id,plan_id,revision,*,cancelled=lambda:False):
+        if cancelled():
+            raise InterruptedError("Creator cancelled original schedule validation")
         record=self.index.read_revision(project_id,plan_id,revision)
         doc=record["data"]
         if (record["kind"]!="presentation" or doc.get("format")!=FORMAT or
@@ -175,26 +153,23 @@ class NativeLongformFilmPlan:
             doc.get("publication_is_only_a_source_plan") is not True or
             doc.get("source_frames_rendered")!=0):
             raise RuntimeError("Not a source-only longform film plan")
-        current=self._prepare(
+        current,schedule=self._prepare_schedule(
             project_id,doc["continuity_id"],doc["continuity_revision"],
-            doc["listener_path"],doc["camera_path"])
+            doc["listener_path"],doc["camera_path"],cancelled=cancelled)
         if current!=doc:
             raise RuntimeError("Longform original edit or chunk list was modified")
-        return record
+        return record,schedule
 
     def page(self,project_id,plan_id,revision,*,first_index,limit=32):
-        record=self.open(project_id,plan_id,revision)
+        record,schedule=self._open_schedule(project_id,plan_id,revision)
+        return self._page(record,schedule,first_index,limit)
+
+    @staticmethod
+    def _page(record,schedule,first_index,limit):
         start=_int(first_index,"first longform reel chunk")
         n=_int(limit,"bounded longform page size",minimum=1,maximum=MAX_PAGE)
-        if start>=record["data"]["total_chunks"]:
-            raise ValueError("Longform chunk cursor beyond original source schedule")
         doc=record["data"]
-        edit=self.assembly.open_edit(project_id,doc["edit_id"],doc["edit_revision"])
-        chunks=[]
-        for entry in _sequence(edit["data"]["segments"]):
-            if entry["index"]<start:continue
-            chunks.append(entry)
-            if len(chunks)==n:break
+        chunks=schedule.page(start,n)
         return {"format":FORMAT,"plan_sha256":record["document_sha256"],
                 "start_index":start,"chunks":chunks,
                 "next_index":start+len(chunks) if
@@ -206,9 +181,19 @@ class NativeLongformFilmPlan:
                        first_index,limit=32,require_protected_worker=False,
                        native_worker_verifier=None,cancelled=lambda:False):
         """Never count a frame unless its original picture+PCM hashes reopen."""
-        page=self.page(project_id,plan_id,revision,
-                       first_index=first_index,limit=limit)
-        doc=self.open(project_id,plan_id,revision)["data"]
+        if not callable(cancelled):
+            raise TypeError("Reconciliation cancellation must come from trusted host")
+        record,schedule=self._open_schedule(project_id,plan_id,revision,cancelled=cancelled)
+        return self._reconcile_verified_page(project_id,record,schedule,
+            output_parent=output_parent,first_index=first_index,limit=limit,
+            require_protected_worker=require_protected_worker,
+            native_worker_verifier=native_worker_verifier,cancelled=cancelled)
+
+    def _reconcile_verified_page(self,project_id,record,schedule,*,output_parent,
+                                 first_index,limit,require_protected_worker,
+                                 native_worker_verifier,cancelled):
+        page=self._page(record,schedule,first_index,limit)
+        doc=record["data"]
         parent=Path(output_parent)
         if parent.is_symlink() or not parent.is_dir():
             raise RuntimeError("Original source derivative parent is unavailable")
@@ -226,13 +211,14 @@ class NativeLongformFilmPlan:
             if cancelled():
                 raise InterruptedError("Creator cancelled independent source reel audit")
             candidate=parent/("P1F_"+entry["chunk_id"])
+            if candidate.is_symlink():
+                raise RuntimeError("Longform derived chunk path replaced with symlink")
             if not candidate.exists():
                 missing.append(entry["chunk_id"])
                 continue
-            if candidate.is_symlink():
-                raise RuntimeError("Longform derived chunk path replaced with symlink")
             proof=verifier.verify_chunk(project_id,candidate)
             expected={
+                "chunk_id":entry["chunk_id"],
                 "first_frame":entry["first_frame"],
                 "frame_count":entry["frame_count"],
                 "source_take_id":entry["source_take_id"],
@@ -245,14 +231,10 @@ class NativeLongformFilmPlan:
                 raise RuntimeError("Longform completed chunk cannot be attributed to this source reel")
             # The original P1-F plan must also belong to THIS exact
             # director/source edit plan and prescribed scene camera.
-            manifest=json.loads((candidate/"manifest.json").read_bytes())
-            plan=manifest["plan"]
-            if (plan["continuity_document_sha256"]!=doc["continuity_document_sha256"] or
-                plan["edit_document_sha256"]!=doc["edit_document_sha256"] or
-                plan["listener_path"]!=doc["listener_path"] or
-                plan["camera_path"]!=doc["camera_path"] or
-                plan["source_shot_sha256"]!=entry["source_shot_sha256"] or
-                plan["source_start_tick"]!=entry["source_start_tick"]):
+            if (proof["continuity_document_sha256"]!=doc["continuity_document_sha256"] or
+                proof["source_edit_sha256"]!=doc["edit_document_sha256"] or
+                proof["listener_path"]!=doc["listener_path"] or
+                proof["camera_path"]!=doc["camera_path"]):
                 raise RuntimeError("Completed chunk belongs to another source film or optical setup")
             if (require_protected_worker and
                     proof.get("protected_worker_independently_reopened") is not True):
@@ -283,7 +265,8 @@ class NativeLongformFilmPlan:
                       cancelled=lambda:False,progress=lambda **_:None):
         if not callable(cancelled) or not callable(progress):
             raise TypeError("Native full-film audit requires host cancellation and progress")
-        doc=self.open(project_id,plan_id,revision)["data"]
+        record,schedule=self._open_schedule(project_id,plan_id,revision,cancelled=cancelled)
+        doc=record["data"]
         count=0
         frames=0
         samples=0
@@ -291,8 +274,8 @@ class NativeLongformFilmPlan:
         for start in range(0,doc["total_chunks"],MAX_PAGE):
             if cancelled():
                 raise InterruptedError("Creator cancelled full original source audit")
-            result=self.reconcile_page(
-                project_id,plan_id,revision,output_parent=output_parent,
+            result=self._reconcile_verified_page(
+                project_id,record,schedule,output_parent=output_parent,
                 first_index=start,limit=MAX_PAGE,
                 require_protected_worker=require_protected_worker,
                 native_worker_verifier=native_worker_verifier,
@@ -314,6 +297,10 @@ class NativeLongformFilmPlan:
             progress(stage="REOPENED_ORIGINAL_SOURCE_REELS",
                      completed=count,planned=doc["total_chunks"],
                      frames=frames,pcm_samples=samples)
+        # Revalidate the immutable source at the end, never trust a prior-session cache.
+        reopened,_=self._open_schedule(project_id,plan_id,revision,cancelled=cancelled)
+        if reopened["document_sha256"]!=record["document_sha256"]:
+            raise RuntimeError("Original longform plan changed during independent audit")
         if (count!=doc["total_chunks"] or frames!=doc["total_frames"] or
             samples!=doc["total_frames"]*2000):
             raise RuntimeError("A longform film cannot pass without every original source frame")

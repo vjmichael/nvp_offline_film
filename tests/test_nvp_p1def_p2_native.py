@@ -595,6 +595,8 @@ class OriginalActorOwnedStereo(unittest.TestCase):
 
 
 class FeatureLengthNativeSourceSchedule(unittest.TestCase):
+    duration_minutes=30
+
     def setUp(self):
         tmp=TemporaryDirectory(prefix="nvp-p2-30m-")
         self.addCleanup(tmp.cleanup)
@@ -610,7 +612,7 @@ class FeatureLengthNativeSourceSchedule(unittest.TestCase):
         self.index.register_revision(self.pid,"OriginalPerformance","performance",
             {"format":"nvp.p2.source_longform_fixture.v1","authentic_source":True})
         ledger=TemporalLedger(self.index)
-        duration=30*60*T
+        duration=self.duration_minutes*60*T
         ledger.publish(self.pid,"FullTimeline",[{
             "event_id":"OriginalWork","event_kind":"action","subject_id":"Actor",
             "start_tick":0,"end_tick":duration,
@@ -691,6 +693,31 @@ class FeatureLengthNativeSourceSchedule(unittest.TestCase):
             verify_creator_action=lambda *_:False)
         self.assertEqual(fresh.open(self.pid,"ThirtyMinutePlan",1)[
             "document_sha256"],receipt["document_sha256"])
+
+
+class ExtendedNativeSourceSchedule(unittest.TestCase):
+    # Real USD/FilmIndex/editorial fixture, source plan only. No GPU or
+    # actual rendered eight-hour movie is implied by plan publication.
+    duration_minutes=480
+    setUp=FeatureLengthNativeSourceSchedule.setUp
+
+    def test_eight_hour_approved_source_plan_and_late_page(self):
+        receipt=self.sched.publish(self.pid,"EightHourPlan",
+            continuity_id="FullContinuity",continuity_revision=1,
+            listener_path="/World/Camera",camera_path="/World/Camera",
+            creator_event="yes")
+        doc=self.sched.open(self.pid,"EightHourPlan",1)["data"]
+        self.assertEqual(receipt["revision"],1)
+        self.assertEqual(doc["total_frames"],691200)
+        self.assertEqual(doc["total_chunks"],28800)
+        page=self.sched.page(self.pid,"EightHourPlan",1,first_index=28799,limit=64)
+        self.assertEqual(page["chunks"][0]["first_frame"],691176)
+        self.assertIsNone(page["next_index"])
+        self.assertFalse(page["full_film_picture_sound_delivered"])
+        with TemporaryDirectory() as tmp:
+            absent=self.sched.reconcile_all(self.pid,"EightHourPlan",1,output_parent=tmp)
+            self.assertEqual(absent["verified_frames"],0)
+            self.assertFalse(absent["master_approved"])
 
 
 if __name__=="__main__":

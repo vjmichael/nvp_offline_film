@@ -169,6 +169,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_nvp_performance_probe.py' -v
           python -m unittest discover -s tests -p 'test_nvp_gpu_observation.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_longfilm_schedule.py' -v
           python -m tools.nvp_perf_benchmark
           python -m tools.nvp_perf_acceptance usd
           python -m unittest discover -s tests -p 'test_nvp_openusd_reusable_assets.py' -v
