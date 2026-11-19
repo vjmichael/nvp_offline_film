@@ -41,7 +41,7 @@ jobs:
           # SLATE-08B's bundled native scene readers must have real OpenUSD.
           python -m pip install --only-binary=:all: 'usd-core==26.11'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19'
+          python -m pip install 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306' 'opentimelineio>=0.18.1,<0.19' 'cryptography>=43,<49'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           choco install nsis -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -49,7 +49,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q tools/nvp_desktop_alpha.py
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all miniaudio --collect-all sounddevice --collect-all _sounddevice_data --collect-submodules backend --hidden-import tools.nvp_native_device_producer_worker --hidden-import tools.nvp_p1b_physical_device_acceptance tools/nvp_desktop_alpha.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name NVP --paths . --add-data 'frontend/dist;frontend/dist' --collect-all webview --collect-all pxr --collect-all cryptography --collect-all miniaudio --collect-all sounddevice --collect-all _sounddevice_data --collect-submodules backend --hidden-import tools.nvp_native_device_producer_worker --hidden-import tools.nvp_p1b_physical_device_acceptance tools/nvp_desktop_alpha.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path dist/NVP/NVP.exe)) { throw 'Missing NVP executable' }
           python tools/nvp_e2e01e_validate_installer_payload.py --bundle dist/NVP --report "$env:RUNNER_TEMP/nvp-alpha-bundle-audit.json"

@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'backend/nvp_wo3_*.py'
+      - 'backend/nvp_dci_codestream.py'
       - 'tests/test_nvp_wo3_*.py'
       - 'tests/nvp_wo3_fixture_authority.py'
       - 'backend/nvp_g03_windows_appcontainer.py'
@@ -15,6 +16,7 @@ on:
     branches: [main]
     paths:
       - 'backend/nvp_wo3_*.py'
+      - 'backend/nvp_dci_codestream.py'
       - 'tests/test_nvp_wo3_*.py'
       - 'tests/nvp_wo3_fixture_authority.py'
       - '.github/workflows/nvp-wo3-dcp-native.yml'
@@ -50,7 +52,7 @@ jobs:
         run: |
           python -m compileall -q backend tests
           if ($LASTEXITCODE -ne 0) { throw 'Source syntax failure' }
-          foreach ($f in @('dcp_structure','native_delivery','codec_bundle_provenance','atomic_publish','crash_publish_process','export_recovery','j2k_header_contract','protected_contract')) {
+          foreach ($f in @('dcp_structure','native_delivery','codec_bundle_provenance','atomic_publish','crash_publish_process','export_recovery','j2k_header_contract','protected_contract','dci_codestream')) {
             python -m unittest discover -s tests -p ("test_nvp_wo3_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO3 original source suite failed: $f" }
           }

@@ -28,7 +28,8 @@ from backend.nvp_wo5_original_short import inspect_indexed_reel
 from backend.nvp_wo5_original_feature import inspect_indexed_feature
 from backend.nvp_wo3_native_codecs import common_codec_authority,_sha,MAX_STAGE_BYTES
 from backend.nvp_wo3_dcp_structure import inspect_dcp_structure,_linked_entry
-from backend.nvp_wo3_j2k_audit import inspect_j2k_header,PROFILES
+from backend.nvp_wo3_j2k_audit import PROFILES
+from backend.nvp_dci_codestream import inspect_cinema_codestream, MAX_FRAME_BYTES
 from backend.nvp_wo3_independent_essence import _ppm_header
 from backend.nvp_wo4_pcm_master import CHANNEL_LAYOUTS
 from backend.nvp_wo4_pcm_stream import _protected_path,_hash_stream
@@ -561,13 +562,14 @@ class FinishedFilmPlayer:
                     pos=local+n
                     file=root/f"p_{pos:06d}.j2c"
                     _protected_path(file)
-                    if not 80<=file.stat().st_size<=MAX_J2K_BYTES:
+                    if not 80<=file.stat().st_size<=MAX_FRAME_BYTES:
                         raise PermissionError("Published native codestream exceeds bound")
-                    raw=file.read_bytes()
+                    with file.open("rb") as stream:
+                        raw=stream.read(MAX_FRAME_BYTES+1)
                     expected=reel.picture_shas[pos]
                     if sha256(raw).hexdigest()!=expected:
                         raise PermissionError("Published codestream differs from indexed frame")
-                    inspect_j2k_header(raw,s["profile"])
+                    inspect_cinema_codestream(raw,s["profile"])
                     dest=f"xyz_{pos:06d}.ppm"
                     decoder.run(["-i",file.name,"-o",dest],cwd=root,timeout=240)
                     decoded=root/dest

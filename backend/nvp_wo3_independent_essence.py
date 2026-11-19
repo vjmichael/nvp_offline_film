@@ -18,7 +18,8 @@ import shutil
 import wave
 
 from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
-from backend.nvp_wo3_j2k_audit import inspect_j2k_header,PROFILES
+from backend.nvp_wo3_j2k_audit import PROFILES
+from backend.nvp_dci_codestream import ReelCodestreamAudit, MAX_FRAME_BYTES
 from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,common_codec_authority,_sha as _validate_sha256,MAX_STAGE_BYTES
 from backend.nvp_wo3_dcp_structure import _asset_file,_linked_entry
 
@@ -131,18 +132,20 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
         unwrap.run(["-d",str(expected_frames),"picture.mxf","p_"],
                    cwd=root,timeout=3600)
         decoded_hashes=[]
+        rate_audit=ReelCodestreamAudit(profile)
         width,height,_=PROFILES[profile]
         for i,expected in enumerate(expected_picture_codestream_sha256):
             name="p_"+str(i).zfill(6)+".j2c"
             j2k=root/name
             if not j2k.is_file() or _linked_entry(j2k):
                 raise RuntimeError("Real MXF unwrap omitted an original picture")
-            if not 80<=j2k.stat().st_size<=16*1024*1024:
+            if not 80<=j2k.stat().st_size<=MAX_FRAME_BYTES:
                 raise RuntimeError("Extracted native codestream exceeds bound")
-            raw=j2k.read_bytes()
+            with j2k.open("rb") as stream:
+                raw=stream.read(MAX_FRAME_BYTES+1)
             if _hash_bytes(raw)!=expected:
                 raise RuntimeError("Decoded MXF source frame differs from approved J2K")
-            inspect_j2k_header(raw,profile)
+            rate_audit.add(raw)
             out="xyz_"+str(i).zfill(6)+".ppm"
             decoder.run(["-i",name,"-o",out],cwd=root,timeout=240)
             pixels=_ppm_header(root/out,width=width,height=height)
@@ -163,6 +166,7 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
             "frames_decoded":expected_frames,
             "decoded_frame_sha256":decoded_hashes,
             "picture_exact_codestream_sha_verified":True,
+            "cinema_rate_constraints":rate_audit.finish(expected_frames),
             "pcm24_48000_sample_exact":True,
             "verified_source_sound_pcm_sha256":_hash_bytes(source_pcm),
             "asdcplib_unwrap_sha256":unwrap.sha256,
@@ -215,6 +219,8 @@ def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profi
         reports.append(_decode_reel_tracks(folder,audit,tracks,unwrap=unwrap,decoder=decoder,
             expected_picture_codestream_sha256=part["ordered_codestream_sha256"],
             expected_sound_pcm_sha256=part["pcm_sha256"],profile=profile,expected_frames=part["frames"]))
+    if len({r["cinema_rate_constraints"]["wavelet_levels"] for r in reports})!=1:
+        raise ValueError("Wavelet level count differs across feature reels")
     if inspect_dcp_structure(folder)!=audit:
         raise PermissionError("Feature package changed during native verification")
     return {"status":"ALL_NATIVE_FEATURE_ESSENCE_ROUNDTRIPPED","reel_count":len(reports),

@@ -62,7 +62,8 @@ class DurableCinemaDeliveryTests(unittest.TestCase):
 
     def finish_picture(self):
         job=self.f.submit()["job_id"]
-        codestream=picture_fixture.synthetic_header(width=2,height=1)
+        from test_nvp_wo3_dci_codestream import structural_frame
+        codestream=structural_frame(width=2,height=1)
         digest=sha256(codestream).hexdigest()
         def mock_frame(codec,*,private_work,source_sha256,**kw):
             (Path(private_work)/"frame.j2c").write_bytes(codestream)

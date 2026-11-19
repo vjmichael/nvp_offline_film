@@ -28,6 +28,9 @@ class WO3RealOpenJPEG2K(unittest.TestCase):
             native,raw,profile="2K_FLAT_24",
             source_presentation_sha256="a"*64,creator_approved=True)
         self.assertTrue(result["independent_header_constraints_verified"])
+        self.assertTrue(result["cinema_rate_constraints"]["frame_byte_limit_verified"])
+        self.assertTrue(result["cinema_rate_constraints"]["declared_component_byte_limits_verified"])
+        self.assertFalse(result["cinema_rate_constraints"]["full_dci_codestream_conformity_verified"])
         self.assertEqual(result["profile"],"2K_FLAT_24")
         self.assertEqual(result["codec_result"]["exit_code"],0)
         assert_result=inspect_j2k_header(result["codestream"],"2K_FLAT_24")
@@ -57,6 +60,8 @@ class WO3RealOpenJPEG2K(unittest.TestCase):
             source_presentation_sha256="b"*64,creator_approved=True)
         self.assertEqual(inspect_j2k_header(result["codestream"],
                                              "4K_FULL_24")["rsiz"],4)
+        self.assertEqual(len(result["cinema_rate_constraints"]["tile_part_bytes"]),6)
+        self.assertLessEqual(result["cinema_rate_constraints"]["declared_2k_portion_bytes"],1_302_083)
         self.assertFalse(result["dci_certified"])
         print("WO3_REAL_NATIVE_OPENJPEG_4K:",{
             "bytes":len(result["codestream"]),

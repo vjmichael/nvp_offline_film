@@ -105,6 +105,9 @@ class WO3RealASDCPIntegration(unittest.TestCase):
                 expected_sound_pcm_sha256=sha256(audio_bytes).hexdigest(),
                 profile="2K_FLAT_24",expected_frames=3)
             self.assertEqual(roundtrip["frames_decoded"],3)
+            self.assertEqual(roundtrip["cinema_rate_constraints"]["frames_audited"],3)
+            self.assertTrue(roundtrip["cinema_rate_constraints"]["declared_structure_and_rate_bounds_verified"])
+            self.assertFalse(roundtrip["cinema_rate_constraints"]["full_dci_conformity_verified"])
             self.assertTrue(roundtrip["picture_exact_codestream_sha_verified"])
             self.assertTrue(roundtrip["pcm24_48000_sample_exact"])
             self.assertFalse(roundtrip["production_dcp_accepted"])

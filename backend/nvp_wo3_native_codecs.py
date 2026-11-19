@@ -24,7 +24,8 @@ from backend.nvp_w1g_encrypted_source import require_efs_stage,verify_efs_inputs
 from backend.nvp_wo3_dcp_structure import _linked_entry,_safe_leaf
 from backend.nvp_wo3_codec_bundle_provenance import verify_native_codec_bundle
 
-from backend.nvp_wo3_j2k_audit import inspect_j2k_header,PROFILES
+from backend.nvp_wo3_j2k_audit import PROFILES
+from backend.nvp_dci_codestream import inspect_cinema_codestream, MAX_FRAME_BYTES
 
 FORMAT="nvp.wo3.native_openjpeg_frame.v1"
 MAX_PROCESS_SECONDS=180
@@ -467,10 +468,11 @@ def encode_xyz12_frame(codec:ApprovedCodecBinary,xyz12,*,profile,
               "-p","CPRL","-mct","0","-I"]
         result=codec.run(args,cwd=root)
         if _linked_entry(out) or not out.is_file() or (
-            not 80<=out.stat().st_size<=16*1024*1024):
+            not 80<=out.stat().st_size<=MAX_FRAME_BYTES):
             raise RuntimeError("OpenJPEG did not produce bounded codestream")
-        codestream=out.read_bytes()
-        header=inspect_j2k_header(codestream,profile)
+        with out.open("rb") as stream:
+            codestream=stream.read(MAX_FRAME_BYTES+1)
+        header=inspect_cinema_codestream(codestream,profile)
         return {
             "format":FORMAT,
             "profile":profile,
@@ -482,6 +484,7 @@ def encode_xyz12_frame(codec:ApprovedCodecBinary,xyz12,*,profile,
             "codestream":codestream,
             "codestream_sha256":header["raw_codestream_sha256"],
             "independent_header_constraints_verified":True,
+            "cinema_rate_constraints":header,
             "independent_decoded_pixels_verified":False,
             "dci_certified":False,
             "original_source_modified":False,

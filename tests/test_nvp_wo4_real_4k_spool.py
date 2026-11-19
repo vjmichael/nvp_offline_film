@@ -72,6 +72,8 @@ class Native4KPicturePilot(unittest.TestCase):
             self.assertEqual(picture["status"],
                              "NATIVE_PICTURE_MXF_STAGE_VERIFIED")
             self.assertEqual(picture["frame_count"],3)
+            self.assertEqual(picture["cinema_rate_constraints"]["frames_audited"],3)
+            self.assertLessEqual(picture["cinema_rate_constraints"]["max_frame_bytes"],1_302_083)
             self.assertFalse(picture["whole_mxf_loaded_into_ram"])
             self.assertEqual(digest_file(stage/"picture.mxf"),
                              picture["file_sha256"])

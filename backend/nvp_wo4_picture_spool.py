@@ -15,7 +15,8 @@ from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,digest_file,common
 from backend.nvp_wo4_pcm_stream import _protected_path,_hash_stream
 from backend.nvp_wo4_mxf_stream import _copy_protected,_publish_protected
 from backend.nvp_wo3_dcp_structure import _linked_entry
-from backend.nvp_wo3_j2k_audit import PROFILES,inspect_j2k_header,MAX_CODESTREAM
+from backend.nvp_wo3_j2k_audit import PROFILES,MAX_CODESTREAM
+from backend.nvp_dci_codestream import inspect_cinema_codestream, ReelCodestreamAudit, MAX_FRAME_BYTES
 from backend.nvp_wo3_mxf_native import _read_info,_verify_info
 from backend.nvp_wo3_atomic_publish import _fsync_directory
 from backend.nvp_wo4_resource_budget import require_stage_space
@@ -104,9 +105,9 @@ def encode_disk_xyz12(codec,*,profile,source_path,source_sha256,
                            "-p","CPRL","-mct","0","-I"],cwd=stage,timeout=timeout)
         encoded=stage/"cinema.j2k"
         _protected_path(encoded)
-        if not 80<=encoded.stat().st_size<=MAX_CODESTREAM:
+        if not 80<=encoded.stat().st_size<=MAX_FRAME_BYTES:
             raise RuntimeError("Real bounded JPEG2000 codestream missing")
-        header=inspect_j2k_header(encoded.read_bytes(),profile)
+        header=inspect_cinema_codestream(_read_bounded_protected_codestream(encoded),profile)
         if (_hash_stream(Path(source_path))!=(source_sha256,width*height*6)
                 or check_cancel()):
             raise PermissionError("Approved source changed or encoding cancelled")
@@ -119,6 +120,7 @@ def encode_disk_xyz12(codec,*,profile,source_path,source_sha256,
         "original_take_sha256":origin,
         "codestream_sha256":header["raw_codestream_sha256"],
         "codestream_bytes":output.stat().st_size,
+        "cinema_rate_constraints":header,
         "native_codec_sha256":codec.sha256,
         "worker":process,
         "input":input_receipt,
@@ -128,15 +130,37 @@ def encode_disk_xyz12(codec,*,profile,source_path,source_sha256,
     }
 
 
-def verify_frame_file(path,expected_sha,profile):
+def _read_bounded_protected_codestream(path):
+    identity=_protected_path(path)
+    with path.open("rb") as stream:
+        start=os.fstat(stream.fileno())
+        if ((start.st_dev,start.st_ino)!=identity or
+                not 80<=start.st_size<=MAX_FRAME_BYTES):
+            raise PermissionError("Verified frame file missing or unsafe")
+        raw=stream.read(MAX_FRAME_BYTES+1)
+        stop=os.fstat(stream.fileno())
+        if (len(raw)!=start.st_size or
+                (stop.st_dev,stop.st_ino,stop.st_size,stop.st_mtime_ns)!=
+                (start.st_dev,start.st_ino,start.st_size,start.st_mtime_ns)):
+            raise PermissionError("Protected codestream changed during bounded read")
+    if _protected_path(path)!=identity:
+        raise PermissionError("Protected codestream replaced during bounded read")
+    return raw
+
+
+def verify_frame_file(path,expected_sha,profile,*,audit=None):
     p=Path(path)
-    _protected_path(p)
-    if not 80<=p.stat().st_size<=MAX_CODESTREAM:
-        raise PermissionError("Verified frame file missing or unsafe")
-    head=inspect_j2k_header(p.read_bytes(),profile)
-    if head["raw_codestream_sha256"]!=expected_sha or _hash_stream(p)!=(expected_sha,p.stat().st_size):
+    raw=_read_bounded_protected_codestream(p)
+    if audit is not None and audit.profile!=profile:
+        raise ValueError("Reel audit profile mismatch")
+    if sha256(raw).hexdigest()!=expected_sha:
         raise PermissionError("Completed JPEG2000 frame digest changed")
-    return p.stat().st_size
+    inspect_cinema_codestream(raw,profile)
+    if _read_bounded_protected_codestream(p)!=raw:
+        raise PermissionError("Completed JPEG2000 frame bytes changed on reopen")
+    if audit is not None:
+        audit.add(raw)
+    return len(raw)
 
 
 def wrap_disk_j2k_picture(wrap,info,*,frames_dir,stage_dir,
@@ -164,10 +188,11 @@ def wrap_disk_j2k_picture(wrap,info,*,frames_dir,stage_dir,
     if sorted(p.name for p in frames.iterdir())!=expected:
         raise PermissionError("Uncommitted/orphan codestream files require review")
     sizes=[]
+    rate_audit=ReelCodestreamAudit(profile)
     for name,digest in zip(expected,shas):
         if check_cancel():
             raise InterruptedError("Creator cancelled picture MXF")
-        sizes.append(verify_frame_file(frames/name,digest,profile))
+        sizes.append(verify_frame_file(frames/name,digest,profile,audit=rate_audit))
     bound=sum(sizes)+frame_count*8192+16*1024*1024
     if sum(sizes)+bound>MAX_STAGE_BYTES-4*1024*1024:
         raise ValueError("Approved reel exceeds current protected stage budget; split reel")
@@ -210,6 +235,7 @@ def wrap_disk_j2k_picture(wrap,info,*,frames_dir,stage_dir,
         "wrapper_process":process,
         "info_process":checked,
         "whole_mxf_loaded_into_ram":False,
+        "cinema_rate_constraints":rate_audit.finish(frame_count),
         "independent_dci_validator_passed":False,
         "production_dcp_accepted":False,
     }

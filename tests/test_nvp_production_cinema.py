@@ -15,6 +15,7 @@ import unittest
 
 from test_nvp_wo3_native_delivery import (
     WO3OriginalCinemaAuthoring,synthetic_header)
+from test_nvp_wo3_dci_codestream import structural_frame
 from backend.nvp_production_cinema import CinemaJournal,TASK_KIND
 from backend.nvp_w1g_encrypted_source import require_efs_stage
 from types import SimpleNamespace
@@ -137,7 +138,7 @@ class PictureReelJournalTest(unittest.TestCase):
 
     def test_three_real_durable_checkpoints_with_mocked_codec_only(self):
         job_id=self.submit()["job_id"]
-        raw=synthetic_header(width=2,height=1)
+        raw=structural_frame(width=2,height=1)
         hash_value=sha256(raw).hexdigest()
         def worker(codec):
             return {"process_tree_custody_verified":True,"efs_verified":True,

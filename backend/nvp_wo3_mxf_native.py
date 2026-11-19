@@ -16,7 +16,7 @@ import wave
 
 from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,common_codec_authority,_sha,MAX_STAGE_BYTES
 from backend.nvp_wo3_dcp_structure import _linked_entry
-from backend.nvp_wo3_j2k_audit import inspect_j2k_header
+from backend.nvp_dci_codestream import ReelCodestreamAudit
 
 FORMAT="nvp.wo3.native_asdcp_track.v1"
 MAX_REEL_FRAMES=144000
@@ -32,10 +32,13 @@ def _uuid_v4(value):
     return value
 
 
-def _frame_receipts(frames,profile):
+def _frame_receipts(frames,profile,*,audit=None):
     if type(frames) is not list or not 1<=len(frames)<=MAX_REEL_FRAMES:
         raise ValueError("Source picture sequence bounded to one reel")
     seen=[]
+    rate_audit=ReelCodestreamAudit(profile) if audit is None else audit
+    if rate_audit.profile!=profile:
+        raise ValueError("Reel audit profile mismatch")
     for i,frame in enumerate(frames):
         if type(frame) is not dict or frame.get("format")!=(
             "nvp.wo3.native_openjpeg_frame.v1") or not all(k in frame for k in (
@@ -48,7 +51,7 @@ def _frame_receipts(frames,profile):
             "codestream_sha256"] or frame[
             "independent_header_constraints_verified"] is not True:
             raise PermissionError("Native source JPEG2000 SHA or header invalid")
-        if inspect_j2k_header(raw,profile)["raw_codestream_sha256"]!=frame[
+        if rate_audit.add(raw)["raw_codestream_sha256"]!=frame[
             "codestream_sha256"]:
             raise PermissionError("Cinema codestream profile differs")
         seen.append(_sha(frame["original_approved_presentation_sha256"]))
@@ -87,7 +90,11 @@ def wrap_cinema_picture(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
     if wrap.product!="ASDCP-asdcp_wrap":
         raise PermissionError("Pinned asdcplib SMPTE wrapper required")
     uid=_uuid_v4(asset_uuid)
-    origin=_frame_receipts(frames,profile)
+    if type(frames) is not list or not 1<=len(frames)<=MAX_REEL_FRAMES:
+        raise ValueError("Source picture sequence bounded to one reel")
+    frames=[dict(x) if type(x) is dict else x for x in frames]
+    rate_audit=ReelCodestreamAudit(profile)
+    origin=_frame_receipts(frames,profile,audit=rate_audit)
     if len(frames)<3:
         raise ValueError("CineCert asdcp-info currently requires >=3 frames to avoid a native bitrate fault")
     common_codec_authority(wrap,info)
@@ -111,6 +118,7 @@ def wrap_cinema_picture(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
                 "bytes":raw,"sha256":hashlib.sha256(raw).hexdigest(),
                 "frame_count":len(frames),"edit_rate":[24,1],
                 "profile":profile,
+                "cinema_rate_constraints":rate_audit.finish(len(frames)),
                 "original_approved_presentation_sha256":origin,
                 "wrapper_sha256":wrap.sha256,"info_sha256":info.sha256,
                 "native_wrap_receipt":result,
