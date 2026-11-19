@@ -169,3 +169,78 @@ jobs:
           python -m unittest discover -s tests -p test_nvp_wo6_native_host_death.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Native host death failed' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+
+  perf03f-r6-source-recovery:
+    name: PERF-03F-R6-R2 exact source and offline NVP dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NVP_RECOVERY_BASE: '07d8411cf94735bbec8c4504d33354004614a712'
+      NVP_RECOVERY_TREE: '0f378a0e202b04bf5e2bf24a2c5e0dd2aea291d8'
+      NVP_RUN_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Recover exact candidate parent and verify Git bundle round trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$NVP_RUN_HEAD"
+          test "$(git rev-parse "$NVP_RECOVERY_BASE^{tree}")" = "$NVP_RECOVERY_TREE"
+          git merge-base --is-ancestor "$NVP_RECOVERY_BASE" HEAD
+          test -z "$(git status --porcelain --untracked-files=all)"
+          out="$RUNNER_TEMP/nvp-source-recovery"
+          mkdir -p "$out"
+          git bundle create "$out/nvp-exact-source.bundle" HEAD
+          git bundle verify "$out/nvp-exact-source.bundle" > "$out/bundle-verification.txt" 2>&1
+          git clone --quiet "$out/nvp-exact-source.bundle" "$RUNNER_TEMP/nvp-recovered-base"
+          git -C "$RUNNER_TEMP/nvp-recovered-base" checkout --quiet --detach "$NVP_RECOVERY_BASE"
+          test "$(git -C "$RUNNER_TEMP/nvp-recovered-base" rev-parse HEAD)" = "$NVP_RECOVERY_BASE"
+          test "$(git -C "$RUNNER_TEMP/nvp-recovered-base" rev-parse 'HEAD^{tree}')" = "$NVP_RECOVERY_TREE"
+          test -z "$(git -C "$RUNNER_TEMP/nvp-recovered-base" status --porcelain --untracked-files=all)"
+          git ls-tree -r "$NVP_RECOVERY_BASE" > "$out/base-tree.txt"
+          printf 'base=%s\nbase_tree=%s\nrunner_head=%s\n' "$NVP_RECOVERY_BASE" "$NVP_RECOVERY_TREE" "$NVP_RUN_HEAD" > "$out/source-identity.txt"
+          (cd "$out" && sha256sum nvp-exact-source.bundle base-tree.txt source-identity.txt bundle-verification.txt > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvp-r6-r2-exact-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/nvp-source-recovery/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Resolve NVP's original manifest and prove offline dependency restoration
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/nvp-npm-recovery"
+          work="$RUNNER_TEMP/nvp-npm-project"
+          cache="$RUNNER_TEMP/nvp-npm-cache"
+          mkdir -p "$out" "$work" "$cache"
+          cp "$RUNNER_TEMP/nvp-recovered-base/frontend/package.json" "$work/package.json"
+          cd "$work"
+          # The historical source did not commit a lockfile. Record this new
+          # resolution; do not claim it reconstructs prior CI dependency bytes.
+          npm install --package-lock-only --no-audit --no-fund --cache "$cache"
+          npm ci --no-audit --no-fund --cache "$cache"
+          npm ci --offline --no-audit --no-fund --cache "$cache"
+          npm cache verify --cache "$cache"
+          npm ls --all --json > "$out/npm-inventory.json"
+          cp package.json package-lock.json "$out/"
+          node -p 'JSON.stringify({node:process.version,platform:process.platform,arch:process.arch})' > "$out/runtime.json"
+          npm --version > "$out/npm-version.txt"
+          printf 'source_base=%s\nsource_tree=%s\n' "$NVP_RECOVERY_BASE" "$NVP_RECOVERY_TREE" > "$out/source-identity.txt"
+          # Persist content-addressed package objects only, not logs, configs,
+          # checkout credentials or node_modules.
+          tar -C "$cache" -czf "$out/npm-cache.tar.gz" _cacache
+          (cd "$out" && sha256sum package.json package-lock.json npm-inventory.json runtime.json npm-version.txt source-identity.txt npm-cache.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvp-r6-r2-offline-npm-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/nvp-npm-recovery/
+          if-no-files-found: error
+          retention-days: 30
