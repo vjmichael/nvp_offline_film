@@ -9,7 +9,6 @@ All tristimulus measurements here are relative to screen black.
 from __future__ import annotations
 
 from hashlib import sha256
-import numpy as np
 
 FORMAT = 'nvp.dci.xyz12_reference_audit.v1'
 REVISION = 'linear-srgb-xy-d65-st428-2019-v2'
@@ -22,17 +21,20 @@ _WHITE = {'D65_UNADAPTED': (0.3127, 0.3290),
 
 
 def _xy_white(xy):
+    import numpy as np
     x, y = xy
     return np.array([x / y, 1., (1. - x - y) / y], dtype=np.float64)
 
 
 def _from_primaries(primaries, white):
+    import numpy as np
     xy = np.asarray(primaries, dtype=np.float64).T
     columns = np.vstack((xy, 1. - xy.sum(axis=0)))
     return columns * np.linalg.solve(columns, _xy_white(white))
 
 
 def _matrices(intent):
+    import numpy as np
     source = _from_primaries(((.64, .33), (.30, .60), (.15, .06)),
                             _WHITE['D65_UNADAPTED'])
     if intent == 'DCI_REFERENCE_BRADFORD':
@@ -69,6 +71,7 @@ def verify_xyz12_reference(source_float32: bytes, xyz12: bytes, *, width: int,
         if (type(raw) is not bytes or len(raw) != pixels * samplesize or
                 type(digest) is not str or sha256(raw).hexdigest() != digest):
             raise PermissionError('Reference raster identity or length mismatch')
+    import numpy as np  # Numeric verification, never a metadata import prerequisite.
     source = np.frombuffer(source_float32, dtype='<f4').reshape(-1, 3)
     codes = np.frombuffer(xyz12, dtype='>u2').reshape(-1, 3)
     transform, p3_inverse = _matrices(output_white_intent)

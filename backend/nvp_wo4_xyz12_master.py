@@ -8,7 +8,6 @@ x=.314/y=.351 white. WO4-03 external calibration remains open.
 """
 from __future__ import annotations
 import hashlib
-import numpy as np
 from backend.nvp_wo3_j2k_audit import PROFILES
 from backend.nvp_dci_color_reference import REVISION, verify_xyz12_reference
 
@@ -72,6 +71,7 @@ def encode_linear_rgb_d65_to_xyz12(source_float32:bytes,*,profile:str,
         raise PermissionError("Exact approved float32 image size/source SHA required")
     # Preserve the existing authoritative input and output byte contract, but
     # compute in bounded blocks; no full-frame float64 or per-pixel Python loop.
+    import numpy as np  # Required only during approved numeric mastering.
     pixels=width*height
     output=bytearray(pixels*6)
     rgb=np.frombuffer(source_float32,dtype='<f4').reshape(-1,3)

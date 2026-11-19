@@ -26,7 +26,7 @@ from backend.nvp_wo3_native_codecs import _sha
 from backend.nvp_wo3_dcp_structure import _linked_entry
 import xml.etree.ElementTree as ET
 
-from backend.nvp_wo3_dcp_package import _tag, _xml, FORMAT as PACKAGE_FORMAT
+from backend.nvp_wo3_dcp_package import _tag, _xml, _content_version, FORMAT as PACKAGE_FORMAT
 from backend.nvp_wo3_dcp_structure import (
     NS_AM,NS_PKL,NS_CPL,inspect_dcp_structure)
 from backend.nvp_wo3_atomic_publish import atomic_publish_directory,_fsync_directory
@@ -126,6 +126,7 @@ def _xml_package(*,title,issued,ids,profile,frames,metadata):
                 ("Creator","NVP native deterministic DCP"),
                 ("ContentTitleText",title),("ContentKind","feature")):
         _tag(cpl,NS_CPL,k,v)
+    _content_version(cpl,title,cpl_id)
     reels=ET.SubElement(cpl,"{"+NS_CPL+"}ReelList")
     reel=ET.SubElement(reels,"{"+NS_CPL+"}Reel")
     _tag(reel,NS_CPL,"Id",reel_id)
@@ -136,7 +137,9 @@ def _xml_package(*,title,issued,ids,profile,frames,metadata):
                     ("IntrinsicDuration",frames),("EntryPoint",0),
                     ("Duration",frames)):
             _tag(entry,NS_CPL,k,v)
+        _tag(entry,NS_CPL,"Hash",metadata["picture.mxf" if tag=="MainPicture" else "sound.mxf"]["sha1_b64"])
         if tag=="MainPicture":
+            _tag(entry,NS_CPL,"FrameRate","24 1")
             w,h,_=PROFILES[profile]
             _tag(entry,NS_CPL,"ScreenAspectRatio",f"{w} {h}")
     xmls={"CPL.xml":_xml(cpl)}
@@ -160,10 +163,9 @@ def _xml_package(*,title,issued,ids,profile,frames,metadata):
     xmls["PKL.xml"]=_xml(pkl)
     metadata["PKL.xml"]=_memory_digest(xmls["PKL.xml"])
     amap=ET.Element("{"+NS_AM+"}AssetMap")
-    for k,v in (("Id",am_id),("AnnotationText",title),("IssueDate",issued),
-                ("Issuer","NVP Source-Preserving Cinema Output"),
-                ("Creator","NVP native deterministic DCP"),
-                ("VolumeCount",1)):
+    for k,v in (("Id",am_id),("AnnotationText",title),
+                ("Creator","NVP native deterministic DCP"),("VolumeCount",1),
+                ("IssueDate",issued),("Issuer","NVP Source-Preserving Cinema Output")):
         _tag(amap,NS_AM,k,v)
     mapped=ET.SubElement(amap,"{"+NS_AM+"}AssetList")
     for asset_id,name,_mime in [(pkl_id,"PKL.xml","text/xml"),*entries]:
@@ -279,7 +281,8 @@ def publish_file_backed_dcp(*,job_id,picture,sound,title,profile,frames,
             with (stage/name).open("xb") as out:
                 out.write(data)
                 out.flush();os.fsync(out.fileno())
-        audit=inspect_dcp_structure(stage)
+        from backend.nvp_dci_package import inspect_cinema_package
+        audit=inspect_cinema_package(stage,expected_profile=profile,expected_reels=[{"reel_uuid":ids["reel"],"start_frame":0,"picture_uuid":ids["picture"],"sound_uuid":ids["sound"],"frames":frames}])
         if (audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
                 audit["reel_count"]!=1 or
                 audit["reel_durations"]!=[frames] or

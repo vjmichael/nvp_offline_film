@@ -140,7 +140,14 @@ def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
     if audit["reel_durations"]!=[r["frames"] for r in parts] or sum(audit["reel_durations"])!=frame_count:
         raise RuntimeError("Native duration differs from planned frame count")
     dual_report=None
+    schema_report=None
     if dual_qualification:
+        from backend.nvp_dci_package_xsd import validate_official_package_xsd
+        schemas=os.environ.get("NVP_DCI_SCHEMA_REFERENCE")
+        if not schemas:raise RuntimeError("Pinned independent XSD source required for dual qualification")
+        reviewed=validate_official_package_xsd(result["destination"],schemas,expected_profile=profile,source_set="LIBDCP_REVIEWED_MIRROR")
+        if not reviewed["reviewed_smpte_xsd_mirror_verified"]:raise RuntimeError("Native package reviewed XSD gate failed")
+        schema_report={k:reviewed[k] for k in ("schema_source_set","schema_source_sha256","metadata_sha256","reviewed_smpte_xsd_mirror_verified","official_smpte_xsd_verified")}
         from backend.nvp_wo3_independent_essence import decode_full_multireel_candidate
         def reference_reader(digest):
             from backend.nvp_wo3_dcp_structure import _linked_entry
@@ -155,9 +162,11 @@ def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
             unwrap=fixture_codec("NVP_NATIVE_ASDCP_UNWRAP","ASDCP-asdcp_unwrap"),
             decoder=fixture_codec("NVP_NATIVE_OPENJPEG_DECODE","OpenJPEG-opj_decompress"),
             second_decoder=fixture_codec("NVP_NATIVE_JASPER_DECODE","JasPer-nvp_decode"),
-            expected_reels=expected_reels,profile=profile,reference_reader=reference_reader)
+            expected_reels=expected_reels,profile=profile,reference_reader=reference_reader,descriptor_info=info)
         if (dual_report["frames_decoded"]!=48 or not dual_report["all_reel_packet_coverage_verified"] or
             not dual_report["all_tracks_minimum_one_second_verified"] or
+            not dual_report["all_reels_mxf_descriptor_crosscheck_verified"] or
+            not dual_report["nvp_unsigned_xml_profile_verified"] or
             not dual_report["all_reels_independent_second_decoder_verified"] or
             not dual_report["all_reels_source_xyz12_comparison_complete"] or
             dual_report["feature_source_xyz12_summary"]["source_to_openjpeg"]["frames_compared"]!=48 or
@@ -176,6 +185,7 @@ def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
             "frame_slots":frame_count,"duration_seconds":frame_count/24,
             "encoded_unique_source_frames":unique,"reused_frame_slots":frame_count-unique,
             "dual_decoder_report":dual_report,
+            "package_xsd_report":schema_report,
             "real_native_reels":len(parts),"complete_structural_asset_hashes_verified":True,
             "elapsed_seconds":round(time.monotonic()-started,3),
             "creator_film_throughput_verified":False,"production_dcp_accepted":False}

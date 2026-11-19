@@ -34,6 +34,12 @@ def _tag(parent,ns,name,value):
     node.text=str(value)
     return node
 
+def _content_version(cpl,title,cpl_id):
+    version=ET.SubElement(cpl,"{"+NS_CPL+"}ContentVersion")
+    _tag(version,NS_CPL,"Id","urn:uuid:"+str(uuid.uuid5(uuid.UUID(cpl_id.removeprefix("urn:uuid:")),"NVP-content-version")))
+    _tag(version,NS_CPL,"LabelText",title)
+    ET.SubElement(cpl,"{"+NS_CPL+"}RatingList")
+
 def _u():
     return "urn:uuid:"+str(uuid.uuid4())
 
@@ -88,6 +94,7 @@ def _compose_xml(picture,sound,*,title,issued):
     _tag(cpl,NS_CPL,"Creator","NVP native deterministic DCP")
     _tag(cpl,NS_CPL,"ContentTitleText",title)
     _tag(cpl,NS_CPL,"ContentKind","feature")
+    _content_version(cpl,title,cpl_id)
     reels=ET.SubElement(cpl,"{"+NS_CPL+"}ReelList")
     reel=ET.SubElement(reels,"{"+NS_CPL+"}Reel")
     _tag(reel,NS_CPL,"Id",reel_id)
@@ -99,7 +106,9 @@ def _compose_xml(picture,sound,*,title,issued):
         _tag(node,NS_CPL,"IntrinsicDuration",frames)
         _tag(node,NS_CPL,"EntryPoint",0)
         _tag(node,NS_CPL,"Duration",frames)
+        _tag(node,NS_CPL,"Hash",_hash_pkl(picture["bytes"] if tag=="MainPicture" else sound["bytes"]))
         if tag=="MainPicture":
+            _tag(node,NS_CPL,"FrameRate","24 1")
             width,height,_=PROFILES[picture["profile"]]
             _tag(node,NS_CPL,"ScreenAspectRatio",f"{width} {height}")
     cpl_bytes=_xml(cpl)
@@ -132,10 +141,10 @@ def _compose_xml(picture,sound,*,title,issued):
     amap=ET.Element("{"+NS_AM+"}AssetMap")
     _tag(amap,NS_AM,"Id",am_id)
     _tag(amap,NS_AM,"AnnotationText",title)
-    _tag(amap,NS_AM,"IssueDate",issued)
-    _tag(amap,NS_AM,"Issuer","NVP Source-Preserving Cinema Output")
     _tag(amap,NS_AM,"Creator","NVP native deterministic DCP")
     _tag(amap,NS_AM,"VolumeCount",1)
+    _tag(amap,NS_AM,"IssueDate",issued)
+    _tag(amap,NS_AM,"Issuer","NVP Source-Preserving Cinema Output")
     mapped=ET.SubElement(amap,"{"+NS_AM+"}AssetList")
     for uid,name,mime in [(pkl_id,"PKL.xml","text/xml"),*entries]:
         asset=ET.SubElement(mapped,"{"+NS_AM+"}Asset")
@@ -227,7 +236,11 @@ def publish_dcp_candidate(index:FilmIndex,pid,*,take_id,take_revision,
             with file.open("xb") as writer:
                 writer.write(data)
                 writer.flush();os.fsync(writer.fileno())
-        reviewed=inspect_dcp_structure(stage)
+        from backend.nvp_dci_package import inspect_cinema_package
+        reviewed=inspect_cinema_package(stage,expected_profile=picture["profile"])
+        from backend.nvp_wo3_dcp_structure import _hash_file
+        if any(_hash_file(stage/name)[2]!=_sha_bytes(data) for name,data in files.items()):
+            raise PermissionError("Staged package changed after independent audit")
         if reviewed["status"]!="STRUCTURE_AND_SHA_VERIFIED":
             raise RuntimeError("Independent output package integrity rejected")
         # Flush stage directory entries before OS-enforced atomic no-replace.

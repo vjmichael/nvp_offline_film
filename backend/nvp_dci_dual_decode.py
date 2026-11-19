@@ -1,7 +1,6 @@
 """Independent decoder numerical evidence, not source/color or ISO certification."""
 from hashlib import sha256
 from math import sqrt, log10
-import numpy as np
 
 MAX_RASTER_BYTES=4096*2160*6
 
@@ -9,6 +8,7 @@ def compare_xyz12(primary,secondary):
     if (type(primary) is not bytes or type(secondary) is not bytes or
         not 6<=len(primary)<=MAX_RASTER_BYTES or len(primary)%6 or len(primary)!=len(secondary)):
         raise ValueError('Exact matching bounded XYZ12 rasters required')
+    import numpy as np
     largest=np.zeros(3,dtype=np.int64)
     summed=np.zeros(3,dtype=np.int64)
     different=np.zeros(3,dtype=np.int64)

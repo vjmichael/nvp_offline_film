@@ -148,7 +148,7 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
 
 
 def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_codestream_sha256,
-                        expected_sound_pcm_sha256,profile,expected_frames,second_decoder=None,reference_hashes=None,reference_reader=None):
+                        expected_sound_pcm_sha256,profile,expected_frames,second_decoder=None,reference_hashes=None,reference_reader=None,descriptor_info=None):
     assets=_single_reel_tracks(tracks)
     source=Path(folder).resolve(strict=True)
     if any(assets[k]["duration_frames"]!=expected_frames for k in assets):
@@ -166,6 +166,14 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
             from backend.nvp_wo3_native_codecs import digest_file
             if digest_file(dest)!=audit["assets"][assets[kind]["asset_id"]]["sha256"]:
                 raise RuntimeError("MXF changed during encrypted staging")
+        descriptor_props={}
+        if descriptor_info is not None:
+            from backend.nvp_wo3_mxf_native import _read_info
+            from backend.nvp_dci_package import verify_native_track_descriptor
+            for kind in ("picture","sound"):
+                props,_receipt=_read_info(descriptor_info,kind+".mxf",root)
+                descriptor_props[kind]=props
+            verify_native_track_descriptor(descriptor_props["picture"],kind="picture",asset_id=assets["picture"]["asset_id"],frames=expected_frames,profile=profile)
         unwrap.run(["-d",str(expected_frames),"picture.mxf","p_"],
                    cwd=root,timeout=3600)
         expected_names={f"p_{i:06d}.j2c" for i in range(expected_frames)}
@@ -227,6 +235,12 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
         source_pcm=_read_pcm24(audio,expected_frames)
         if _hash_bytes(source_pcm)!=expected_sound_pcm_sha256:
             raise RuntimeError("Real sound MXF altered source-approved PCM")
+        if descriptor_info is not None:
+            verify_native_track_descriptor(descriptor_props["sound"],kind="sound",asset_id=assets["sound"]["asset_id"],frames=expected_frames,profile=profile,channels=len(source_pcm)//(expected_frames*2000*3))
+            from backend.nvp_wo3_native_codecs import digest_file
+            for kind in ("picture","sound"):
+                if digest_file(root/(kind+".mxf"))!=audit["assets"][assets[kind]["asset_id"]]["sha256"]:
+                    raise PermissionError("MXF changed during descriptor/essence audit")
         def aggregate(rows):
             return summarize_xyz12(rows,expected_frames=expected_frames,pixels_per_frame=width*height)
         return {
@@ -239,6 +253,7 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
             "pcm_channel_count":len(source_pcm)//(expected_frames*2000*3),
             "pcm_sample_frames_per_channel":expected_frames*2000,
             "minimum_one_second_track_duration_verified":expected_frames>=24,
+            "mxf_descriptor_crosscheck_verified":descriptor_info is not None,
             "independent_second_decoder_verified":second_decoder is not None and len(dual_receipts)==expected_frames,
             "second_decoder_comparisons":dual_receipts,
             "second_decoder_summary":aggregate(dual_receipts) if second_decoder is not None else None,
@@ -262,7 +277,7 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
         }
 
 
-def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profile="2K_FLAT_24",second_decoder=None,reference_reader=None):
+def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profile="2K_FLAT_24",second_decoder=None,reference_reader=None,descriptor_info=None):
     """Decode every ordered feature track with the existing bounded native stage.
 
     Trusted caller supplies exact CPL reel asset IDs and codestream/PCM
@@ -274,6 +289,10 @@ def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profi
             or not 2<=len(expected_reels)<=1000):
         raise PermissionError("Exact bounded native feature decode authority required")
     _verify_decoders(unwrap,decoder,second_decoder)
+    if descriptor_info is not None:
+        if descriptor_info.product!="ASDCP-asdcp_info":
+            raise PermissionError("Pinned native descriptor reader required")
+        common_codec_authority(unwrap,decoder,descriptor_info)
     expected=deepcopy(expected_reels)
     if reference_reader is not None and second_decoder is None:
         raise PermissionError("Source comparison qualification requires both decoders")
@@ -286,6 +305,9 @@ def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profi
         part["ordered_codestream_sha256"],part["pcm_sha256"]=_approved_digest_ledger(
             part["ordered_codestream_sha256"],part["pcm_sha256"],part["frames"])
         part["reference_hashes"]=_reference_ledger(part.get("ordered_xyz12_sha256"),reference_reader,part["frames"])
+    if descriptor_info is not None:
+        from backend.nvp_dci_package import inspect_cinema_package
+        profile_audit=inspect_cinema_package(folder,expected_profile=profile,require_minimum_track=True)
     audit=inspect_dcp_structure(folder)
     if (audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
             audit["reel_count"]!=len(expected) or len(audit["tracks"])!=2*len(expected)):
@@ -304,11 +326,13 @@ def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profi
             raise PermissionError("Approved feature reel identity/order changed")
         reports.append(_decode_reel_tracks(folder,audit,tracks,unwrap=unwrap,decoder=decoder,
             expected_picture_codestream_sha256=part["ordered_codestream_sha256"],
-            expected_sound_pcm_sha256=part["pcm_sha256"],profile=profile,expected_frames=part["frames"],second_decoder=second_decoder,reference_hashes=part["reference_hashes"],reference_reader=reference_reader))
+            expected_sound_pcm_sha256=part["pcm_sha256"],profile=profile,expected_frames=part["frames"],second_decoder=second_decoder,reference_hashes=part["reference_hashes"],reference_reader=reference_reader,descriptor_info=descriptor_info))
     if len({r["cinema_rate_constraints"]["wavelet_levels"] for r in reports})!=1:
         raise ValueError("Wavelet level count differs across feature reels")
     if inspect_dcp_structure(folder)!=audit:
         raise PermissionError("Feature package changed during native verification")
+    if descriptor_info is not None and inspect_cinema_package(folder,expected_profile=profile,require_minimum_track=True)!=profile_audit:
+        raise PermissionError("Package profile changed during feature readback")
     frames=sum(x["frames_decoded"] for x in reports)
     width,height,_=PROFILES[profile]
     def feature_summary(rows):
@@ -319,6 +343,8 @@ def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profi
             "frames_decoded":sum(x["frames_decoded"] for x in reports),
             "reels":reports,"all_reel_packet_coverage_verified":all(r["cinema_rate_constraints"]["packet_coverage_verified"] for r in reports),
             "all_tracks_minimum_one_second_verified":all(r["minimum_one_second_track_duration_verified"] for r in reports),
+            "all_reels_mxf_descriptor_crosscheck_verified":all(r["mxf_descriptor_crosscheck_verified"] for r in reports),
+            "nvp_unsigned_xml_profile_verified":descriptor_info is not None,
             "all_reels_pcm24_sample_exact":all(r["pcm24_48000_sample_exact"] for r in reports),
             "pcm_channel_count":reports[0]["pcm_channel_count"],
             "pcm_sample_frames_per_channel":sum(r["pcm_sample_frames_per_channel"] for r in reports),

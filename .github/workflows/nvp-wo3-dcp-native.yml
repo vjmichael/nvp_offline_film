@@ -11,6 +11,13 @@ on:
       - 'tools/nvp_dci_stage_jasper.py'
       - 'tools/nvp_dci_jasper_decode.c'
       - 'backend/nvp_dci_dual_decode.py'
+      - 'backend/nvp_dci_surround*.py'
+      - 'backend/nvp_dci_package*.py'
+      - 'tools/nvp_dci_schema_ci.py'
+      - 'backend/nvp_wo4_file_dcp.py'
+      - 'backend/nvp_wo4_multireel.py'
+      - 'tests/test_nvp_dci_surround.py'
+      - 'tests/nvp_dci_surround_ci.py'
       - 'tests/nvp_wo4_sustained_ci.py'
       - 'tests/nvp_wo4_unique_frame_pilot_ci.py'
       - 'tests/test_nvp_wo3_*.py'
@@ -29,6 +36,13 @@ on:
       - 'tools/nvp_dci_stage_jasper.py'
       - 'tools/nvp_dci_jasper_decode.c'
       - 'backend/nvp_dci_dual_decode.py'
+      - 'backend/nvp_dci_surround*.py'
+      - 'backend/nvp_dci_package*.py'
+      - 'tools/nvp_dci_schema_ci.py'
+      - 'backend/nvp_wo4_file_dcp.py'
+      - 'backend/nvp_wo4_multireel.py'
+      - 'tests/test_nvp_dci_surround.py'
+      - 'tests/nvp_dci_surround_ci.py'
       - 'tests/nvp_wo4_sustained_ci.py'
       - 'tests/nvp_wo4_unique_frame_pilot_ci.py'
       - 'tests/test_nvp_wo3_*.py'
@@ -60,19 +74,36 @@ jobs:
         with:
           python-version: ${{ matrix.py }}
       - name: Native foundation
-        run: python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32
+        run: python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32 'lxml==6.1.1'
       - name: Original metadata and source tests, no fake essence acceptance
         shell: pwsh
         run: |
           python -m compileall -q backend tests
           if ($LASTEXITCODE -ne 0) { throw 'Source syntax failure' }
-          foreach ($f in @('dcp_structure','native_delivery','codec_bundle_provenance','atomic_publish','crash_publish_process','export_recovery','j2k_header_contract','protected_contract','dci_codestream','dci_packets','dci_rate_control')) {
+          foreach ($f in @('dcp_structure','dci_package','native_delivery','codec_bundle_provenance','atomic_publish','crash_publish_process','export_recovery','j2k_header_contract','protected_contract','dci_codestream','dci_packets','dci_rate_control')) {
             python -m unittest discover -s tests -p ("test_nvp_wo3_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO3 original source suite failed: $f" }
           }
+          python -m unittest discover -s tests -p test_nvp_dci_surround.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Independent surround source tests failed' }
           python tools/nvp_no_ffmpeg_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+      - uses: actions/checkout@v4
+        if: matrix.py == '3.13'
+        with:
+          repository: cth103/libdcp
+          ref: 277f5ff221b073a88111013612d6441928924cbc
+          path: deps/dci-schema-reference
+          persist-credentials: false
+          sparse-checkout: xsd
+      - name: Independent XSD check against exact reviewed schema mirrors
+        if: matrix.py == '3.13'
+        shell: pwsh
+        run: |
+          if ((git -C deps/dci-schema-reference rev-parse HEAD).Trim() -ne '277f5ff221b073a88111013612d6441928924cbc') { throw 'Schema source drift' }
+          python -m tools.nvp_dci_schema_ci deps/dci-schema-reference/xsd
+          if ($LASTEXITCODE -ne 0) { throw 'Independent XSD mirror validation failed' }
   wo3-real-protected-native-cinema:
     name: Real protected Windows OpenJPEG 2K/4K, variable quality and SMPTE MXF PCM roundtrip
     runs-on: windows-2025
@@ -101,6 +132,13 @@ jobs:
           ref: 63e106c80eb72af9fd4fa28772499ab0138b9994
           path: deps/jasper
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cth103/libdcp
+          ref: 277f5ff221b073a88111013612d6441928924cbc
+          path: deps/dci-schema-reference
+          persist-credentials: false
+          sparse-checkout: xsd
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -141,15 +179,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Independent decoder configure' }
           cmake --build $jasperBuild --config Release --parallel 2 --target nvp_jasper_decode
           if ($LASTEXITCODE -ne 0) { throw 'Independent decoder compile' }
-          $matches=@(Get-ChildItem -LiteralPath $jasperBuild -Recurse -File -Filter nvp_jasper_decode.exe | Where-Object {$_.FullName -match 'Release'})
-          if ($matches.Count -ne 1) { throw 'Expected one actual independent decoder' }
-          Copy-Item -LiteralPath $matches[0].FullName -Destination (Join-Path $out 'nvp_jasper_decode.exe')
+          # Pinned JasPer's root target sets the executable into the binary root,
+          # confirmed by Windows MSBuild's exact 5f75906a output. Fresh build
+          # directory plus a unique regular file; no recursive fallback.
+          $decoder=Join-Path $jasperBuild 'nvp_jasper_decode.exe'
+          $matches=@(Get-ChildItem -LiteralPath $jasperBuild -Recurse -File -Filter nvp_jasper_decode.exe)
+          if ($matches.Count -ne 1 -or $matches[0].FullName -ne $decoder -or ($matches[0].Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Expected one actual independent decoder at exact binary root' }
+          Copy-Item -LiteralPath $decoder -Destination (Join-Path $out 'nvp_jasper_decode.exe')
           "NVP_WO3_BUILD_TOOLS=$out" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install foundation and provision reviewed CI-only codec manifest
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32
+          python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32 'lxml==6.1.1'
           if ($LASTEXITCODE -ne 0) { throw 'Native foundation missing' }
           $program=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion').ProgramFilesDir
           $env:NVP_WO3_FIXTURE_BUNDLE=Join-Path $program 'NVP-WO3-Generated-CI-Codecs'
@@ -170,6 +212,7 @@ jobs:
           "NVP_NATIVE_JASPER_DECODE=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'nvp_jasper_decode.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "NVP_NATIVE_OPENJPEG_4K=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: All four original real native codec tests, no skips
+        id: original_essence
         shell: pwsh
         run: |
           @'
@@ -191,10 +234,20 @@ jobs:
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Original WO3 native acceptance failed' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
-      - name: Independent dual-decoder full essence coverage on two complete reels per profile
+      - name: Independent protected 5.1 and 7.1DS native sound reel and descriptor readback
         shell: pwsh
         run: |
           $env:PYTHONPATH=(Get-Location).Path
+          python tests/nvp_dci_surround_ci.py
+          if ($LASTEXITCODE -ne 0) { throw 'Independent native surround qualification failed' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+      - name: Independent dual-decoder full essence coverage on two complete reels per profile
+        if: ${{ !cancelled() && steps.original_essence.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          if ((git -C deps/dci-schema-reference rev-parse HEAD).Trim() -ne '277f5ff221b073a88111013612d6441928924cbc') { throw 'Schema source drift' }
+          $env:NVP_DCI_SCHEMA_REFERENCE=(Resolve-Path deps/dci-schema-reference/xsd).Path
           foreach ($profile in @('2K_FLAT_24','4K_SCOPE_24')) {
             $root=Join-Path $env:NVP_WO3_FIXTURE_ROOT ("dual-"+$profile)
             python tests/nvp_wo4_sustained_ci.py --root $root --profile $profile --frames 48 --reel-frames 24 --dual-qualification

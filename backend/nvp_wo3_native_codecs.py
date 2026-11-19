@@ -27,6 +27,7 @@ from backend.nvp_wo3_codec_bundle_provenance import verify_native_codec_bundle, 
 from backend.nvp_wo3_j2k_audit import PROFILES
 from backend.nvp_dci_codestream import MAX_FRAME_BYTES as MAX_CINEMA_CODESTREAM_BYTES
 from backend.nvp_dci_packets import inspect_cinema_packets
+from backend.nvp_dci_surround import MCA_EXPRESSION
 
 FORMAT="nvp.wo3.native_openjpeg_frame.v1"
 MAX_PROCESS_SECONDS=180
@@ -104,12 +105,18 @@ def _approved_arguments(product,args):
                bool(re.fullmatch(r"p_[0-9]{6}\.j2c",a[1])) and
                a[3]=="jasper_"+a[1][2:8]+".ppm")
     elif product=="ASDCP-asdcp_info":
-        valid=len(a)==3 and a[:2]==["-i","-d"] and a[2] in ("picture.mxf","sound.mxf")
+        valid=(len(a)==3 and a[:2]==["-i","-d"] and a[2] in ("picture.mxf","sound.mxf")) or a==["-i","-d","-H","sound.mxf"]
     elif product=="ASDCP-asdcp_wrap":
         valid=(len(a)==9 and a[:2]==["-L","-a"] and
                bool(re.fullmatch(r"[0-9a-f]{32}",a[2])) and
                a[3:6]==["-p","24","-d"] and count(a[6]) and
                a[7:] in (["source_j2c","picture.mxf"],["source.wav","sound.mxf"]))
+        # Only the two exact reviewed Configuration-4/MCA soundfield expressions.
+        valid=valid or (len(a)==12 and a[:2]==["-L","-a"] and
+            bool(re.fullmatch(r"[0-9a-f]{32}",a[2])) and a[3:6]==["-p","24","-d"] and
+            bool(re.fullmatch(r"[1-9][0-9]{1,3}",a[6])) and 24<=int(a[6])<=7200 and
+            a[7:9]==["-w","-m"] and a[9] in MCA_EXPRESSION.values() and
+            a[10:]==["source.wav","sound.mxf"])
     elif product=="ASDCP-asdcp_unwrap":
         valid=((len(a)==4 and a[0]=="-d" and count(a[1]) and
                a[2:] in (["picture.mxf","p_"],["sound.mxf","audio"])) or

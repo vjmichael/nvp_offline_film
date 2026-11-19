@@ -23,6 +23,42 @@ class Window:
         return True
 
 
+class CinemaDependencyIsolation(unittest.TestCase):
+    def test_camera_metadata_imports_need_no_numerical_runtime(self):
+        import subprocess
+        import sys
+        code = r"""
+import importlib.abc
+import sys
+class BlockNumerics(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in ('numpy', 'scipy'):
+            raise ModuleNotFoundError('numeric runtime intentionally absent', name=fullname)
+sys.meta_path.insert(0, BlockNumerics())
+from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
+from backend.nvp_wo4_xyz12_master import FORMAT
+from backend.nvp_dci_dual_decode import compare_xyz12
+from backend.nvp_dci_surround import validate_layout, route_block
+from backend.nvp_dci_color_reference import REVISION
+assert FORMAT and REVISION and TrustedDesktopCameraBridge
+assert validate_layout('5.1', ['L','R','C','LFE','Ls','Rs']) == 6
+for operation in (lambda: compare_xyz12(bytes(6),bytes(6)),
+                  lambda: route_block(bytes(18),'5.1',['L','R','C','LFE','Ls','Rs'])):
+    try:
+        operation()
+    except ModuleNotFoundError as exc:
+        assert exc.name == 'numpy'
+    else:
+        raise AssertionError('Numeric work executed without required runtime')
+assert 'numpy' not in sys.modules and 'scipy' not in sys.modules
+"""
+        # -S avoids environment-specific sitecustomize preloading NumPy.
+        code = "import sys\nsys.path[:] = " + repr(sys.path) + "\n" + code
+        result = subprocess.run([sys.executable, '-S', '-c', code], capture_output=True,
+                                text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 class RetiredCameraContract(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory()
