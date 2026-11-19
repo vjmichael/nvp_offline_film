@@ -27,13 +27,15 @@ from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
 from backend.nvp_w1g_release_gate import inspect_original_process_journals
 
 
-def run(root,profile,frame_count,reel_frames):
+def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
     if os.name!="nt" or os.environ.get("GITHUB_ACTIONS")!="true":
         raise PermissionError("Generated Windows CI fixtures only")
     if (profile not in PROFILES or type(frame_count) is not int or
         not 6<=frame_count<=30*60*24 or type(reel_frames) is not int or
         not 3<=reel_frames<=7200 or frame_count<=reel_frames):
         raise ValueError("Bounded synthetic multireel duration required")
+    if type(dual_qualification) is not bool or (dual_qualification and (frame_count,reel_frames)!=(48,24)):
+        raise ValueError("Dual qualification requires two full 24-frame reels")
     root=Path(root).absolute()
     root.mkdir(mode=0o700,exist_ok=False)
     require_efs_stage(root)
@@ -47,22 +49,28 @@ def run(root,profile,frame_count,reel_frames):
     started=time.monotonic()
     originals=[]
     encoded=[]
-    for i,value in enumerate((120,1000,2200)):
+    unique=12 if dual_qualification else 3
+    for i in range(unique):
+        value=(120,1000,2200)[i%3]
         path=root/f"input-{i}.xyz12"
-        line=value.to_bytes(2,"big")*3*width
-        h=sha256()
-        with path.open("xb") as out:
-            for _ in range(height):
-                out.write(line);h.update(line)
-            out.flush();os.fsync(out.fileno())
-        digest=h.hexdigest()
+        if dual_qualification:
+            from nvp_wo4_unique_frame_pilot_ci import patterned_xyz12
+            digest=patterned_xyz12(path,width,height,i)
+        else:
+            line=value.to_bytes(2,"big")*3*width
+            h=sha256()
+            with path.open("xb") as out:
+                for _ in range(height):
+                    out.write(line);h.update(line)
+                out.flush();os.fsync(out.fileno())
+            digest=h.hexdigest()
         originals.append((path,digest))
         stage=root/f"codec-{i}";stage.mkdir()
         record=encode_disk_xyz12(enc,profile=profile,source_path=str(path),
             source_sha256=digest,source_take_sha=origin,private_work=stage,check_cancel=never)
         encoded.append((stage/"frame.j2c",record["codestream_sha256"],record["codestream_bytes"]))
-    if len({e[1] for e in encoded})!=3:
-        raise RuntimeError("Synthetic inputs must encode three distinct codestreams")
+    if len({e[1] for e in encoded})!=unique:
+        raise RuntimeError("Synthetic inputs must encode distinct codestreams")
     peak=max(e[2] for e in encoded)
     # Two copies, per-frame overhead and 20 MiB reserve; also obey the
     # exact streamed sound bound for stereo PCM24.
@@ -72,7 +80,10 @@ def run(root,profile,frame_count,reel_frames):
     if not 2<=plan["reel_count"]<=127:
         raise ValueError("Synthetic duration exceeds approved feature dependency budget")
     require_stage_space(root,frame_count*(4*peak+4*12000+16384)+64*1024*1024)
+    if dual_qualification and [r["frame_count"] for r in plan["reels"]]!=[24,24]:
+        raise RuntimeError("Dual qualification requires both full reels")
     parts=[]
+    expected_reels=[]
     for n,r in enumerate(plan["reels"]):
         count=r["frame_count"]
         reel=root/f"reel-{n:03d}";reel.mkdir()
@@ -81,7 +92,7 @@ def run(root,profile,frame_count,reel_frames):
         sstage=reel/"sound";sstage.mkdir()
         shas=[]
         for i in range(count):
-            source,digest,size=encoded[(r["first_frame"]+i)%3]
+            source,digest,size=encoded[((r["first_frame"]+i) if not dual_qualification or n==0 else (unique-1-i))%unique]
             _copy_protected(source,frames/f"{i:06d}.j2c",digest,size,never)
             shas.append(digest)
         pic_id=str(uuid4());snd_id=str(uuid4())
@@ -92,7 +103,11 @@ def run(root,profile,frame_count,reel_frames):
         pcm_digest=sha256()
         block=b"\0"*12000
         with pcm.open("xb") as out:
-            for _ in range(count):
+            for i in range(count):
+                if dual_qualification:
+                    # Distinct nonzero 24-bit stereo samples across reels.
+                    value=(n*24+i+1)*1000
+                    block=(value.to_bytes(3,"little",signed=True)+(-value).to_bytes(3,"little",signed=True))*2000
                 out.write(block);pcm_digest.update(block)
             out.flush();os.fsync(out.fileno())
         wav=stream_master_pcm24_candidate(pcm,source_sha256=pcm_digest.hexdigest(),
@@ -100,6 +115,8 @@ def run(root,profile,frame_count,reel_frames):
             output_root=reel,approve=lambda _:True)
         sound=wrap_supervised_sound(wrap,info,candidate=wav,source_take_sha=origin,
             frames=count,sound_uuid=snd_id,stage_dir=sstage,check_cancel=never)
+        expected_reels.append({"picture_uuid":pic_id,"sound_uuid":snd_id,"frames":count,
+            "ordered_codestream_sha256":shas,"pcm_sha256":pcm_digest.hexdigest()})
         fields={"source_take_sha256":origin,"frame_count":count,"edit_rate":[24,1],
                 "source_modified":False,"production_dcp_accepted":False}
         parts.append({"start_tick":r["start_tick"],"end_tick":r["end_tick"],
@@ -115,6 +132,19 @@ def run(root,profile,frame_count,reel_frames):
     audit=inspect_dcp_structure(result["destination"])
     if audit["reel_durations"]!=[r["frames"] for r in parts] or sum(audit["reel_durations"])!=frame_count:
         raise RuntimeError("Native duration differs from planned frame count")
+    dual_report=None
+    if dual_qualification:
+        from backend.nvp_wo3_independent_essence import decode_full_multireel_candidate
+        dual_report=decode_full_multireel_candidate(result["destination"],
+            unwrap=fixture_codec("NVP_NATIVE_ASDCP_UNWRAP","ASDCP-asdcp_unwrap"),
+            decoder=fixture_codec("NVP_NATIVE_OPENJPEG_DECODE","OpenJPEG-opj_decompress"),
+            second_decoder=fixture_codec("NVP_NATIVE_JASPER_DECODE","JasPer-nvp_decode"),
+            expected_reels=expected_reels,profile=profile)
+        if (dual_report["frames_decoded"]!=48 or not dual_report["all_reel_packet_coverage_verified"] or
+            not dual_report["all_tracks_minimum_one_second_verified"] or
+            not dual_report["all_reels_independent_second_decoder_verified"] or
+            not all(r["pcm24_48000_sample_exact"] for r in dual_report["reels"])):
+            raise RuntimeError("Independent full native essence qualification incomplete")
     for path,digest in originals:
         if _hash_stream(path)[0]!=digest:
             raise PermissionError("Generated source changed")
@@ -123,7 +153,8 @@ def run(root,profile,frame_count,reel_frames):
         raise RuntimeError("Missing native custody")
     return {"status":"WO4_PROTECTED_NATIVE_DURATION_SAMPLE_PASS","profile":profile,
             "frame_slots":frame_count,"duration_seconds":frame_count/24,
-            "encoded_unique_source_frames":3,"reused_frame_slots":frame_count-3,
+            "encoded_unique_source_frames":unique,"reused_frame_slots":frame_count-unique,
+            "dual_decoder_report":dual_report,
             "real_native_reels":len(parts),"complete_structural_asset_hashes_verified":True,
             "elapsed_seconds":round(time.monotonic()-started,3),
             "creator_film_throughput_verified":False,"production_dcp_accepted":False}
@@ -135,5 +166,6 @@ if __name__=="__main__":
     parser.add_argument("--profile",choices=("2K_FLAT_24","4K_SCOPE_24"),required=True)
     parser.add_argument("--frames",type=int,default=48)
     parser.add_argument("--reel-frames",type=int,default=24)
+    parser.add_argument("--dual-qualification",action="store_true")
     args=parser.parse_args()
-    print(json.dumps(run(args.root,args.profile,args.frames,args.reel_frames)),flush=True)
+    print(json.dumps(run(args.root,args.profile,args.frames,args.reel_frames,dual_qualification=args.dual_qualification)),flush=True)

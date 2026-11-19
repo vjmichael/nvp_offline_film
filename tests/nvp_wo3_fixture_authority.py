@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from backend.nvp_wo3_native_codecs import (
     ProtectedCodecAuthority,ApprovedCodecBinary,ROLES)
+from backend.nvp_wo3_codec_bundle_provenance import DUAL_QUALIFICATION_FORMAT
 
 @lru_cache(maxsize=1)
 def authority():
@@ -23,7 +24,8 @@ def authority():
     return ProtectedCodecAuthority(bundle,manifest,
         manifest_sha256=os.environ["NVP_WO3_FIXTURE_MANIFEST_PIN"],
         runtime=runtime,project_id="wo3-generated-ci-fixture",
-        authorize_stage=approved,authorize_execution=approved,check_cancel=lambda:False)
+        authorize_stage=approved,authorize_execution=approved,check_cancel=lambda:False,
+        dual_decoder_qualification=manifest["format"]==DUAL_QUALIFICATION_FORMAT)
 
 def fixture_codec(env,product):
     host=authority()
@@ -36,7 +38,7 @@ def provision_generated_ci_fixture():
     import hashlib
     import shutil
     from backend.nvp_wo3_codec_bundle_provenance import (
-        REQUIRED,FORMAT,verify_native_codec_bundle)
+        REQUIRED,FORMAT,DUAL_QUALIFICATION_REQUIRED,verify_native_codec_bundle)
     if os.name!="nt" or os.environ.get("GITHUB_ACTIONS")!="true":
         raise PermissionError("Dedicated Windows CI fixture only")
     root=Path(os.environ["NVP_WO3_FIXTURE_BUNDLE"])
@@ -44,22 +46,25 @@ def provision_generated_ci_fixture():
     source=Path(os.environ["NVP_WO3_BUILD_TOOLS"])
     names={"openjpeg-encoder":"opj_compress.exe",
            "openjpeg-decoder":"opj_decompress.exe",
-           "asdcp-wrap":"asdcp-wrap.exe","asdcp-info":"asdcp-info.exe",
+           "asdcp-wrap":"asdcp-wrap.exe",
+           "asdcp-info":"asdcp-info.exe",
            "asdcp-unwrap":"asdcp-unwrap.exe"}
+    dual=os.environ.get("NVP_WO3_DUAL_QUALIFICATION")=="1"
+    if dual:names["jasper-decoder"]="nvp_jasper_decode.exe"
     tools={}
-    for role,(product,license_id) in REQUIRED.items():
+    for role,(product,license_id) in (DUAL_QUALIFICATION_REQUIRED if dual else REQUIRED).items():
         binary=root/names[role]
         shutil.copyfile(source/names[role],binary)
         notice=root/(product+".LICENSE")
         if not notice.exists():
-            shutil.copyfile(Path("deps/openjpeg/LICENSE" if product=="OpenJPEG"
-                                else "deps/asdcplib/COPYING"),notice)
+            license_path={"OpenJPEG":"deps/openjpeg/LICENSE","asdcplib":"deps/asdcplib/COPYING","JasPer":"deps/jasper/LICENSE.txt"}[product]
+            shutil.copyfile(Path(license_path),notice)
         tools[role]={"product":product,"license":license_id,
                      "filename":binary.name,"sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
                      "license_notice":notice.name,
                      "license_sha256":hashlib.sha256(notice.read_bytes()).hexdigest()}
-    manifest={"format":FORMAT,"tools":tools}
-    verify_native_codec_bundle(root,manifest)
+    manifest={"format":DUAL_QUALIFICATION_FORMAT if dual else FORMAT,"tools":tools}
+    verify_native_codec_bundle(root,manifest,allow_dual_qualification=dual)
     raw=json.dumps(manifest,sort_keys=True,separators=(",",":"),
                    ensure_ascii=True).encode("ascii")
     (root/"nvp-codec-manifest.json").write_bytes(raw)

@@ -19,6 +19,9 @@ REQUIRED = {
     "asdcp-info": ("asdcplib", "BSD-3-Clause"),
     "asdcp-unwrap": ("asdcplib", "BSD-3-Clause"),
 }
+# A distinct qualification-only manifest; do not silently weaken the original roster.
+DUAL_QUALIFICATION_FORMAT = "nvp.wo3.native_dual_decoder_qualification.v1"
+DUAL_QUALIFICATION_REQUIRED = {**REQUIRED, "jasper-decoder": ("JasPer", "JasPer-2.0")}
 SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}\Z")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -26,30 +29,38 @@ SHA = re.compile(r"[0-9a-f]{64}\Z")
 def _hash(file):
     digest = hashlib.sha256()
     with file.open("rb") as stream:
-        for packet in iter(lambda: stream.read(1024*1024), b""):
+        for packet in iter(lambda:stream.read(1024*1024), b""):
             digest.update(packet)
     return digest.hexdigest()
 
 
-def verify_native_codec_bundle(folder, manifest):
+def verify_native_codec_bundle(folder, manifest, *, allow_dual_qualification=False):
     """Fail closed on missing/corrupted binaries, license notices or components.
 
     manifest is assumed loaded by the trusted release host from a signed/
     vetted build artifact; this function does not establish its authenticity.
+    Dual-decoder qualification is an explicit non-installed host mode only.
     """
     root = Path(folder)
     if not root.is_absolute() or _linked_entry(root) or not root.is_dir():
         raise PermissionError("Trusted installed binary bundle directory required")
     root = root.resolve(strict=True)
-    if type(manifest) is not dict or manifest.get("format") != FORMAT:
+    if type(manifest) is not dict or type(allow_dual_qualification) is not bool:
+        raise PermissionError("Native codec release manifest format missing")
+    format_id = manifest.get("format")
+    if format_id==FORMAT:
+        required=REQUIRED
+    elif format_id==DUAL_QUALIFICATION_FORMAT and allow_dual_qualification:
+        required=DUAL_QUALIFICATION_REQUIRED
+    else:
         raise PermissionError("Native codec release manifest format missing")
     tools = manifest.get("tools")
-    if type(tools) is not dict or set(tools) != set(REQUIRED):
+    if type(tools) is not dict or set(tools) != set(required):
         raise PermissionError("All reviewed native codec binaries required")
     records = {}
     binary_names=set()
     notice_names=set()
-    for role, (product, license_id) in REQUIRED.items():
+    for role, (product, license_id) in required.items():
         item = tools[role]
         if (type(item) is not dict or item.get("product") != product or
                 item.get("license") != license_id or
@@ -64,6 +75,8 @@ def verify_native_codec_bundle(folder, manifest):
             raise PermissionError("Malformed native codec release provenance")
         filename=item["filename"]
         notice_name=item["license_notice"]
+        if role=="jasper-decoder" and filename!="nvp_jasper_decode.exe":
+            raise PermissionError("Exact reviewed JasPer adapter filename required")
         if (not _safe_leaf(filename) or not _safe_leaf(notice_name)
                 or filename.casefold() in binary_names
                 or filename.casefold() in notice_names
@@ -86,8 +99,10 @@ def verify_native_codec_bundle(folder, manifest):
                          "binary_sha256": item["sha256"],
                          "license": license_id,
                          "license_sha256": item["license_sha256"]}
+    if format_id==DUAL_QUALIFICATION_FORMAT and records["jasper-decoder"]["binary_sha256"] in {records[k]["binary_sha256"] for k in REQUIRED}:
+        raise PermissionError("Second decoder must not alias any original binary")
     # Fully independent signing and dependent DLL audits remain release gates.
-    return {"format": FORMAT, "status": "BUNDLE_CONTENTS_AND_NOTICES_HASH_VERIFIED",
+    return {"format": format_id, "status": "BUNDLE_CONTENTS_AND_NOTICES_HASH_VERIFIED",
             "tools": records, "signed_release_provenance_verified": False,
             "transitive_dependencies_verified": False,
             "installed_windows_linux_acceptance": False,

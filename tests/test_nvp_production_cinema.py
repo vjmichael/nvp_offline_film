@@ -138,7 +138,7 @@ class PictureReelJournalTest(unittest.TestCase):
 
     def test_three_real_durable_checkpoints_with_mocked_codec_only(self):
         job_id=self.submit()["job_id"]
-        raw=structural_frame(width=2,height=1)
+        raw=structural_frame(width=2,height=1,lengths=[20]*3)
         hash_value=sha256(raw).hexdigest()
         def worker(codec):
             return {"process_tree_custody_verified":True,"efs_verified":True,

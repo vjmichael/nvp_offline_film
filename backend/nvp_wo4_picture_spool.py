@@ -16,7 +16,8 @@ from backend.nvp_wo4_pcm_stream import _protected_path,_hash_stream
 from backend.nvp_wo4_mxf_stream import _copy_protected,_publish_protected
 from backend.nvp_wo3_dcp_structure import _linked_entry
 from backend.nvp_wo3_j2k_audit import PROFILES,MAX_CODESTREAM
-from backend.nvp_dci_codestream import inspect_cinema_codestream, ReelCodestreamAudit, MAX_FRAME_BYTES
+from backend.nvp_dci_codestream import MAX_FRAME_BYTES
+from backend.nvp_dci_packets import inspect_cinema_packets, ReelPacketAudit
 from backend.nvp_wo3_mxf_native import _read_info,_verify_info
 from backend.nvp_wo3_atomic_publish import _fsync_directory
 from backend.nvp_wo4_resource_budget import require_stage_space
@@ -106,8 +107,8 @@ def encode_disk_xyz12(codec,*,profile,source_path,source_sha256,
         encoded=stage/"cinema.j2k"
         _protected_path(encoded)
         if not 80<=encoded.stat().st_size<=MAX_FRAME_BYTES:
-            raise RuntimeError("Real bounded JPEG2000 codestream missing")
-        header=inspect_cinema_codestream(_read_bounded_protected_codestream(encoded),profile)
+            raise RuntimeError(f"Real JPEG2000 codestream outside cinema byte bounds: {encoded.stat().st_size} bytes (limit {MAX_FRAME_BYTES})")
+        header=inspect_cinema_packets(_read_bounded_protected_codestream(encoded),profile)
         if (_hash_stream(Path(source_path))!=(source_sha256,width*height*6)
                 or check_cancel()):
             raise PermissionError("Approved source changed or encoding cancelled")
@@ -155,7 +156,8 @@ def verify_frame_file(path,expected_sha,profile,*,audit=None):
         raise ValueError("Reel audit profile mismatch")
     if sha256(raw).hexdigest()!=expected_sha:
         raise PermissionError("Completed JPEG2000 frame digest changed")
-    inspect_cinema_codestream(raw,profile)
+    if audit is None:
+        inspect_cinema_packets(raw,profile)
     if _read_bounded_protected_codestream(p)!=raw:
         raise PermissionError("Completed JPEG2000 frame bytes changed on reopen")
     if audit is not None:
@@ -188,7 +190,7 @@ def wrap_disk_j2k_picture(wrap,info,*,frames_dir,stage_dir,
     if sorted(p.name for p in frames.iterdir())!=expected:
         raise PermissionError("Uncommitted/orphan codestream files require review")
     sizes=[]
-    rate_audit=ReelCodestreamAudit(profile)
+    rate_audit=ReelPacketAudit(profile)
     for name,digest in zip(expected,shas):
         if check_cancel():
             raise InterruptedError("Creator cancelled picture MXF")

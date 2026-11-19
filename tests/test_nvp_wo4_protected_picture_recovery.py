@@ -387,6 +387,8 @@ class NativePictureCheckpointRecovery(unittest.TestCase):
         self.assertEqual(result["frames_decoded"],12)
         self.assertEqual(sum(r["cinema_rate_constraints"]["frames_audited"] for r in result["reels"]),12)
         self.assertTrue(all(r["cinema_rate_constraints"]["declared_structure_and_rate_bounds_verified"] for r in result["reels"]))
+        self.assertTrue(result["all_reel_packet_coverage_verified"])
+        self.assertFalse(result["all_tracks_minimum_one_second_verified"])
         self.assertTrue(all(reel["pcm24_48000_sample_exact"] for reel in result["reels"]))
         # Match the previously independently decoded source content and order.
         decoded=[h for reel in result["reels"] for h in reel["decoded_frame_sha256"]]

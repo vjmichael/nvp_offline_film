@@ -22,10 +22,11 @@ from contextlib import contextmanager
 from backend.nvp_worker_containment import launch_contained
 from backend.nvp_w1g_encrypted_source import require_efs_stage,verify_efs_inputs
 from backend.nvp_wo3_dcp_structure import _linked_entry,_safe_leaf
-from backend.nvp_wo3_codec_bundle_provenance import verify_native_codec_bundle
+from backend.nvp_wo3_codec_bundle_provenance import verify_native_codec_bundle, DUAL_QUALIFICATION_FORMAT
 
 from backend.nvp_wo3_j2k_audit import PROFILES
-from backend.nvp_dci_codestream import inspect_cinema_codestream, MAX_FRAME_BYTES
+from backend.nvp_dci_codestream import MAX_FRAME_BYTES as MAX_CINEMA_CODESTREAM_BYTES
+from backend.nvp_dci_packets import inspect_cinema_packets
 
 FORMAT="nvp.wo3.native_openjpeg_frame.v1"
 MAX_PROCESS_SECONDS=180
@@ -43,6 +44,7 @@ def digest_file(path):
 ROLES={
     "OpenJPEG-opj_compress":"openjpeg-encoder",
     "OpenJPEG-opj_decompress":"openjpeg-decoder",
+    "JasPer-nvp_decode":"jasper-decoder",
     "ASDCP-asdcp_wrap":"asdcp-wrap",
     "ASDCP-asdcp_info":"asdcp-info",
     "ASDCP-asdcp_unwrap":"asdcp-unwrap",
@@ -97,6 +99,10 @@ def _approved_arguments(product,args):
                ((a[1]=="image.j2k" and a[3]=="decoded.ppm") or
                 (bool(re.fullmatch(r"p_[0-9]{6}\.j2c",a[1])) and
                  a[3]=="xyz_"+a[1][2:8]+".ppm")))
+    elif product=="JasPer-nvp_decode":
+        valid=(len(a)==4 and a[:1]==["-i"] and a[2]=="-o" and
+               bool(re.fullmatch(r"p_[0-9]{6}\.j2c",a[1])) and
+               a[3]=="jasper_"+a[1][2:8]+".ppm")
     elif product=="ASDCP-asdcp_info":
         valid=len(a)==3 and a[:2]==["-i","-d"] and a[2] in ("picture.mxf","sound.mxf")
     elif product=="ASDCP-asdcp_wrap":
@@ -119,7 +125,8 @@ class ProtectedCodecAuthority:
     fallback to a plain subprocess. Non-Windows protected jobs fail closed.
     """
     def __init__(self,bundle,manifest,*,manifest_sha256,runtime,project_id,
-                 authorize_stage,authorize_execution,check_cancel,installed_release=False):
+                 authorize_stage,authorize_execution,check_cancel,installed_release=False,
+                 dual_decoder_qualification=False):
         if os.name!="nt":
             raise PermissionError("WO3 protected execution requires Windows EFS/AppContainer")
         if (not all(callable(x) for x in
@@ -145,6 +152,12 @@ class ProtectedCodecAuthority:
         self.pin=_sha(manifest_sha256)
         if type(installed_release) is not bool:
             raise PermissionError("Explicit native codec custody mode required")
+        if (type(dual_decoder_qualification) is not bool or
+                (dual_decoder_qualification and (installed_release or
+                 project_id!="wo3-generated-ci-fixture" or
+                 self.manifest.get("format")!=DUAL_QUALIFICATION_FORMAT))):
+            raise PermissionError("Dual-decoder bundle is qualification-only, not installed release authority")
+        self._dual_decoder_qualification=dual_decoder_qualification
         self._installed_release=installed_release
         if installed_release:
             from backend._nvp_wo5_release_pin import RELEASE_CODEC_MANIFEST_SHA256
@@ -165,7 +178,7 @@ class ProtectedCodecAuthority:
                        ensure_ascii=True).encode("ascii")
         if hashlib.sha256(raw).hexdigest()!=self.pin:
             raise PermissionError("Codec manifest differs from independent build pin")
-        records=verify_native_codec_bundle(self.bundle,self.manifest)["tools"]
+        records=verify_native_codec_bundle(self.bundle,self.manifest,allow_dual_qualification=self._dual_decoder_qualification)["tools"]
         allowed={"nvp-codec-manifest.json"}
         for item in self.manifest["tools"].values():
             allowed.update((item["filename"],item["license_notice"]))
@@ -177,7 +190,10 @@ class ProtectedCodecAuthority:
         return records
 
     def verify_codec(self,codec):
-        item=self._verify_bundle()[ROLES[codec.product]]
+        records=self._verify_bundle()
+        if ROLES[codec.product] not in records:
+            raise PermissionError("Codec role not present in approved bundle")
+        item=records[ROLES[codec.product]]
         if (codec.executable!=self.bundle/item["filename"] or
             codec.sha256!=item["binary_sha256"]):
             raise PermissionError("Codec is not in the reviewed installed roster")
@@ -255,7 +271,7 @@ class ProtectedCodecAuthority:
             if (any(not _safe_leaf(p) for p in Path(relative).parts) or
                 not re.fullmatch(r"(?:stage_journal\.json|approved_xyz\.ppm|cinema\.j2k|"
                     r"source\.wav|picture\.mxf|sound\.mxf|image\.j2k|decoded\.ppm|audio|"
-                    r"source_j2c/[0-9]{6}\.j2c|p_[0-9]{6}\.j2c|xyz_[0-9]{6}\.ppm|"
+                    r"source_j2c/[0-9]{6}\.j2c|p_[0-9]{6}\.j2c|xyz_[0-9]{6}\.ppm|jasper_[0-9]{6}\.ppm|"
                     r"(?:stdout|stderr)_[0-9a-f]{32}\.log)",relative)):
                 raise PermissionError("Unreviewed codec stage entry")
             total+=item.stat().st_size
@@ -304,7 +320,7 @@ class ProtectedCodecAuthority:
             # Reject output collisions before any native write, including
             # conservative case-insensitive names on Windows.
             names={name.casefold() for name in before}
-            if codec.product in ("OpenJPEG-opj_compress","OpenJPEG-opj_decompress"):
+            if codec.product in ("OpenJPEG-opj_compress","OpenJPEG-opj_decompress","JasPer-nvp_decode"):
                 expected={args[3]}
             elif codec.product=="ASDCP-asdcp_wrap":
                 expected={args[-1]}
@@ -468,11 +484,11 @@ def encode_xyz12_frame(codec:ApprovedCodecBinary,xyz12,*,profile,
               "-p","CPRL","-mct","0","-I"]
         result=codec.run(args,cwd=root)
         if _linked_entry(out) or not out.is_file() or (
-            not 80<=out.stat().st_size<=MAX_FRAME_BYTES):
-            raise RuntimeError("OpenJPEG did not produce bounded codestream")
+            not 80<=out.stat().st_size<=MAX_CINEMA_CODESTREAM_BYTES):
+            raise RuntimeError("OpenJPEG did not produce a valid bounded cinema codestream (24fps hard ceiling 1302083 bytes)")
         with out.open("rb") as stream:
-            codestream=stream.read(MAX_FRAME_BYTES+1)
-        header=inspect_cinema_codestream(codestream,profile)
+            codestream=stream.read(MAX_CINEMA_CODESTREAM_BYTES+1)
+        header=inspect_cinema_packets(codestream,profile)
         return {
             "format":FORMAT,
             "profile":profile,

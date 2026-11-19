@@ -16,7 +16,7 @@ import wave
 
 from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,common_codec_authority,_sha,MAX_STAGE_BYTES
 from backend.nvp_wo3_dcp_structure import _linked_entry
-from backend.nvp_dci_codestream import ReelCodestreamAudit
+from backend.nvp_dci_packets import ReelPacketAudit
 
 FORMAT="nvp.wo3.native_asdcp_track.v1"
 MAX_REEL_FRAMES=144000
@@ -36,7 +36,7 @@ def _frame_receipts(frames,profile,*,audit=None):
     if type(frames) is not list or not 1<=len(frames)<=MAX_REEL_FRAMES:
         raise ValueError("Source picture sequence bounded to one reel")
     seen=[]
-    rate_audit=ReelCodestreamAudit(profile) if audit is None else audit
+    rate_audit=ReelPacketAudit(profile) if audit is None else audit
     if rate_audit.profile!=profile:
         raise ValueError("Reel audit profile mismatch")
     for i,frame in enumerate(frames):
@@ -93,7 +93,7 @@ def wrap_cinema_picture(wrap:ApprovedCodecBinary,info:ApprovedCodecBinary,
     if type(frames) is not list or not 1<=len(frames)<=MAX_REEL_FRAMES:
         raise ValueError("Source picture sequence bounded to one reel")
     frames=[dict(x) if type(x) is dict else x for x in frames]
-    rate_audit=ReelCodestreamAudit(profile)
+    rate_audit=ReelPacketAudit(profile)
     origin=_frame_receipts(frames,profile,audit=rate_audit)
     if len(frames)<3:
         raise ValueError("CineCert asdcp-info currently requires >=3 frames to avoid a native bitrate fault")

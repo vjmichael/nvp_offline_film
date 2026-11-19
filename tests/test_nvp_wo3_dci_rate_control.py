@@ -1,0 +1,68 @@
+"""Portable source and provenance denial tests; never a native decoder claim."""
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from hashlib import sha256
+import struct
+import unittest
+from backend.nvp_dci_dual_decode import compare_xyz12
+from backend.nvp_wo3_codec_bundle_provenance import (DUAL_QUALIFICATION_FORMAT,
+    DUAL_QUALIFICATION_REQUIRED, verify_native_codec_bundle)
+from tools.nvp_dci_patch_openjpeg import patch_bytes, ANCHOR, GUARD, TARGET
+
+class DCIQualificationTests(unittest.TestCase):
+    def test_pinned_patch_unique_anchor(self):
+        self.assertEqual(TARGET,1298000)
+        self.assertEqual(patch_bytes(b'prefix\n'+ANCHOR),b'prefix\n'+GUARD+ANCHOR)
+        self.assertIn(b'OPJ_CINEMA_24_CS',GUARD)
+        for raw in (b'',ANCHOR*2,GUARD+ANCHOR):
+            with self.assertRaises(ValueError):patch_bytes(raw)
+    def test_component_deltas_and_exact_identity(self):
+        a=struct.pack('>6H',0,1,4095,3,4,5);b=struct.pack('>6H',0,3,4094,7,4,5)
+        r=compare_xyz12(a,b)
+        self.assertEqual(r['max_absolute_delta_xyz'],[4,2,1]);self.assertEqual(r['different_samples_xyz'],[1,1,1])
+        self.assertEqual(r['mean_absolute_delta_xyz'],[2,1,.5]);self.assertFalse(r['exact_decoder_agreement'])
+        self.assertTrue(compare_xyz12(a,a)['exact_decoder_agreement'])
+        self.assertFalse(r['normative_decoder_tolerance_verified'])
+        for bad in (b'',b'123',a+b'123456',struct.pack('>6H',4096,0,0,0,0,0)):
+            with self.assertRaises(ValueError):compare_xyz12(a,bad)
+    def test_component_chunk_boundary_and_wide_accumulator(self):
+        # Maximum 4K raster: channel sum exceeds a signed 32-bit counter.
+        count=4096*2160
+        a=struct.pack('>3H',4095,0,4095)*count
+        b=struct.pack('>3H',0,4095,4094)*count
+        r=compare_xyz12(a,b)
+        self.assertEqual(r['pixels_compared'],count)
+        self.assertEqual(r['max_absolute_delta_xyz'],[4095,4095,1])
+        self.assertEqual(r['sum_absolute_delta_xyz'],[4095*count,4095*count,count])
+        self.assertEqual(r['different_samples_xyz'],[count]*3)
+        self.assertEqual(r['mean_absolute_delta_xyz'],[4095.,4095.,1.])
+        # Reject over-precision beyond a chunk boundary, not just its prefix.
+        with self.assertRaises(ValueError):
+            compare_xyz12(a,b[:-6]+struct.pack('>3H',4096,0,0))
+
+    def test_secondary_finite_argv(self):
+        from backend.nvp_wo3_native_codecs import _approved_arguments
+        role='JasPer-nvp_decode'
+        good=['-i','p_000012.j2c','-o','jasper_000012.ppm']
+        self.assertEqual(_approved_arguments(role,good),good)
+        for bad in (good+['-v'],['-i','../p_000012.j2c','-o',good[3]],
+                    ['-i',good[1],'-o','jasper_000013.ppm'],
+                    ['-i',good[1],'-o','xyz_000012.ppm']):
+            with self.assertRaises(PermissionError):_approved_arguments(role,bad)
+    def test_dual_roster_not_release_authority_and_alias_denied(self):
+        with TemporaryDirectory() as d:
+            path=Path(d); tools={}
+            for i,(role,(prod,license_id)) in enumerate(DUAL_QUALIFICATION_REQUIRED.items()):
+                name='nvp_jasper_decode.exe' if role=='jasper-decoder' else role+'.exe'
+                raw=bytes([i+1])*300; notice=prod+'.LICENSE'; text=prod.encode()*100
+                (path/name).write_bytes(raw);(path/notice).write_bytes(text)
+                tools[role]={'product':prod,'license':license_id,'filename':name,'sha256':sha256(raw).hexdigest(),
+                    'license_notice':notice,'license_sha256':sha256(text).hexdigest()}
+            m={'format':DUAL_QUALIFICATION_FORMAT,'tools':tools}
+            with self.assertRaises(PermissionError):verify_native_codec_bundle(path,m)
+            self.assertEqual(len(verify_native_codec_bundle(path,m,allow_dual_qualification=True)['tools']),6)
+            orig=tools['openjpeg-decoder']; second=tools['jasper-decoder']
+            (path/second['filename']).write_bytes((path/orig['filename']).read_bytes());second['sha256']=orig['sha256']
+            with self.assertRaises(PermissionError):verify_native_codec_bundle(path,m,allow_dual_qualification=True)
+
+if __name__=='__main__':unittest.main()

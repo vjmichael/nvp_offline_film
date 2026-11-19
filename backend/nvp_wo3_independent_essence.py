@@ -13,13 +13,15 @@ compliance, color calibration, or actual projector ingest.
 """
 from __future__ import annotations
 import hashlib
+from backend.nvp_dci_dual_decode import compare_xyz12
 from pathlib import Path
 import shutil
 import wave
 
 from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
 from backend.nvp_wo3_j2k_audit import PROFILES
-from backend.nvp_dci_codestream import ReelCodestreamAudit, MAX_FRAME_BYTES
+from backend.nvp_dci_codestream import MAX_FRAME_BYTES
+from backend.nvp_dci_packets import ReelPacketAudit
 from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,common_codec_authority,_sha as _validate_sha256,MAX_STAGE_BYTES
 from backend.nvp_wo3_dcp_structure import _asset_file,_linked_entry
 
@@ -85,12 +87,21 @@ def _ppm_header(file,*,width,height):
         raise RuntimeError("Actual native decoder produced invalid XYZ12 raster")
     return rest
 
+def _verify_decoders(unwrap,decoder,secondary):
+    if secondary is None:
+        common_codec_authority(unwrap,decoder)
+        return
+    if (not isinstance(secondary,ApprovedCodecBinary) or secondary.product!="JasPer-nvp_decode"
+            or secondary.sha256==decoder.sha256):
+        raise PermissionError("Distinct source-reviewed JasPer decoder required")
+    common_codec_authority(unwrap,decoder,secondary)
+
 def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
                               decoder:ApprovedCodecBinary,
                               expected_picture_codestream_sha256,
                               expected_sound_pcm_sha256,
                               profile="2K_FLAT_24",
-                              expected_frames):
+                              expected_frames, second_decoder=None):
     if unwrap.product!="ASDCP-asdcp_unwrap" or (
         decoder.product!="OpenJPEG-opj_decompress"):
         raise PermissionError("Exact native MXF/JPEG2000 decoding capabilities required")
@@ -100,18 +111,21 @@ def decode_full_dcp_candidate(folder,*,unwrap:ApprovedCodecBinary,
     expected_picture_codestream_sha256, expected_sound_pcm_sha256 = (
         _approved_digest_ledger(expected_picture_codestream_sha256,
                                 expected_sound_pcm_sha256, expected_frames))
-    common_codec_authority(unwrap,decoder)
+    _verify_decoders(unwrap,decoder,second_decoder)
     audit=inspect_dcp_structure(folder)
     if audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or (
         audit["reel_count"]!=1):
         raise RuntimeError("Only independently hashed single-reel DCP accepted")
-    return _decode_reel_tracks(folder,audit,audit["tracks"],unwrap=unwrap,decoder=decoder,
+    report=_decode_reel_tracks(folder,audit,audit["tracks"],unwrap=unwrap,decoder=decoder,
         expected_picture_codestream_sha256=expected_picture_codestream_sha256,
-        expected_sound_pcm_sha256=expected_sound_pcm_sha256,profile=profile,expected_frames=expected_frames)
+        expected_sound_pcm_sha256=expected_sound_pcm_sha256,profile=profile,expected_frames=expected_frames,second_decoder=second_decoder)
+    if inspect_dcp_structure(folder)!=audit:
+        raise PermissionError("Package changed during native verification")
+    return report
 
 
 def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_codestream_sha256,
-                        expected_sound_pcm_sha256,profile,expected_frames):
+                        expected_sound_pcm_sha256,profile,expected_frames,second_decoder=None):
     assets=_single_reel_tracks(tracks)
     source=Path(folder).resolve(strict=True)
     if any(assets[k]["duration_frames"]!=expected_frames for k in assets):
@@ -131,8 +145,13 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
                 raise RuntimeError("MXF changed during encrypted staging")
         unwrap.run(["-d",str(expected_frames),"picture.mxf","p_"],
                    cwd=root,timeout=3600)
+        expected_names={f"p_{i:06d}.j2c" for i in range(expected_frames)}
+        actual_names={p.name for p in root.iterdir() if p.name.casefold().startswith("p_")}
+        if actual_names!=expected_names:
+            raise RuntimeError("Native picture unwrap emitted missing or unexpected edit units")
         decoded_hashes=[]
-        rate_audit=ReelCodestreamAudit(profile)
+        dual_receipts=[]
+        rate_audit=ReelPacketAudit(profile)
         width,height,_=PROFILES[profile]
         for i,expected in enumerate(expected_picture_codestream_sha256):
             name="p_"+str(i).zfill(6)+".j2c"
@@ -150,6 +169,19 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
             decoder.run(["-i",name,"-o",out],cwd=root,timeout=240)
             pixels=_ppm_header(root/out,width=width,height=height)
             decoded_hashes.append(_hash_bytes(pixels))
+            if second_decoder is not None:
+                second_out="jasper_"+str(i).zfill(6)+".ppm"
+                if digest_file(j2k)!=expected:
+                    raise PermissionError("Exact extracted frame changed before secondary decode")
+                second_process=second_decoder.run(["-i",name,"-o",second_out],cwd=root,timeout=240)
+                if digest_file(j2k)!=expected:
+                    raise PermissionError("Exact extracted frame changed after secondary decode")
+                second_pixels=_ppm_header(root/second_out,width=width,height=height)
+                dual_receipts.append({"frame":i,"codestream_sha256":expected,
+                    "secondary_decoder_binary_sha256":second_decoder.sha256,
+                    "execution_scope_sha256":second_process["execution_scope_sha256"],
+                    **compare_xyz12(pixels,second_pixels)})
+                (root/second_out).unlink()
             j2k.unlink();(root/out).unlink()
         unwrap.run(["-d",str(expected_frames),"sound.mxf","audio"],
                    cwd=root,timeout=3600)
@@ -168,6 +200,14 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
             "picture_exact_codestream_sha_verified":True,
             "cinema_rate_constraints":rate_audit.finish(expected_frames),
             "pcm24_48000_sample_exact":True,
+            "minimum_one_second_track_duration_verified":expected_frames>=24,
+            "independent_second_decoder_verified":second_decoder is not None and len(dual_receipts)==expected_frames,
+            "second_decoder_comparisons":dual_receipts,
+            "second_decoder_exact_agreement":bool(dual_receipts) and all(x["exact_decoder_agreement"] for x in dual_receipts),
+            "second_decoder_reference_tolerance_verified":False,
+            "second_decoder_iso_conformance_verified":False,
+            "source_color_fidelity_verified":False,
+            "theatrical_audio_channel_mapping_verified":False,
             "verified_source_sound_pcm_sha256":_hash_bytes(source_pcm),
             "asdcplib_unwrap_sha256":unwrap.sha256,
             "openjpeg_decoder_sha256":decoder.sha256,
@@ -180,7 +220,7 @@ def _decode_reel_tracks(folder,audit,tracks,*,unwrap,decoder,expected_picture_co
         }
 
 
-def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profile="2K_FLAT_24"):
+def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profile="2K_FLAT_24",second_decoder=None):
     """Decode every ordered feature track with the existing bounded native stage.
 
     Trusted caller supplies exact CPL reel asset IDs and codestream/PCM
@@ -191,7 +231,7 @@ def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profi
             or profile not in PROFILES or type(expected_reels) is not list
             or not 2<=len(expected_reels)<=1000):
         raise PermissionError("Exact bounded native feature decode authority required")
-    common_codec_authority(unwrap,decoder)
+    _verify_decoders(unwrap,decoder,second_decoder)
     expected=deepcopy(expected_reels)
     for part in expected:
         if (type(part) is not dict or set(part)!={"picture_uuid","sound_uuid","frames",
@@ -218,11 +258,15 @@ def decode_full_multireel_candidate(folder,*,unwrap,decoder,expected_reels,profi
             raise PermissionError("Approved feature reel identity/order changed")
         reports.append(_decode_reel_tracks(folder,audit,tracks,unwrap=unwrap,decoder=decoder,
             expected_picture_codestream_sha256=part["ordered_codestream_sha256"],
-            expected_sound_pcm_sha256=part["pcm_sha256"],profile=profile,expected_frames=part["frames"]))
+            expected_sound_pcm_sha256=part["pcm_sha256"],profile=profile,expected_frames=part["frames"],second_decoder=second_decoder))
     if len({r["cinema_rate_constraints"]["wavelet_levels"] for r in reports})!=1:
         raise ValueError("Wavelet level count differs across feature reels")
     if inspect_dcp_structure(folder)!=audit:
         raise PermissionError("Feature package changed during native verification")
     return {"status":"ALL_NATIVE_FEATURE_ESSENCE_ROUNDTRIPPED","reel_count":len(reports),
             "frames_decoded":sum(x["frames_decoded"] for x in reports),
-            "reels":reports,"production_dcp_accepted":False}
+            "reels":reports,"all_reel_packet_coverage_verified":all(r["cinema_rate_constraints"]["packet_coverage_verified"] for r in reports),
+            "all_tracks_minimum_one_second_verified":all(r["minimum_one_second_track_duration_verified"] for r in reports),
+            "all_reels_independent_second_decoder_verified":all(r["independent_second_decoder_verified"] for r in reports),
+            "all_reels_second_decoder_exact_agreement":all(r["second_decoder_exact_agreement"] for r in reports),
+            "production_dcp_accepted":False}

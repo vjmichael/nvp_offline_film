@@ -129,13 +129,14 @@ class DCICodestreamConstraints(unittest.TestCase):
 
     def test_mxf_input_reaudits_bytes_despite_asserted_header_receipt(self):
         from backend.nvp_wo3_mxf_native import _frame_receipts
-        raw=structural_frame()
+        raw=structural_frame(lengths=[14+59]*3)
         def bind(data):
             return {"format":"nvp.wo3.native_openjpeg_frame.v1","codestream":data,
                     "codestream_sha256":hashlib.sha256(data).hexdigest(),
                     "independent_header_constraints_verified":True,
                     "original_approved_presentation_sha256":"a"*64}
         self.assertEqual(_frame_receipts([bind(raw)],"2K_FLAT_24"),"a"*64)
+        with self.assertRaises(ValueError):_frame_receipts([bind(structural_frame())],"2K_FLAT_24")
         bad=raw[:-2]+b"\xff\x93"
         self.assertEqual(inspect_j2k_header(bad,"2K_FLAT_24")["width"],1998)
         with self.assertRaises(ValueError):_frame_receipts([bind(bad)],"2K_FLAT_24")
@@ -145,7 +146,7 @@ class DCICodestreamConstraints(unittest.TestCase):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
         from backend.nvp_wo4_picture_spool import verify_frame_file
-        raw=structural_frame(); bad=raw+b"trailing"
+        raw=structural_frame(lengths=[14+59]*3); bad=raw+b"trailing"
         def fixture_identity(file, **kwargs):
             stat=Path(file).stat()
             return (stat.st_dev,stat.st_ino)

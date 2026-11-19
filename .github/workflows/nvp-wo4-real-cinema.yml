@@ -9,6 +9,8 @@ on:
       - 'tests/test_nvp_production_*.py'
       - 'backend/nvp_wo3_*.py'
       - 'backend/nvp_dci_codestream.py'
+      - 'backend/nvp_dci_packets.py'
+      - 'tools/nvp_dci_patch_openjpeg.py'
       - 'tests/test_nvp_wo4_*.py'
       - 'tests/nvp_wo4_unique_frame_pilot_ci.py'
       - 'tests/nvp_wo4_sustained_ci.py'
@@ -24,6 +26,8 @@ on:
       - 'tests/test_nvp_production_*.py'
       - 'backend/nvp_wo3_*.py'
       - 'backend/nvp_dci_codestream.py'
+      - 'backend/nvp_dci_packets.py'
+      - 'tools/nvp_dci_patch_openjpeg.py'
       - 'tests/test_nvp_wo4_*.py'
       - 'tests/nvp_wo4_unique_frame_pilot_ci.py'
       - 'tests/nvp_wo4_sustained_ci.py'
@@ -70,6 +74,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
+          python tools/nvp_dci_patch_openjpeg.py deps/openjpeg
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned OpenJPEG cinema rate-control patch failed' }
           cmake -S deps/openjpeg -B deps/openjpeg/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_CODEC=ON -DBUILD_TESTING=OFF -DBUILD_JPIP=OFF
           if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG configure' }
           cmake --build deps/openjpeg/build --config Release --parallel 2 --target opj_compress opj_decompress
