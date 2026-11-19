@@ -26,6 +26,7 @@ from backend.nvp_w1g_encrypted_source import require_efs_stage
 from backend.nvp_wo4_pcm_stream import _protected_path,_hash_stream
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 import threading
+from backend import nvp_paged_production_manifest as paged
 
 FORMAT = "nvp.wo4.production_job.v1"
 TASK_KIND = "VERIFY_APPROVED_MEDIA_V1"
@@ -158,7 +159,11 @@ class ProductionJournal:
                 pass
         self.db_identity=_protected_path(self.db_path)
         with self._tx() as db:
-            db.executescript("""
+            self._initialize_schema(db)
+
+    @staticmethod
+    def _initialize_schema(db):
+        db.executescript("""
                 CREATE TABLE IF NOT EXISTS production_jobs(
                     job_id TEXT PRIMARY KEY,
                     project_id TEXT NOT NULL,
@@ -199,7 +204,7 @@ class ProductionJournal:
                 );
                 CREATE INDEX IF NOT EXISTS production_segments_ready
                     ON production_segments(job_id,state,position);
-            """)
+            """+paged.SCHEMA)
 
     def _check_storage(self):
         if (_protected_path(self.root,directory=True)!=self.root_identity or
@@ -355,6 +360,68 @@ class ProductionJournal:
                 "manifest_sha256":manifest_sha,"assembly_sha256":assembly_sha256,
                 "segment_count":len(ordered),"production_dcp_accepted":False}
 
+    def submit_paged(self,index:FilmIndex,project_id,*,assembly_id,assembly_revision,
+                     assembly_sha256,page_factory,approve):
+        """Publish a replayable finite source-page factory atomically after consent.
+
+        No worker can claim a partly written job. The exact approved root must
+        be reproduced by the second pass; any error rolls back all pages/rows.
+        """
+        if (not isinstance(index,FilmIndex) or not callable(approve) or
+                type(project_id) is not str or not PROJECT_RE.fullmatch(project_id) or
+                type(assembly_id) is not str or not ID_RE.fullmatch(assembly_id) or
+                type(assembly_revision) is not int or assembly_revision<1 or
+                type(assembly_sha256) is not str or not SHA_RE.fullmatch(assembly_sha256)):
+            raise PermissionError("Exact trusted original assembly and approval required")
+        def original():
+            current=index.read_revision(project_id,assembly_id,assembly_revision)
+            if (current["document_sha256"]!=assembly_sha256 or
+                    current["kind"] not in ("edit","presentation")):
+                raise PermissionError("Original assembly identity changed")
+            return current["dependencies"]
+        deps=original()
+        summary=paged.scan(page_factory,_safe_source)
+        manifest={"format":paged.FORMAT,"task_kind":TASK_KIND,"project_id":project_id,
+                  "assembly_id":assembly_id,"assembly_revision":assembly_revision,
+                  "assembly_sha256":assembly_sha256,"assembly_dependencies":deps,
+                  **summary,"production_dcp_accepted":False,"ffmpeg_used":False}
+        encoded=_canonical(manifest)
+        manifest_sha=_digest(encoded)
+        scope={"operation":"nvp.supervisor.submit_approved_media_verification.paged.v2",
+               "project_id":project_id,"assembly_id":assembly_id,
+               "assembly_revision":assembly_revision,"assembly_sha256":assembly_sha256,
+               "manifest_sha256":manifest_sha,"task_kind":TASK_KIND,**summary}
+        if approve(deepcopy(scope)) is not True:
+            return {"format":paged.FORMAT,"status":"DENIED","filesystem_mutated":False}
+        if original()!=deps:
+            raise PermissionError("Assembly changed during production approval")
+        job_id=str(uuid4()); now=_now()
+        with self._tx() as db:
+            db.execute("""INSERT INTO production_jobs(job_id,project_id,assembly_id,
+                assembly_revision,assembly_sha256,manifest_sha256,manifest_json,task_kind,
+                state,updated_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (job_id,project_id,assembly_id,assembly_revision,assembly_sha256,
+                 manifest_sha,encoded.decode("ascii"),TASK_KIND,"QUEUED",now,now))
+            def commit_page(i,raw,digest,rows):
+                for item in rows:
+                    if (_safe_source(item["source_path"])!=item["source_path"] or
+                            _hash_stream(Path(item["source_path"]))!=(item["source_sha256"],item["source_bytes"])):
+                        raise PermissionError("Approved original source changed during publication")
+                db.execute("INSERT INTO production_manifest_pages VALUES(?,?,?,?)",
+                           (job_id,i,raw.decode("ascii"),digest))
+                db.executemany("""INSERT INTO production_segments(job_id,position,start_tick,
+                    end_tick,source_path,expected_sha256,expected_bytes,state)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                    ((job_id,x["position"],x["start_tick"],x["end_tick"],x["source_path"],
+                      x["source_sha256"],x["source_bytes"],"PENDING") for x in rows))
+            if paged.scan(page_factory,_safe_source,commit_page)!=summary or original()!=deps:
+                raise PermissionError("Approved original manifest changed during publication")
+            self._verified_manifest(db,job_id)
+            self._event(db,job_id,"JOB_SUBMITTED","Immutable paged revision-bound source plan")
+        return {"format":paged.FORMAT,"status":"QUEUED","job_id":job_id,
+                "manifest_sha256":manifest_sha,"assembly_sha256":assembly_sha256,
+                **summary,"production_dcp_accepted":False}
+
     def _verified_manifest(self,db,job_id):
         job=db.execute("SELECT * FROM production_jobs WHERE job_id=?",(job_id,)).fetchone()
         if job is None:
@@ -364,6 +431,13 @@ class ProductionJournal:
                 any(manifest.get(k)!=job[k] for k in
                     ("project_id","assembly_id","assembly_revision","assembly_sha256","task_kind"))):
             raise RuntimeError("Production journal manifest integrity failed")
+        if manifest.get("format")==paged.FORMAT:
+            if (job["task_kind"]!=TASK_KIND or
+                    manifest.get("production_dcp_accepted") is not False or
+                    manifest.get("ffmpeg_used") is not False):
+                raise RuntimeError("Invalid paged read-only production authority")
+            paged.verify(db,job_id,manifest)
+            return job,manifest
         ordered=manifest.get("segments",manifest.get("frames"))
         rows=db.execute("""SELECT position,start_tick,end_tick,source_path,
                                  expected_sha256,expected_bytes FROM production_segments
@@ -382,7 +456,11 @@ class ProductionJournal:
 
     def status(self, job_id):
         with self._read() as db:
+            if not db.in_transaction:
+                db.execute("BEGIN")
             job,manifest=self._verified_manifest(db,job_id)
+            if manifest.get("format")==paged.FORMAT:
+                return self._status_page(db,job,job_id,0,MAX_STATUS_PAGE)
             segments=[dict(row) for row in db.execute(
                 """SELECT position,start_tick,end_tick,state,verified_sha256,
                           verified_bytes,verified_at FROM production_segments
@@ -411,33 +489,38 @@ class ProductionJournal:
                 type(limit) is not int or not 1 <= limit <= MAX_STATUS_PAGE):
             raise ValueError("Bounded production status page required")
         with self._read() as db:
-            db.execute("BEGIN")
+            if not db.in_transaction:
+                db.execute("BEGIN")
             if expected_project_id is not None:
                 owner=db.execute("SELECT project_id FROM production_jobs WHERE job_id=?",
                                  (job_id,)).fetchone()
                 if owner is None or owner["project_id"]!=expected_project_id:
                     raise PermissionError("Production job outside authorized project")
             job,_=self._verified_manifest(db,job_id)
-            totals=db.execute("""SELECT COUNT(*), SUM(CASE WHEN state='VERIFIED' THEN 1 ELSE 0 END)
-                  FROM production_segments WHERE job_id=?""",(job_id,)).fetchone()
-            count, verified=totals[0],totals[1] or 0
-            if first_position >= count:
-                raise ValueError("Production status cursor outside original manifest")
-            rows=[dict(row) for row in db.execute("""SELECT position,start_tick,end_tick,state,
-                          verified_sha256,verified_bytes,verified_at FROM production_segments
-                   WHERE job_id=? AND position>=? ORDER BY position LIMIT ?""",
-                   (job_id,first_position,limit))]
-            if not rows or [x["position"] for x in rows]!=list(range(first_position, first_position+len(rows))):
-                raise RuntimeError("Production status positions changed")
-            end=first_position+len(rows)
-            return {"format":FORMAT,"job_id":job_id,"project_id":job["project_id"],
-                    "assembly_id":job["assembly_id"],"assembly_revision":job["assembly_revision"],
-                    "state":job["state"],"task_kind":job["task_kind"],
-                    "manifest_sha256":job["manifest_sha256"],"assembly_sha256":job["assembly_sha256"],
-                    "cancel_requested":bool(job["cancel_requested"]),"owner_pid":job["owner_pid"],
-                    "updated_at":job["updated_at"],"segments":rows,"verified_segments":verified,
-                    "total_segments":count,"next_position":end if end<count else None,
-                    "production_dcp_accepted":False}
+            return self._status_page(db,job,job_id,first_position,limit)
+
+    @staticmethod
+    def _status_page(db,job,job_id,first_position,limit):
+        totals=db.execute("""SELECT COUNT(*), SUM(CASE WHEN state='VERIFIED' THEN 1 ELSE 0 END)
+              FROM production_segments WHERE job_id=?""",(job_id,)).fetchone()
+        count, verified=totals[0],totals[1] or 0
+        if first_position >= count:
+            raise ValueError("Production status cursor outside original manifest")
+        rows=[dict(row) for row in db.execute("""SELECT position,start_tick,end_tick,state,
+                      verified_sha256,verified_bytes,verified_at FROM production_segments
+               WHERE job_id=? AND position>=? ORDER BY position LIMIT ?""",
+               (job_id,first_position,limit))]
+        if not rows or [x["position"] for x in rows]!=list(range(first_position, first_position+len(rows))):
+            raise RuntimeError("Production status positions changed")
+        end=first_position+len(rows)
+        return {"format":FORMAT,"job_id":job_id,"project_id":job["project_id"],
+                "assembly_id":job["assembly_id"],"assembly_revision":job["assembly_revision"],
+                "state":job["state"],"task_kind":job["task_kind"],
+                "manifest_sha256":job["manifest_sha256"],"assembly_sha256":job["assembly_sha256"],
+                "cancel_requested":bool(job["cancel_requested"]),"owner_pid":job["owner_pid"],
+                "updated_at":job["updated_at"],"segments":rows,"verified_segments":verified,
+                "total_segments":count,"next_position":end if end<count else None,
+                "production_dcp_accepted":False}
 
     def events(self, job_id, *, limit=200):
         if type(limit) is not int or not 1<=limit<=1000:
@@ -471,6 +554,20 @@ class ProductionJournal:
                        (_now(),job_id))
             return {"job_id":job_id,
                     "cancel_requested":bool(row["cancel_requested"])}
+
+    def claim_cancel_requested(self,owner_token,job_id,position):
+        """Fast read of live read-only lease; final commit still audits entire root."""
+        _require_owner(self.root)
+        with self._read() as db:
+            row=db.execute("""SELECT j.cancel_requested,j.owner_token AS job_owner,
+                s.owner_token AS segment_owner,j.state AS job_state,s.state AS segment_state,
+                j.task_kind FROM production_jobs j JOIN production_segments s ON s.job_id=j.job_id
+                WHERE j.job_id=? AND s.position=?""",(job_id,position)).fetchone()
+            if (row is None or row["job_owner"]!=owner_token or row["segment_owner"]!=owner_token or
+                    row["job_state"]!="RUNNING" or row["segment_state"]!="RUNNING" or
+                    row["task_kind"]!=TASK_KIND):
+                raise PermissionError("Read-only production claim no longer owned")
+            return bool(row["cancel_requested"])
 
     def list_jobs(self, project_id=None):
         if project_id is not None and (type(project_id) is not str or not PROJECT_RE.fullmatch(project_id)):
@@ -590,30 +687,30 @@ class ProductionJournal:
                "assembly_sha256":snap["assembly_sha256"]}
         if authorize(deepcopy(scope)) is not True:
             return {"status":"DENIED","job_id":job_id}
+        def review_rows(db):
+            return db.execute("""SELECT position,source_path,expected_sha256,expected_bytes
+                FROM production_segments WHERE job_id=? AND state='REVIEW_REQUIRED'
+                ORDER BY position""",(job_id,))
+        reviewed=sha256(); reviewed_count=0
         with self._read() as db:
-            segments=[dict(r) for r in db.execute(
-                """SELECT position,source_path,expected_sha256,expected_bytes
-                   FROM production_segments WHERE job_id=?
-                   AND state='REVIEW_REQUIRED' ORDER BY position""",
-                (job_id,))]
-        if not segments:
+            if not db.in_transaction:
+                db.execute("BEGIN")
+            self._verified_manifest(db,job_id)
+            for row in review_rows(db):
+                segment=dict(row); reviewed.update(_canonical(segment)+b"\n"); reviewed_count+=1
+                file=Path(segment["source_path"])
+                if _hash_stream(file)!=(segment["expected_sha256"],segment["expected_bytes"]):
+                    raise PermissionError("Reviewed original media unavailable or changed")
+                digest=sha256(); size=0
+                with file.open("rb") as handle:
+                    while chunk:=handle.read(1024*1024):
+                        digest.update(chunk); size+=len(chunk)
+                        if size>segment["expected_bytes"]:
+                            raise PermissionError("Original media grew during review")
+                if (digest.hexdigest()!=segment["expected_sha256"] or size!=segment["expected_bytes"]):
+                    raise PermissionError("Source still differs from approved SHA")
+        if not reviewed_count:
             raise RuntimeError("No source segment requires review")
-        import hashlib
-        for segment in segments:
-            file=Path(segment["source_path"])
-            if _hash_stream(file)!=(segment["expected_sha256"],segment["expected_bytes"]):
-                raise PermissionError("Reviewed original media unavailable or changed")
-            digest=hashlib.sha256()
-            size=0
-            with file.open("rb") as handle:
-                while chunk:=handle.read(1024*1024):
-                    digest.update(chunk)
-                    size+=len(chunk)
-                    if size>segment["expected_bytes"]:
-                        raise PermissionError("Original media grew during review")
-            if (digest.hexdigest()!=segment["expected_sha256"] or
-                    size!=segment["expected_bytes"]):
-                raise PermissionError("Source still differs from approved SHA")
         with self._tx() as db:
             job=db.execute("""SELECT state,task_kind,manifest_sha256,
                                cancel_requested FROM production_jobs
@@ -623,25 +720,22 @@ class ProductionJournal:
                     job["manifest_sha256"]!=scope["manifest_sha256"] or
                     job["cancel_requested"]):
                 raise PermissionError("Source review changed during authorization")
-            current=[dict(r) for r in db.execute(
-                """SELECT position,source_path,expected_sha256,expected_bytes
-                   FROM production_segments WHERE job_id=?
-                   AND state='REVIEW_REQUIRED' ORDER BY position""",
-                (job_id,))]
-            if current!=segments:
+            self._verified_manifest(db,job_id)
+            current=sha256(); current_count=0
+            for row in review_rows(db):
+                current.update(_canonical(dict(row))+b"\n"); current_count+=1
+            if current_count!=reviewed_count or current.digest()!=reviewed.digest():
                 raise PermissionError("Review segment identity changed during source check")
-            for segment in segments:
-                db.execute("""UPDATE production_segments SET state='PENDING',
-                    verified_sha256=NULL,verified_bytes=NULL,verified_at=NULL,
-                    owner_token=NULL WHERE job_id=? AND position=?""",
-                    (job_id,segment["position"]))
+            db.execute("""UPDATE production_segments SET state='PENDING',verified_sha256=NULL,
+                verified_bytes=NULL,verified_at=NULL,owner_token=NULL WHERE job_id=?
+                AND state='REVIEW_REQUIRED'""",(job_id,))
             db.execute("""UPDATE production_jobs SET state='QUEUED',
                 owner_token=NULL,owner_pid=NULL,updated_at=? WHERE job_id=?""",
                 (_now(),job_id))
             self._event(db,job_id,"SOURCE_RETRY_APPROVED",
-                        str(len(segments))+" restored source segments verified")
+                        str(reviewed_count)+" restored source segments verified")
         return {"status":"QUEUED","job_id":job_id,
-                "segments_requeued":len(segments)}
+                "segments_requeued":reviewed_count}
 
     def request_cancel(self, job_id, authorize):
         if not callable(authorize):
@@ -700,51 +794,53 @@ class ProductionJournal:
                        (TASK_KIND,)).fetchall()
             for job in jobs:
                 job_id=job["job_id"]
-                self._verified_manifest(db,job_id)
+                _,manifest=self._verified_manifest(db,job_id)
                 if job["task_kind"]!=TASK_KIND:
                     raise PermissionError("Unknown production worker cannot be auto-recovered")
-                rows=db.execute("""SELECT position,state,source_path,expected_sha256,
+                is_paged=manifest.get("format")==paged.FORMAT
+                damaged=[]; interrupted=[]; damaged_count=interrupted_count=0
+                cursor=-1
+                while True:
+                    rows=db.execute("""SELECT position,state,source_path,expected_sha256,
                           expected_bytes,verified_sha256,verified_bytes
-                          FROM production_segments WHERE job_id=?
-                          ORDER BY position""",(job_id,)).fetchall()
-                damaged=[]
-                interrupted=[]
-                for item in rows:
-                    if item["state"]=="RUNNING":
-                        interrupted.append(item["position"])
-                    if item["state"]=="VERIFIED":
-                        try:
-                            import hashlib
-                            file=Path(item["source_path"])
-                            if _hash_stream(file)!=(item["expected_sha256"],item["expected_bytes"]):
-                                raise RuntimeError("Source missing or changed")
-                            h=hashlib.sha256()
-                            size=0
-                            with file.open("rb") as inp:
-                                while block:=inp.read(1024*1024):
-                                    h.update(block)
-                                    size+=len(block)
-                            if (size!=item["verified_bytes"] or
-                                    h.hexdigest()!=item["verified_sha256"] or
-                                    size!=item["expected_bytes"] or
-                                    h.hexdigest()!=item["expected_sha256"]):
-                                raise RuntimeError("Verified source no longer matches")
-                        except (OSError,RuntimeError):
-                            damaged.append(item["position"])
-                for position in interrupted:
-                    db.execute("""UPDATE production_segments SET state='PENDING',
-                               owner_token=NULL WHERE job_id=? AND position=?""",
-                               (job_id,position))
-                    self._event(db,job_id,"INTERRUPTED_READ_ONLY_CHECK",
-                                str(position))
-                for position in damaged:
-                    db.execute("""UPDATE production_segments SET state='REVIEW_REQUIRED',
-                                owner_token=NULL WHERE job_id=? AND position=?""",
-                               (job_id,position))
-                    self._event(db,job_id,"VERIFIED_SOURCE_TAMPERED",str(position))
-                states=[r["state"] for r in db.execute(
-                    "SELECT state FROM production_segments WHERE job_id=?",
-                    (job_id,)).fetchall()]
+                          FROM production_segments WHERE job_id=? AND position>?
+                          ORDER BY position LIMIT ?""",(job_id,cursor,MAX_STATUS_PAGE)).fetchall()
+                    if not rows: break
+                    for item in rows:
+                        position=item["position"]
+                        if item["state"]=="RUNNING":
+                            interrupted_count+=1
+                            if not is_paged or len(interrupted)<MAX_STATUS_PAGE:
+                                interrupted.append(position)
+                            db.execute("""UPDATE production_segments SET state='PENDING',
+                                owner_token=NULL WHERE job_id=? AND position=?""",(job_id,position))
+                            self._event(db,job_id,"INTERRUPTED_READ_ONLY_CHECK",str(position))
+                        if item["state"]=="VERIFIED":
+                            try:
+                                file=Path(item["source_path"])
+                                if _hash_stream(file)!=(item["expected_sha256"],item["expected_bytes"]):
+                                    raise RuntimeError("Source missing or changed")
+                                h=sha256(); size=0
+                                with file.open("rb") as inp:
+                                    while block:=inp.read(1024*1024):
+                                        h.update(block); size+=len(block)
+                                        if size>item["expected_bytes"]:
+                                            raise RuntimeError("Verified source grew")
+                                if (size!=item["verified_bytes"] or h.hexdigest()!=item["verified_sha256"] or
+                                        size!=item["expected_bytes"] or h.hexdigest()!=item["expected_sha256"]):
+                                    raise RuntimeError("Verified source no longer matches")
+                            except (OSError,RuntimeError):
+                                damaged_count+=1
+                                if not is_paged or len(damaged)<MAX_STATUS_PAGE:
+                                    damaged.append(position)
+                                db.execute("""UPDATE production_segments SET state='REVIEW_REQUIRED',
+                                    owner_token=NULL WHERE job_id=? AND position=?""",(job_id,position))
+                                self._event(db,job_id,"VERIFIED_SOURCE_TAMPERED",str(position))
+                    cursor=rows[-1]["position"]
+                states={r["state"] for r in db.execute(
+                    "SELECT DISTINCT state FROM production_segments WHERE job_id=?",(job_id,))}
+                if not states or not states.issubset(SEGMENT_STATES):
+                    raise RuntimeError("Unknown production checkpoint state")
                 if job["cancel_requested"]:
                     state="CANCELLED"
                 elif damaged or "REVIEW_REQUIRED" in states:
@@ -757,7 +853,10 @@ class ProductionJournal:
                     owner_token=NULL,owner_pid=NULL,updated_at=? WHERE job_id=?""",
                     (state,_now(),job_id))
                 reports.append({"job_id":job_id,"state":state,
-                                "interrupted":interrupted,"tampered":damaged})
+                                "interrupted":interrupted,"tampered":damaged,
+                                **({"interrupted_count":interrupted_count,"tampered_count":damaged_count,
+                                    "positions_truncated":interrupted_count>len(interrupted) or damaged_count>len(damaged)}
+                                   if is_paged else {})})
         return {"format":"nvp.wo4.supervisor_recovery.v1",
                 "jobs":reports,"filesystem_mutated":False,
                 "production_dcp_accepted":False}

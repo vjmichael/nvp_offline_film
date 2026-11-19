@@ -59,6 +59,13 @@ class NativeProductionHost:
             return self.verify_creator_action(event,{**deepcopy(scope),"project_id":pid}) is True
         return approve
 
+    def submit_verification_pages(self,pid,*,creator_event,assembly_id,assembly_revision,
+                                  assembly_sha256,page_factory):
+        """Trusted host only: finite original media verification, not rendering."""
+        return self.journal.submit_paged(self._project(pid),pid,assembly_id=assembly_id,
+            assembly_revision=assembly_revision,assembly_sha256=assembly_sha256,
+            page_factory=page_factory,approve=self._approval(creator_event,pid))
+
     def submit_reel(self,pid,*,creator_event,mastering_decision_id,frame_sources):
         index=self._project(pid)
         codecs=self.codec_factory(pid,lambda:False)

@@ -376,7 +376,7 @@ class ProductionSupervisor:
                 if time.monotonic()-last_heartbeat>=1:
                     self.journal.heartbeat(self.owner,job_id,segment["position"])
                     last_heartbeat=time.monotonic()
-                return self.journal.status(job_id)["cancel_requested"]
+                return self.journal.claim_cancel_requested(self.owner,job_id,segment["position"])
             digest,size=verify_approved_file(segment,check_cancel=check_cancel)
             if check_cancel():
                 raise InterruptedError("Cancelled before verification checkpoint")
