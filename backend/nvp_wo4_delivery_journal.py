@@ -21,6 +21,9 @@ import re
 from backend.nvp_production_cinema import CinemaJournal,TASK_KIND as PICTURE_TASK,_protected_receipt
 from backend.nvp_wo4_mastering_decision import FORMAT as DECISION_FORMAT
 from backend.nvp_wo4_supervised_sound import _read_guarded_sound
+from backend.nvp_partitioned_delivery_bridge import verify_finite_selection, partitioned_provenance
+from backend.nvp_wo4_longfilm_audio import finite_reel_candidate
+from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 from backend.nvp_wo3_native_codecs import digest_file
 from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
 from backend.nvp_wo3_dcp_package import FORMAT as PACKAGE_FORMAT
@@ -111,12 +114,24 @@ class CinemaDeliveryJournal(CinemaJournal):
         }
 
     def attach_delivery(self,index:FilmIndex,job_id,*,sound_candidate,
-                        output_root,title,approve):
+                        output_root,title,approve,partitioned_receipt=None,
+                        partitioned_reel_index=None,cancelled=lambda:False):
         if not isinstance(index,FilmIndex) or not callable(approve):
             raise PermissionError("Trusted native project and creator approval required")
         sound_candidate=deepcopy(sound_candidate)
         reel=self.reel(job_id)
         status=self.status(job_id)
+        frame_ticks=TICKS_PER_SECOND//24
+        if partitioned_receipt is not None:
+            if sound_candidate is not None:
+                raise PermissionError("Choose one trusted audio input")
+            partitioned_receipt=deepcopy(partitioned_receipt)
+            sound_candidate=verify_finite_selection(index,self,status["project_id"],job_id,
+                partitioned_receipt,partitioned_reel_index,frame_ticks=frame_ticks,
+                select=finite_reel_candidate,cancelled=cancelled)
+        elif (type(sound_candidate) is not dict or partitioned_reel_index is not None or
+              "partitioned_manifest_sha256" in sound_candidate):
+            raise PermissionError("Partitioned audio requires native set verification")
         if (status["task_kind"]!=PICTURE_TASK or
                 status["state"]!="OUTPUT_READY" or
                 _linked_entry(self.spool(job_id))):
@@ -172,8 +187,16 @@ class CinemaDeliveryJournal(CinemaJournal):
             **{k+"_uuid":v for k,v in ids.items()},
             "plaintext_export_explicitly_requested":True,"preserve_on_crash":True
         }
+        if partitioned_receipt is not None:
+            scope["partitioned_audio"]=partitioned_provenance(sound_candidate,data,reel["frame_count"],frame_ticks)
         if approve(deepcopy(scope)) is not True:
             return {"format":FORMAT,"status":"DENIED","source_modified":False}
+        if partitioned_receipt is not None:
+            again=verify_finite_selection(index,self,status["project_id"],job_id,
+                partitioned_receipt,partitioned_reel_index,frame_ticks=frame_ticks,
+                select=finite_reel_candidate,cancelled=cancelled)
+            if again!=sound_candidate:
+                raise PermissionError("Partitioned audio changed during approval")
         _assert_export_root(root,root_identity)
         if (_protected_path(project_db)!=db_identity or
                 _read_guarded_sound(sound_candidate,reel["frame_count"],

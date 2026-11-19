@@ -10,6 +10,7 @@ from copy import deepcopy
 
 from backend.nvp_film_index import FilmIndex
 from backend.nvp_production_journal import ProductionJournal
+from backend.nvp_production_catalog_pages import page as catalog_rows
 
 FORMAT="nvp.wo4.production_monitor.v1"
 
@@ -38,9 +39,18 @@ class ProductionMonitor:
             raise PermissionError("Project production monitor access denied")
 
     def catalog(self, project_id):
+        result=self.catalog_page(project_id,limit=64)
+        if result["jobs_next_cursor"] is not None:
+            raise ValueError("Production catalog requires paged navigation")
+        return result
+
+    def catalog_page(self, project_id, *, after=None, limit=32):
         self._project(project_id)
+        with self.journal._read() as db:
+            if not db.in_transaction:db.execute("BEGIN")
+            items,cursor=catalog_rows(db,project_id,kind="jobs",after=after,limit=limit)
         jobs=[]
-        for item in self.journal.list_jobs(project_id):
+        for item in items:
             snapshot=self.journal.status_page(item["job_id"],limit=1,expected_project_id=project_id)
             if snapshot["project_id"]!=project_id:
                 raise PermissionError("Production journal changed project scope")
@@ -59,7 +69,7 @@ class ProductionMonitor:
                 "production_dcp_accepted":False
             })
         return {"format":FORMAT,"status":"READ_ONLY",
-                "project_id":project_id,"jobs":jobs,
+                "project_id":project_id,"jobs":jobs,"jobs_next_cursor":cursor,
                 "source_paths_exposed":False,
                 "can_cancel_job":False,
                 "can_override_worker":False}

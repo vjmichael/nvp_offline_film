@@ -295,5 +295,110 @@ class NativePictureCheckpointRecovery(unittest.TestCase):
             "production_dcp_accepted":False},flush=True)
 
 
+        # PERF-03F-R6-R1: retain the original two-reel independent decode and
+        # playback tests above. Add two separately authorized, native-encoded
+        # reels from the same approved Takes to verify an ordered hierarchy
+        # with two finite leaves. This deliberately repeats source material;
+        # it is a short protected fixture, not a throughput/creative proof.
+        from backend.nvp_production_host import NativeProductionHost
+        events=[]
+        def resolve_project(pid):
+            if pid!=f.pid:
+                raise PermissionError("Native hierarchy fixture project mismatch")
+            return f.index
+        def creator_action(event,scope):
+            events.append((event,scope.get("operation")))
+            return event=="approved" and scope.get("project_id")==f.pid
+        def open_host():
+            return NativeProductionHost(journal.root,resolve_project=resolve_project,
+                codec_factory=factory,verify_creator_action=creator_action)
+        native=open_host()
+        extra=[]
+        for decision_id,paths,audio in (
+            ("NativeProductionDecision",sources,wav),
+            ("NativeProductionDecisionB",new_paths,wav_b),
+        ):
+            j=native.submit_reel(f.pid,creator_event="approved",
+                mastering_decision_id=decision_id,frame_sources=paths)["job_id"]
+            extra.append(j)
+            with native.service_session() as runner:
+                for position in range(3):
+                    part=runner.run_one()
+                    self.assertEqual(part["status"],"PICTURE_FRAME_CHECKPOINTED",part)
+                    self.assertEqual(part["position"],position)
+                self.assertEqual(runner.run_one()["status"],"FILE_BACKED_PICTURE_MXF_READY")
+            sound_attachment=native.attach_delivery(f.pid,j,creator_event="approved",
+                sound_candidate=audio,output_root=exports,title="Hierarchy source reel")
+            self.assertEqual(sound_attachment["status"],"SOUND_PENDING")
+            with native.service_session() as runner:
+                for expected in ("FILE_BACKED_SOUND_MXF_READY","PUBLISHED_PENDING_INDEX","STRUCTURAL_DCP_FILMINDEX_RECORDED"):
+                    self.assertEqual(runner.run_one()["status"],expected)
+        all_jobs=[uid,uid_b,*extra]
+        extra_deps=[{"object_id":"WO3DCP_"+native.journal.delivery(j)["cpl_uuid"].replace("-",""),
+                     "revision":1,"role":"presentation"} for j in extra]
+        f.index.register_revision(f.pid,"NativeApprovedFeatureSecond","edit",
+            {"format":ASSEMBLY_FORMAT,"ordered_reel_job_ids":extra,"start_tick":0,
+             "end_tick":6*(TICKS_PER_SECOND//24)},expected_revision=0,dependencies=extra_deps)
+        def exact_ref(oid):
+            record=f.index.read_revision(f.pid,oid,1)
+            return {"object_id":oid,"revision":1,"sha256":record["document_sha256"]}
+        group=native.register_feature_sections(f.pid,"NativeFeatureHierarchy",
+            [exact_ref("NativeApprovedFeature"),exact_ref("NativeApprovedFeatureSecond")],creator_event="approved")
+        self.assertEqual(group["revision"],1)
+        source=exact_ref("NativeFeatureHierarchy")
+        denied=native.register_feature_export_assembly(f.pid,"HierarchyDenied",source,
+            creator_event="denied",profile="2K_FLAT_24")
+        self.assertEqual(denied,{"status":"DENIED"})
+        self.assertEqual(f.index.history(f.pid,"HierarchyDenied"),[])
+        native.register_feature_export_assembly(f.pid,"HierarchyExport",source,
+            creator_event="approved",profile="2K_FLAT_24")
+        derived=f.index.read_revision(f.pid,"HierarchyExport",1)["data"]
+        self.assertEqual(derived["ordered_reel_job_ids"],all_jobs)
+        self.assertEqual(derived["hierarchical_reel_receipt_sha256"],
+            [native.journal.delivery(j)["filmindex_sha256"] for j in all_jobs])
+        args=dict(assembly_id="HierarchyExport",assembly_revision=1,
+            ordered_job_ids=all_jobs,title="Native hierarchy pilot",profile="2K_FLAT_24",output_root=exports)
+        self.assertEqual(native.submit_feature(f.pid,creator_event="denied",**args)["status"],"DENIED")
+        hierarchical=native.submit_feature(f.pid,creator_event="approved",**args)
+        self.assertEqual(hierarchical["total_frames"],12)
+        hierarchy_id=hierarchical["feature_id"]
+        with native.service_session() as runner:
+            output=runner.run_one()
+            self.assertEqual(output["status"],"FEATURE_PUBLISHED_PENDING_INDEX",output)
+        native=open_host()
+        with native.service_session() as runner:
+            self.assertEqual(runner.run_one()["status"],"MULTIREEL_FEATURE_FILMINDEX_RECORDED")
+        self.assertEqual(native.journal.feature(hierarchy_id)["state"],"INDEXED")
+        report=inspect_indexed_feature(f.index,native.journal,f.pid,hierarchy_id)
+        self.assertEqual(report["frame_count"],12)
+        self.assertFalse(report["production_acceptance"])
+        all_ledgers=[]
+        for j in all_jobs:
+            d=native.journal.delivery(j);r=native.journal.reel(j)
+            all_ledgers.append({"picture_uuid":r["picture_uuid"],"sound_uuid":d["sound_uuid"],"frames":3,
+                "ordered_codestream_sha256":[x["verified_sha256"] for x in native.journal.status(j)["segments"]],
+                "pcm_sha256":d["master_pcm_sha256"]})
+        check=lambda:False
+        decoder_authority=factory(f.pid,check)[0].authority
+        unwrap,decoder=pinned_codec_pair(bundle,manifest,decoder_authority.pin,authority=decoder_authority,
+            project_id=f.pid,check_cancel=check)
+        result=decode_full_multireel_candidate(output["destination"],unwrap=unwrap,decoder=decoder,
+            expected_reels=all_ledgers)
+        self.assertEqual(result["frames_decoded"],12)
+        self.assertTrue(all(reel["pcm24_48000_sample_exact"] for reel in result["reels"]))
+        # Match the previously independently decoded source content and order.
+        decoded=[h for reel in result["reels"] for h in reel["decoded_frame_sha256"]]
+        expected=[h for reel in full["reels"] for h in reel["decoded_frame_sha256"]]
+        self.assertEqual(decoded,expected+expected)
+        self.assertFalse(result["production_dcp_accepted"])
+        for path,picture in [*zip(sources,pictures),*zip(new_paths,new_pictures)]:
+            self.assertEqual(_hash_stream(Path(path))[0],picture["xyz12_sha256"])
+        self.assertIn(("approved","nvp.wo4.approve_finite_hierarchical_export_assembly.v1"),events)
+        print("NVP_PERF03F_R6_NATIVE_HIERARCHY_PILOT",{
+            "reels":4,"independently_decoded_frames":12,"distinct_original_source_frames":6,
+            "repeated_source_performance_intentional":True,"indexed_after_reopen":True,
+            "exact_pcm":True,"production_dcp_accepted":False},flush=True)
+
+
 if __name__=="__main__":
     unittest.main()

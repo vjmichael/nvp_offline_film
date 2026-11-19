@@ -5,6 +5,7 @@ import NativeCameraRailPanel from './NativeCameraRailPanel.jsx';
 import EditedFilmDeliveryPanel from './EditedFilmDeliveryPanel.jsx';
 import ActorPerformancePanel from './ActorPerformancePanel.jsx';
 import FilmSourceStagesPanel from './FilmSourceStagesPanel.jsx';
+import {loadInventory,currentInventory,chooseTake,chooseListener} from './nativeAuditionSelection.js';
 
 // DATA-AV-01: there is no MP4, frame sequence or HTTP audio endpoint.
 // The authenticated desktop bridge returns <=4096 PCM samples at a time
@@ -32,11 +33,9 @@ function decodedStereo(base64,count){
 
 export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   const [native,setNative]=useState(nativeBridge);
-  const [takes,setTakes]=useState([]);
+  const [inventory,setInventory]=useState(()=>loadInventory([],null,null,-1));
   const [captureRevision,setCaptureRevision]=useState(0);
   const [railPreview,setRailPreview]=useState(null);
-  const [takeId,setTakeId]=useState('');
-  const [listener,setListener]=useState('');
   const [sourceSample,setSourceSample]=useState('0');
   const [playing,setPlaying]=useState(false);
   const [error,setError]=useState('');
@@ -49,7 +48,9 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     presentationMarks:[],generation:0,cursor:0,last:0,first:0,
     nextAudioAt:0,working:false,active:false,stopping:false,
     sceneBusy:false,lastSceneAt:-1});
+  const {takes,takeId,listener}=currentInventory(inventory,projectId,native,captureRevision);
   const item=takes.find(x=>x.take_id===takeId);
+  const canAudition=Boolean(native&&item&&listener&&Array.isArray(item.listeners)&&item.listeners.includes(listener)&&!playing);
 
   useEffect(()=>{
     if(nativeBridge){setNative(nativeBridge);return;}
@@ -67,21 +68,17 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   useEffect(()=>{
     if(!native||!projectId)return;
     let live=true;
-    setError('');setTakes([]);setTakeId('');setListener('');setScene(null);
+    setError('');setInventory(loadInventory([],projectId,native,captureRevision));setScene(null);
     Promise.resolve(native.data_av_catalog(projectId)).then(result=>{
       if(!live)return;
       if(result?.format!==FORMAT||result.status!=='AVAILABLE'||
          result.ffmpeg_runtime_required!==false||!Array.isArray(result.takes))
         throw Error('Native film data inventory is not verified');
-      setTakes(result.takes);
-      setTakeId(result.takes[0]?.take_id||'');
+      setInventory(loadInventory(result.takes,projectId,native,captureRevision));
     }).catch(e=>{if(live)setError(e.message);});
     return ()=>{live=false;};
   },[native,projectId,captureRevision]);
 
-  useEffect(()=>{
-    setListener(item?.listeners?.[0]||'');
-  },[takeId,takes]);
 
   async function stop(){
     const st=controller.current;
@@ -223,7 +220,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
   }
 
   async function begin(){
-    if(!native||!item||!listener||playing)return;
+    if(!canAudition)return;
     setError('');setNote('');
     const first=Number(sourceSample);
     if(!Number.isSafeInteger(first)||first<0){
@@ -308,7 +305,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     {note&&<p role="status">{note}</p>}
     <label>Frozen Digital Take
       <select aria-label="Native frozen Digital Take" value={takeId}
-        disabled={playing} onChange={e=>setTakeId(e.target.value)}>
+        disabled={playing} onChange={e=>{const value=e.target.value;setInventory(prev=>chooseTake(currentInventory(prev,projectId,native,captureRevision),value));}}>
         {!takes.length&&<option value="">No frozen Digital Takes in this project</option>}
         {takes.map(x=><option key={x.take_id} value={x.take_id}>
           {x.take_id}</option>)}
@@ -316,7 +313,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
     </label>
     <label>3D listener / virtual microphone
       <select aria-label="Native spatial listener" value={listener}
-        disabled={playing} onChange={e=>setListener(e.target.value)}>
+        disabled={playing} onChange={e=>{const value=e.target.value;setInventory(prev=>chooseListener(currentInventory(prev,projectId,native,captureRevision),value));}}>
         {(item?.listeners||[]).map(p=><option key={p} value={p}>{p}</option>)}
       </select>
     </label>
@@ -333,7 +330,7 @@ export default function DataFirstAVPanel({projectId,nativeBridge=null}){
       </select>
     </label>
     <div className="actions">
-      <button disabled={!native||!item||!listener||playing}
+      <button disabled={!canAudition}
         onClick={begin}>Approve and audition 3D source sound</button>
       <button disabled={!controller.current.ticket}
         onClick={stop}>Stop and revoke native audition</button>

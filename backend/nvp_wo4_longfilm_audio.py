@@ -227,9 +227,15 @@ def verify_partitioned_pcm24(receipt, *, cancelled=lambda:False):
 def master_partitioned_pcm24(source_path, *, source_sha256, original_take_sha256,
                              cinema_frames, channel_layout, output_root, approve,
                              max_reel_frames=DEFAULT_REEL_FRAMES, gain_numerator=1,
-                             gain_denominator=1, cancelled=lambda:False):
+                             gain_denominator=1, cancelled=lambda:False, publication_id=None, before_publish=None):
     if not callable(approve) or not callable(cancelled):
         raise PermissionError("Trusted creator approval and cancellation required")
+    if (publication_id is None)!=(before_publish is None):
+        raise PermissionError("Durable audio producer requires both identity and checkpoint")
+    if publication_id is not None:
+        from backend.nvp_audio_recovery import ID
+        if type(publication_id) is not str or not ID.fullmatch(publication_id) or not callable(before_publish):
+            raise PermissionError("Trusted publication checkpoint required")
     _sha(source_sha256);_sha(original_take_sha256)
     layout=AudioReels(cinema_frames,channel_layout,max_reel_frames)
     if (type(gain_numerator) is not int or not 0<=gain_numerator<=16 or
@@ -247,6 +253,8 @@ def master_partitioned_pcm24(source_path, *, source_sha256, original_take_sha256
            **layout.descriptor(),"source_sha256":source_sha256,"original_take_sha256":original_take_sha256,
            "source_path":str(source),"output_root":str(root),"gain":[gain.numerator,gain.denominator],
            "encrypted_at_rest_required":True,"source_modified":False,"production_audio_accepted":False}
+    if publication_id is not None:
+        scope.update({"source_identity":list(sid),"output_root_identity":list(rid)})
     _check(cancelled)
     if approve(deepcopy(scope)) is not True:
         return {"format":FORMAT,"status":"DENIED","source_modified":False}
@@ -254,8 +262,14 @@ def master_partitioned_pcm24(source_path, *, source_sha256, original_take_sha256
         raise PermissionError("Approved audio paths changed during consent")
     _check(cancelled)
     require_stage_space(root,layout.source_bytes+layout.count*(44+MAX_LINE_BYTES)+MAX_ROOT_BYTES)
-    stage=Path(tempfile.mkdtemp(prefix=".nvp-pcm-reels-",dir=root));stage_id=None
-    target=root/("PCM24_REELS_"+uuid.uuid4().hex)
+    if publication_id is None:
+        stage=Path(tempfile.mkdtemp(prefix=".nvp-pcm-reels-",dir=root))
+        target=root/("PCM24_REELS_"+uuid.uuid4().hex)
+    else:
+        from backend.nvp_audio_recovery import paths
+        stage,target=paths(scope,publication_id)
+        stage.mkdir(exist_ok=False)
+    stage_id=None
     raw=sha256();master=sha256();rows_hash=sha256();peak=0
     try:
         stage_id=_protected_path(stage,directory=True)
@@ -305,6 +319,9 @@ def master_partitioned_pcm24(source_path, *, source_sha256, original_take_sha256
                 _protected_path(stage,directory=True)!=stage_id):
             raise PermissionError("Approved audio paths changed before publication")
         _check(cancelled);_fsync_directory(stage)
+        if before_publish is not None:
+            before_publish(root_sha)
+        _check(cancelled)
         atomic_publish_directory(stage,target)
         # An error after promotion leaves an orphan for explicit review, never an approved receipt.
         if _protected_path(target,directory=True)!=stage_id:
@@ -315,8 +332,24 @@ def master_partitioned_pcm24(source_path, *, source_sha256, original_take_sha256
         verify_partitioned_pcm24(receipt,cancelled=cancelled)
         return receipt
     finally:
-        if stage.exists() and stage_id is not None and _protected_path(stage,directory=True)==stage_id:
+        if publication_id is None and stage.exists() and stage_id is not None and _protected_path(stage,directory=True)==stage_id:
             shutil.rmtree(stage)
+
+
+def reopen_prepared_pcm24(plan,expected_sha,*,cancelled=lambda:False):
+    """Recover only the exact original approved source and prepared output root."""
+    source=Path(plan["source_path"]);root=Path(plan["output_root"]);target=Path(plan["destination"])
+    sid=tuple(plan["source_identity"]);rid=tuple(plan["output_root_identity"])
+    if (_protected_path(source)!=sid or _protected_path(root,directory=True)!=rid or
+            target.parent!=root or _hash_source(source,sid,plan["source_bytes"],cancelled)!=plan["source_sha256"]):
+        raise PermissionError("Original approved audio source or protected root changed")
+    _protected_path(target,directory=True)
+    doc,layout=_read_root(target,expected_sha)
+    receipt={"format":FORMAT,"status":"PARTITIONED_PCM24_CANDIDATE_PUBLISHED",
+             "destination":str(target),"manifest_sha256":expected_sha,**doc,
+             "whole_track_loaded_into_ram":False,"encrypted_at_rest_verified":True}
+    verify_partitioned_pcm24(receipt,cancelled=cancelled)
+    return receipt
 
 
 def measure_partitioned_pcm24_loudness(receipt, *, cancelled=lambda:False):

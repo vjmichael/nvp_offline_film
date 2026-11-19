@@ -33,6 +33,10 @@ on:
       - 'backend/nvp_temporal_ledger.py'
       - 'backend/nvp_slate08b_native_camera_ipc.py'
       - 'frontend/src/DataFirstAVPanel*'
+      - 'frontend/src/nativeAuditionSelection.js'
+      - 'tools/test_nvp_native_audition_selection.mjs'
+      - 'tools/nvp_ci_nsis.ps1'
+      - 'tools/test_nvp_ci_nsis.ps1'
       - 'frontend/src/App.jsx'
       - 'frontend/src/FilmmakerHome.test.jsx'
       - 'frontend/src/DirectorSceneLibrary.movie.test.jsx'
@@ -199,8 +203,8 @@ jobs:
           test "$actual" = "$expected"
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      - run: npm install --no-audit --no-fund
+          node-version: '22.16.0'
+      - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeCameraRailPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx src/FilmmakerHome.test.jsx
 
@@ -224,7 +228,7 @@ jobs:
           test "$actual" = "$expected"
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.16.0'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -232,11 +236,17 @@ jobs:
         shell: pwsh
         run: |
           Push-Location frontend
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
+      - name: Validate source selection and NSIS provisioning contracts
+        shell: pwsh
+        run: |
+          node --test tools/test_nvp_native_audition_selection.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Audition selection contract failed' }
+          & ./tools/test_nvp_ci_nsis.ps1
       - name: Native USD + GUI/installer packager, no FFmpeg installed by workflow
         shell: pwsh
         run: |
@@ -244,8 +254,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native OpenUSD unavailable' }
           python -m pip install -r requirements-foundation.txt 'pyinstaller>=6.10,<7' 'pywebview>=5.3,<7' 'pywin32>=306'
           if ($LASTEXITCODE -ne 0) { throw 'Native desktop packager unavailable' }
-          choco install nsis -y --no-progress
-          if ($LASTEXITCODE -ne 0) { throw 'NSIS unavailable' }
+          . ./tools/nvp_ci_nsis.ps1
+          $null = Install-NvpCiNsis
       - name: Bundle actual native NVP.exe + real USD and offline editor
         shell: pwsh
         run: |
@@ -262,13 +272,9 @@ jobs:
       - name: Build dedicated single-click NSIS installed candidate
         shell: pwsh
         run: |
-          $possible=@(
-            (Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'NSIS/makensis.exe'),
-            (Join-Path $env:ProgramFiles 'NSIS/makensis.exe'),
-            (Join-Path $env:ChocolateyInstall 'bin/makensis.exe')
-          )
-          $nsis=$possible | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-          if (-not $nsis) { throw 'No trusted installed NSIS compiler' }
+          . ./tools/nvp_ci_nsis.ps1
+          $nsis = Get-NvpNsisCompiler
+          if (-not $nsis) { throw 'No qualified installed NSIS compiler' }
           & $nsis '/V3' 'packaging/nvp-alpha.nsi'
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'dist/NVP-Alpha-Setup.exe')) {
             throw 'Native NSIS packaging failed'

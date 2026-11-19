@@ -57,10 +57,14 @@ class FeatureJournal(CinemaDeliveryJournal):
               updated_at TEXT NOT NULL,
               created_at TEXT NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS production_features_catalog_page
+              ON production_features(project_id,project_db,created_at,feature_id);
             CREATE INDEX IF NOT EXISTS production_feature_ready
               ON production_features(state,created_at);
             """)
             pages.initialize(db)
+            from backend.nvp_audio_recovery import initialize as initialize_audio
+            initialize_audio(db)
 
     @staticmethod
     def _feature_row(db, feature_id):
@@ -351,6 +355,14 @@ class FeatureJournal(CinemaDeliveryJournal):
                 _protected_path(db)!=tuple(m["project_db_identity"]) or
                 index.read_revision(m["project_id"],m["assembly_id"],m["assembly_revision"])["document_sha256"]!=m["assembly_sha256"]):
                 raise PermissionError("Resolved feature project or assembly differs")
+            assembly=index.read_revision(m["project_id"],m["assembly_id"],m["assembly_revision"])["data"]
+            if "hierarchical_source_ref" in assembly:
+                from backend import nvp_feature_sections as groups
+                derived=groups.finite_export_plan(index,m["project_id"],assembly["hierarchical_source_ref"],
+                    frame_ticks=FRAME_TICKS,profile=m["profile"],reel_budget=min(MAX_REELS,MAX_DEPENDENCIES-1),
+                    read_reel=lambda uid:groups.native_reel_metadata(self,m["project_id"],uid))
+                if derived!=assembly or derived["ordered_reel_job_ids"]!=m["ordered_reel_job_ids"]:
+                    raise PermissionError("Derived feature hierarchy no longer matches immutable source")
         for job_id,part,authority in zip(m["ordered_reel_job_ids"],m["reels"],m["source_reel_authority"]):
             status=self.status(job_id); reel=self.reel(job_id); d=self.delivery(job_id)
             if (status["project_id"]!=m["project_id"] or status["state"]!="DCP_INDEXED" or

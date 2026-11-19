@@ -127,17 +127,40 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.16.0'
       - name: Compile and execute exact React candidate
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
           cd frontend
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
           npm run test:ui
           cd ..
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          git diff --exit-code -- frontend/package.json frontend/package-lock.json
+          node --test tools/test_nvp_native_audition_selection.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Consolidated hierarchy and recovery regressions (portable, not native acceptance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt 'usd-core==26.11'
+          python - <<'PYTEST'
+          import unittest
+          suite=unittest.TestSuite()
+          for pattern in ("test_feature_receipt_tree.py", "test_production_catalog_pages.py", "test_r4_native_adapters.py", "test_r5.py", "test_perf03f_r6_finite_export.py"):
+              part=unittest.TestLoader().discover("tests",pattern=pattern)
+              if not part.countTestCases():
+                  raise RuntimeError("Missing consolidated suite: "+pattern)
+              suite.addTests(part)
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful() or result.skipped or result.testsRun < 61:
+              raise SystemExit("Incomplete consolidated portable acceptance")
+          PYTEST
           test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
 
   wo6-native-host-death:
@@ -213,7 +236,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.16.0'
-      - name: Resolve NVP's original manifest and prove offline dependency restoration
+      - name: Restore NVP's committed lock and prove offline dependency restoration
         shell: bash
         run: |
           set -euo pipefail
@@ -221,11 +244,10 @@ jobs:
           work="$RUNNER_TEMP/nvp-npm-project"
           cache="$RUNNER_TEMP/nvp-npm-cache"
           mkdir -p "$out" "$work" "$cache"
-          cp "$RUNNER_TEMP/nvp-recovered-base/frontend/package.json" "$work/package.json"
+          # Recover the current committed lock, never resolve floating versions.
+          git show "$NVP_RUN_HEAD:frontend/package.json" > "$work/package.json"
+          git show "$NVP_RUN_HEAD:frontend/package-lock.json" > "$work/package-lock.json"
           cd "$work"
-          # The historical source did not commit a lockfile. Record this new
-          # resolution; do not claim it reconstructs prior CI dependency bytes.
-          npm install --package-lock-only --no-audit --no-fund --cache "$cache"
           npm ci --no-audit --no-fund --cache "$cache"
           npm ci --offline --no-audit --no-fund --cache "$cache"
           npm cache verify --cache "$cache"
@@ -233,7 +255,7 @@ jobs:
           cp package.json package-lock.json "$out/"
           node -p 'JSON.stringify({node:process.version,platform:process.platform,arch:process.arch})' > "$out/runtime.json"
           npm --version > "$out/npm-version.txt"
-          printf 'source_base=%s\nsource_tree=%s\n' "$NVP_RECOVERY_BASE" "$NVP_RECOVERY_TREE" > "$out/source-identity.txt"
+          printf 'source_base=%s\nsource_tree=%s\nlocked_dependency_head=%s\n' "$NVP_RECOVERY_BASE" "$NVP_RECOVERY_TREE" "$NVP_RUN_HEAD" > "$out/source-identity.txt"
           # Persist content-addressed package objects only, not logs, configs,
           # checkout credentials or node_modules.
           tar -C "$cache" -czf "$out/npm-cache.tar.gz" _cacache

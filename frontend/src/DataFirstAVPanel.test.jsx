@@ -42,7 +42,7 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
         .toBe('/World/Camera');
       const audition=screen.getByRole('button',
         {name:'Approve and audition 3D source sound'});
-      expect(audition.disabled).toBe(false);
+      await waitFor(()=>expect(audition.disabled).toBe(false));
       await act(async()=>{
         fireEvent.click(audition);
         await Promise.resolve();
@@ -56,6 +56,32 @@ describe('DATA-AV-01 trusted desktop-native sound preview',()=>{
       expect(bridge.data_av_audio_window).not.toHaveBeenCalled();
       expect(await screen.findByText('Native audition was not approved.'))
         .toBeTruthy();
+    }finally{window.AudioContext=original;}
+  });
+
+  it('switches Take and listener together; a Take without listeners cannot request approval',async()=>{
+    const alternate={...take,take_id:'alternate_take',take_document_sha256:'c'.repeat(64),listeners:['/World/Alternate']};
+    const silent={...take,take_id:'silent_take',listeners:[]};
+    const bridge={data_av_catalog:vi.fn(async()=>({format:'nvp.data_av.native_session.v1',status:'AVAILABLE',ffmpeg_runtime_required:false,takes:[take,alternate,silent]})),
+      data_av_begin:vi.fn(async()=>({status:'DENIED'})),data_av_audio_window:vi.fn(),data_av_scene_at:vi.fn(),data_av_stop:vi.fn()};
+    const original=window.AudioContext;
+    window.AudioContext=class { constructor(){this.sampleRate=48000;} };
+    try{
+      render(<DataFirstAVPanel projectId={pid} nativeBridge={bridge}/>);
+      await screen.findByText('alternate_take');
+      const audition=screen.getByRole('button',{name:'Approve and audition 3D source sound'});
+      const takeSelect=screen.getByLabelText('Native frozen Digital Take');
+      fireEvent.change(takeSelect,{target:{value:'silent_take'}});
+      expect(audition.disabled).toBe(true);
+      fireEvent.click(audition);
+      expect(bridge.data_av_begin).not.toHaveBeenCalled();
+      fireEvent.change(takeSelect,{target:{value:'alternate_take'}});
+      expect(screen.getByLabelText('Native spatial listener').value).toBe('/World/Alternate');
+      expect(audition.disabled).toBe(false);
+      fireEvent.click(audition);
+      await waitFor(()=>expect(bridge.data_av_begin).toHaveBeenCalledWith({project_id:pid,take_id:'alternate_take',take_document_sha256:'c'.repeat(64),listener_path:'/World/Alternate',first_sample:0,direction:'forward'}));
+      expect(await screen.findByText('Native audition was not approved.')).toBeTruthy();
+      expect(bridge.data_av_audio_window).not.toHaveBeenCalled();
     }finally{window.AudioContext=original;}
   });
 

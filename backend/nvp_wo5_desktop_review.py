@@ -11,6 +11,8 @@ from hashlib import sha256
 from backend.nvp_film_index import FilmIndex, _id, _require_pid
 from backend.nvp_wo4_feature_journal import ASSEMBLY_FORMAT
 from backend.nvp_production_host import NativeProductionHost
+from backend.nvp_bounded_review import object_window
+from backend.nvp_review_navigation import feature_window,cursors,PAGE
 from backend.nvp_wo5_original_feature import inspect_indexed_feature
 from backend.nvp_wo5_director_review import (
     INTENT_FORMAT, REVIEW_FORMAT,
@@ -82,13 +84,17 @@ class FinishedReviewActions:
         self._wo5_project(scope["project_id"])
         return approved
 
-    def wo5_review_catalog(self, project_id):
+    def wo5_review_catalog(self, project_id, navigation=None):
         """Return safe, project-bound durable feature/edit/intent/review metadata."""
         self._wo5_project(project_id)
         index = self.index
         assemblies, intents, reviews = [], [], []
+        navigation=cursors(navigation)
+        continuation={}
         for kind in ("edit", "presentation"):
-            for entry in index.list_objects(project_id, kind=kind)[:MAX_CATALOG]:
+            items,cursor=object_window(index,project_id,kind,after=navigation[kind],limit=PAGE)
+            continuation[kind]=cursor
+            for entry in items:
                 object_id = entry["object_id"]
                 revision = entry["head_revision"]
                 record = index.read_revision(project_id, object_id, revision)
@@ -120,15 +126,14 @@ class FinishedReviewActions:
                         "production_acceptance": False,
                     })
         journal = self._wo5_existing_journal()
-        entries = []
+        entries=[];feature_cursor=None
         if journal is not None:
             with journal._read() as db:
-                entries = [dict(row) for row in db.execute(
-                """SELECT feature_id,assembly_id,assembly_revision,
-                   assembly_sha256,project_id,state,updated_at FROM
-                   production_features WHERE project_id=?
-                   AND project_db=? ORDER BY created_at DESC LIMIT ?""",
-                    (project_id, str(Path(self.index.studio.db_path).resolve(strict=True)), MAX_CATALOG))]
+                entries,feature_cursor=feature_window(db,project_id,
+                    str(Path(self.index.studio.db_path).resolve(strict=True)),navigation["features"])
+        continuation["features"]=feature_cursor
+        self._wo5_project(project_id)
+        more_features=feature_cursor is not None
         features = [{
             "feature_id": r["feature_id"],
             "assembly_id": r["assembly_id"],
@@ -142,6 +147,9 @@ class FinishedReviewActions:
             "format": FORMAT, "status": "NATIVE_PROJECT_SCOPED_READ_ONLY",
             "project_id": project_id, "assemblies": assemblies,
             "features": features, "director_intents": intents,
+            "catalog_truncated":more_features or any(v is not None for v in continuation.values()),
+            "object_catalog_continuation":continuation,
+            "catalog_navigation":navigation,
             "director_reviews": reviews,
             "native_source_preview_available": True,
             "cinema_journal_available": journal is not None,

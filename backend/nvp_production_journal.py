@@ -202,6 +202,8 @@ class ProductionJournal:
                     detail TEXT NOT NULL,
                     recorded_at TEXT NOT NULL
                 );
+                CREATE INDEX IF NOT EXISTS production_jobs_catalog_page
+                    ON production_jobs(project_id,created_at,job_id);
                 CREATE INDEX IF NOT EXISTS production_segments_ready
                     ON production_segments(job_id,state,position);
             """+paged.SCHEMA)

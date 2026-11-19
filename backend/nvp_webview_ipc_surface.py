@@ -45,8 +45,9 @@ class NativeWebviewIPCSurface:
     def wo6_plan_read(self, project_id, plan_id):
         return self._delegate.wo6_plan_read(project_id, plan_id)
 
-    def wo5_review_catalog(self, project_id):
-        return self._delegate.wo5_review_catalog(project_id)
+    def wo5_review_catalog(self, project_id, navigation=None):
+        if navigation is None:return self._delegate.wo5_review_catalog(project_id)
+        return self._delegate.wo5_review_catalog(project_id,navigation)
 
     def wo5_review_read_intent(self, project_id, intent_id):
         return self._delegate.wo5_review_read_intent(project_id, intent_id)

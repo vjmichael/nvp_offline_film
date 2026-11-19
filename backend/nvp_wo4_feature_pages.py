@@ -10,6 +10,7 @@ import re
 
 from backend.nvp_production_journal import _canonical, _digest
 from backend.nvp_wo4_resource_budget import MAX_REELS
+from backend.nvp_feature_receipt_tree import ReceiptTree,output_header,check_output_header
 
 FORMAT = "nvp.wo4.feature_pages.v2"
 PAGE = 64
@@ -120,7 +121,7 @@ def store_output(db,fid,files,digest):
     if type(files) is not dict or not files:
         raise PermissionError("Exact verified output file hashes required")
     return store(db,fid,'output',[[k,files[k]] for k in sorted(files)],digest,
-                 header={"file_sha256":_digest(_canonical(files))})
+                 header=output_header(files,digest,_digest(_canonical(files))))
 
 
 def output(db,fid,encoded,digest,*,first=None,limit=PAGE):
@@ -132,6 +133,7 @@ def output(db,fid,encoded,digest,*,first=None,limit=PAGE):
         if exists(db,fid,'output'):raise PermissionError("Feature output page pointer changed")
         return root if first is None else (len(root),list(sorted(root.items()))[first:first+limit])
     h=sha256();h.update(b'{');previous=None;result={} if first is None else [];count=0
+    tree=ReceiptTree(digest)
     for item in rows(db,fid,'output',root,digest):
         if (type(item) is not list or len(item)!=2 or type(item[0]) is not str or
                 not re.fullmatch(r'(?:CPL|PKL|ASSETMAP|VOLINDEX)\.xml|(?:picture|sound)_[0-9]{4}\.mxf',item[0]) or
@@ -140,10 +142,10 @@ def output(db,fid,encoded,digest,*,first=None,limit=PAGE):
         if count:h.update(b',')
         h.update(_canonical(item[0])+b':'+_canonical(item[1]))
         previous=item[0]
+        tree.add(item[0],item[1])
         if first is None:result[item[0]]=item[1]
         elif first<=count<first+limit:result.append(item)
         count+=1
     h.update(b'}')
-    if root['header']!={'file_sha256':h.hexdigest()}:
-        raise PermissionError("Output checkpoint digest changed")
+    check_output_header(root['header'],h.hexdigest(),tree)
     return result if first is None else (count,result)
