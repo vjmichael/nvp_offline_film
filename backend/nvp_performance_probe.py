@@ -62,7 +62,11 @@ def _snapshot():
 
 
 class PerfSession:
-    def __init__(self):
+    def __init__(self, *, gpu=False):
+        self.gpu = None
+        if gpu:
+            from backend.nvp_gpu_observation import GPUObserver
+            self.gpu = GPUObserver()
         self.rows = {}
         self.job = {"samples": 0, "cpu_samples": 0, "commit_samples": 0,
                     "cpu_100ns": None, "peak_commit_bytes": None}
@@ -78,7 +82,9 @@ class PerfSession:
                 "memory_semantics": "process lifetime peak; not per-span allocation",
                 "observation_errors": self.observation_errors,
                 "gpu_memory_bytes": None, "gpu_budget_bytes": None,
-                "gpu_unavailable_reason": "no qualified per-device native sampler"}
+                "gpu_unavailable_reason": "see per-sensor GPU evidence; no single comparable scalar",
+                "gpu": self.gpu.report() if self.gpu is not None else {"enabled": False,
+                    "status": "disabled", "sensors": []}}
 
     def _record(self, name, wall, cpu, before, after, raised):
         row = self.rows.setdefault(name, {"calls": 0, "raised": 0, "wall_ns": 0,
@@ -101,13 +107,19 @@ class PerfSession:
 
 
 @contextmanager
-def observe():
-    session = PerfSession()
+def observe(*, gpu=False):
+    session = PerfSession(gpu=gpu)
     token = _ACTIVE.set(session)
     try:
+        if session.gpu is not None:
+            session.gpu.sample(force=True)
         yield session
     finally:
-        _ACTIVE.reset(token)
+        try:
+            if session.gpu is not None:
+                session.gpu.sample(force=True)
+        finally:
+            _ACTIVE.reset(token)
 
 
 @contextmanager
@@ -117,6 +129,8 @@ def span(name):
         yield
         return
     try:
+        if session.gpu is not None:
+            session.gpu.sample()
         before = _snapshot()
         wall, cpu = time.perf_counter_ns(), time.process_time_ns()
     except Exception:
@@ -177,3 +191,12 @@ def observe_windows_job(handle):
             row["peak_commit_bytes"] = max(row["peak_commit_bytes"] or 0, peak)
     except Exception:
         session.observation_errors += 1
+
+
+def observe_live_windows_gpu(handle, pid):
+    session = _ACTIVE.get()
+    if session is not None and session.gpu is not None:
+        try:
+            session.gpu.worker(handle, pid)
+        except Exception:
+            session.observation_errors += 1

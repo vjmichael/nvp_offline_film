@@ -9,7 +9,7 @@ Containment API errors fail closed; there is no uncontained Popen fallback.
 """
 from __future__ import annotations
 
-from backend.nvp_performance_probe import measured, span, observe_windows_job
+from backend.nvp_performance_probe import measured, span, observe_windows_job, observe_live_windows_gpu
 
 import os
 from pathlib import Path
@@ -63,6 +63,8 @@ class WindowsJobProcess:
         if win32event.WaitForSingleObject(self._process, 0) == win32event.WAIT_OBJECT_0:
             code = win32process.GetExitCodeProcess(self._process)
             self.returncode = code if code < 0x80000000 else code - 0x100000000
+        else:
+            observe_live_windows_gpu(self._process, self.pid)
         return self.returncode
 
     def wait(self, timeout=None):

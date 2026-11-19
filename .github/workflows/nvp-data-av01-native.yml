@@ -168,6 +168,8 @@ jobs:
         shell: bash
         run: |
           python -m unittest discover -s tests -p 'test_nvp_performance_probe.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_gpu_observation.py' -v
+          python -m tools.nvp_perf_benchmark
           python -m tools.nvp_perf_acceptance usd
           python -m unittest discover -s tests -p 'test_nvp_openusd_reusable_assets.py' -v
           python -m unittest discover -s tests -p 'test_nvp_slate08b_native_camera_ipc.py' -v
