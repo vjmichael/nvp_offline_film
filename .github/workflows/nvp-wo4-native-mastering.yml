@@ -78,7 +78,7 @@ jobs:
         run: |
           python -m compileall -q backend tests
           if ($LASTEXITCODE -ne 0) { throw 'Source syntax failure' }
-          foreach ($f in @('pcm_master','xyz12_master','master_qc','mastering_decision','loudness','pcm_stream','loudness_stream','mxf_stream','file_dcp','multireel','feature_journal')) {
+          foreach ($f in @('pcm_master','xyz12_master','master_qc','mastering_decision','loudness','pcm_stream','loudness_stream','longfilm_audio','mxf_stream','file_dcp','multireel','feature_journal')) {
             python -m unittest discover -s tests -p ("test_nvp_wo4_"+$f+".py") -v
             if ($LASTEXITCODE -ne 0) { throw "WO4 original source suite failed: $f" }
           }

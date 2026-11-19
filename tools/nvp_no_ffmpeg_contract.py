@@ -43,6 +43,7 @@ ENTRYPOINTS=(
     "backend/nvp_wo6_creator_planning_desktop.py",
     "tools/nvp_wo5_release_codecs.py",
     "backend/nvp_wo4_loudness_stream.py",
+    "backend/nvp_wo4_longfilm_audio.py",
     "backend/nvp_wo4_master_delivery.py",
     "backend/nvp_wo4_picture_spool.py",
     "backend/nvp_wo4_supervised_sound.py",
