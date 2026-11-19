@@ -17,7 +17,7 @@ import time
 
 from backend.nvp_p1f_picture_audio_delivery import (
     P1FVerifiedSegmentDelivery,FORMAT as SEGMENT_FORMAT)
-from backend.nvp_p1f_p2_reel_plan import P1FReelPlan
+from backend.nvp_p1f_p2_reel_plan import P1FReelPlan, reel_at, FRAMES_PER_REEL
 from backend.nvp_film_index import _require_pid,_id
 
 FORMAT="nvp.p1f.p2.verified_multi_reel_coverage.v1"
@@ -86,8 +86,8 @@ class P1FVerifiedFilmCoverage:
             raise RuntimeError("Source audio/picture interval is incomplete or disordered")
         for frame in frames:
             index=frame["global_frame"]
-            reel_index=index//240
-            reel_first=plan["data"]["reels"][reel_index]["first_frame"]
+            reel_index=index//FRAMES_PER_REEL
+            reel_first=reel_at(plan["data"],reel_index)["first_frame"]
             actual=self.plans.picture_instant(
                 project_id,plan_id,reel_index,index-reel_first)
             if (frame["original_take_sha256"]!=actual["source_take_sha256"] or
@@ -121,31 +121,33 @@ class P1FVerifiedFilmCoverage:
         """Independently reopen every registered source segment and compare clocks."""
         _require_pid(project_id);_id(plan_id,"original production plan")
         plan=self.plans.read(project_id,plan_id)
+        cursor=0;segments=0;broken=[]
         with self._connect() as db:
             rows=db.execute("""SELECT plan_sha256,batch_id,first_frame,
                  frame_count,source_manifest_sha256,
                  first_source_take_sha256,last_source_take_sha256
                  FROM verified_segments WHERE project_id=? AND plan_id=?
-                 ORDER BY first_frame,batch_id""",(project_id,plan_id)).fetchall()
-        cursor=0;segments=0;broken=[]
-        for plan_sha,batch,first,count,manifest_sha,first_take,last_take in rows:
-            if first!=cursor:
-                broken.append({"gap_or_overlap_at":cursor,"next_frame":first})
-                break
-            if plan_sha!=plan["document_sha256"]:
-                raise RuntimeError("Original FilmIndex plan identity changed")
-            current=self.delivery.verify_delivered(batch)
-            if (current["project_id"]!=project_id or
-                    current["plan_id"]!=plan_id or
-                    current["plan_document_sha256"]!=plan_sha or
-                    _digest(current)!=manifest_sha or
-                    current["frame_count"]!=count or
-                    current["frames"][0]["global_frame"]!=first or
-                    current["frames"][-1]["global_frame"]!=first+count-1 or
-                    current["frames"][0]["original_take_sha256"]!=first_take or
-                    current["frames"][-1]["original_take_sha256"]!=last_take):
-                raise RuntimeError("Rendered source coverage differs from independent audio/picture proof")
-            cursor+=count;segments+=1
+                 ORDER BY first_frame,batch_id""",(project_id,plan_id))
+            for plan_sha,batch,first,count,manifest_sha,first_take,last_take in rows:
+                if first!=cursor:
+                    broken.append({"gap_or_overlap_at":cursor,"next_frame":first})
+                    break
+                if plan_sha!=plan["document_sha256"]:
+                    raise RuntimeError("Original FilmIndex plan identity changed")
+                current=self.delivery.verify_delivered(batch)
+                if (current["project_id"]!=project_id or
+                        current["plan_id"]!=plan_id or
+                        current["plan_document_sha256"]!=plan_sha or
+                        _digest(current)!=manifest_sha or
+                        current["frame_count"]!=count or
+                        current["frames"][0]["global_frame"]!=first or
+                        current["frames"][-1]["global_frame"]!=first+count-1 or
+                        current["frames"][0]["original_take_sha256"]!=first_take or
+                        current["frames"][-1]["original_take_sha256"]!=last_take):
+                    raise RuntimeError("Rendered source coverage differs from independent audio/picture proof")
+                cursor+=count;segments+=1
+        if self.plans.read(project_id,plan_id)["document_sha256"]!=plan["document_sha256"]:
+            raise RuntimeError("Original plan changed during coverage scan")
         total=plan["data"]["frame_count"]
         if cursor>total:
             raise RuntimeError("Verified source coverage exceeds planned film")

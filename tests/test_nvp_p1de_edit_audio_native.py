@@ -234,11 +234,55 @@ class NativeEditActorAudioTests(unittest.TestCase):
         self.assertEqual(sum(x["sample_count"] for x in feature), 518400000)
         self.assertEqual(feature[-1]["end_tick"], 3*60*60*T)
         self.assertTrue(all(x["status"] == "UNRENDERED" for x in feature))
+        extended = reel_layout(8*60*60*T)
+        self.assertEqual(len(extended), 2880)
+        self.assertEqual(extended[-1]["end_tick"], 8*60*60*T)
+        self.assertEqual(extended.page(2879,64), [extended[-1]])
         with self.assertRaises(ValueError):
-            reel_layout(3*60*60*T + T)
+            reel_layout((2**53//T+1)*T)
         with self.assertRaises(ValueError):
             reel_layout(T + SAMPLE_TICK)
 
+
+    def test_native_hierarchical_eight_hour_source_and_cross_page_sound(self):
+        from backend.nvp_p1f_p2_reel_plan import P1FReelPlan, FORMAT_COMPACT
+        leaf=self.publish("hier_leaf",[self.segment()])
+        engine=P1DEConform(self.index,approve_edit=lambda event,scope:
+            event=="manifest_approved" and scope["operation"]==
+            "nvp.p1de.publish_source_edit_manifest.v2")
+        def ref(row):
+            return {"edit_id":row["object_id"],"revision":row["revision"],
+                    "document_sha256":row["document_sha256"]}
+        minute=engine.publish_manifest(self.pid,"hier_minute",[ref(leaf)]*60,
+            creator_event="manifest_approved")
+        hour=engine.publish_manifest(self.pid,"hier_hour",[ref(minute)]*60,
+            creator_event="manifest_approved")
+        film=engine.publish_manifest(self.pid,"hier_film",[ref(hour)]*8,
+            creator_event="manifest_approved")
+        self.assertEqual(film["duration_tick"],8*3600*T)
+        self.assertEqual(engine.manifest_page(self.pid,"hier_film",1,
+            first_index=7,limit=1)["entries"][0]["end_tick"],8*3600*T)
+        scheduler=P1FReelPlan(self.index)
+        receipt=scheduler.publish(self.pid,"hier_reels",edit_id="hier_film",
+            edit_revision=1,expected_edit_document_sha256=film["document_sha256"])
+        row=scheduler.read(self.pid,"hier_reels")
+        self.assertEqual(row["data"]["format"],FORMAT_COMPACT)
+        self.assertNotIn("reels",row["data"])
+        page=scheduler.page(self.pid,"hier_reels",first_index=2879,limit=64)
+        self.assertEqual(page["total_reels"],2880)
+        self.assertIsNone(page["next_index"])
+        instant=scheduler.picture_instant(self.pid,"hier_reels",2879,239)
+        self.assertEqual(instant["output_frame"],691199)
+        self.assertEqual(instant["source_tick"],23*T//24)
+        start=7*3600*48000-128
+        mix=engine.audio_window(self.pid,"hier_film",1,first_sample=start,count=512)
+        left=self.engine.audio_window(self.pid,"hier_leaf",1,first_sample=48000-128,count=128)
+        right=self.engine.audio_window(self.pid,"hier_leaf",1,first_sample=0,count=384)
+        self.assertEqual(base64.b64decode(mix["pcm_base64"]),
+                         base64.b64decode(left["pcm_base64"])+base64.b64decode(right["pcm_base64"]))
+        reopened=P1FReelPlan(FilmIndex(Studio(self.path)))
+        self.assertEqual(reopened.read(self.pid,"hier_reels")["document_sha256"],receipt["document_sha256"])
+        self.assertFalse(row["data"]["creator_worker_authorized"])
 
     def test_p1f_refuses_to_render_placeholder_actor_or_claim_finished_movie(self):
         from backend.nvp_p1f_p2_reel_plan import P1FReelPlan

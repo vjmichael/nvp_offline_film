@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 from hashlib import sha256
+from itertools import zip_longest
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,7 @@ ID_RE = re.compile(r"[A-Za-z][A-Za-z0-9_.:-]{0,79}\Z")
 PROJECT_RE = re.compile(r"[0-9a-f]{32}\Z")
 MAX_SEGMENTS = 12000
 MAX_MANIFEST_BYTES = 3 * 1024 * 1024
+MAX_STATUS_PAGE = 64
 STATE_VALUES = frozenset((
     "QUEUED", "RUNNING", "VERIFY_COMPLETE", "REVIEW_REQUIRED", "CANCELLED"
 ))
@@ -365,10 +367,12 @@ class ProductionJournal:
         ordered=manifest.get("segments",manifest.get("frames"))
         rows=db.execute("""SELECT position,start_tick,end_tick,source_path,
                                  expected_sha256,expected_bytes FROM production_segments
-                          WHERE job_id=? ORDER BY position""",(job_id,)).fetchall()
-        if type(ordered) is not list or len(rows)!=len(ordered):
+                          WHERE job_id=? ORDER BY position""",(job_id,))
+        if type(ordered) is not list:
             raise RuntimeError("Production checkpoint source manifest incomplete")
-        for row,expected in zip(rows,ordered):
+        for row,expected in zip_longest(rows,ordered):
+            if row is None or expected is None:
+                raise RuntimeError("Production checkpoint source manifest incomplete")
             if dict(row)!={**{k:expected[k] for k in
                    ("position","start_tick","end_tick","source_path")},
                    "expected_sha256":expected["source_sha256"],
@@ -399,6 +403,41 @@ class ProductionJournal:
                 "total_segments":len(segments),
                 "production_dcp_accepted":False
             }
+
+    def status_page(self, job_id, *, first_position=0, limit=MAX_STATUS_PAGE,
+                    expected_project_id=None):
+        """Verified bounded status view; no new operation or retry authority."""
+        if (type(first_position) is not int or first_position < 0 or
+                type(limit) is not int or not 1 <= limit <= MAX_STATUS_PAGE):
+            raise ValueError("Bounded production status page required")
+        with self._read() as db:
+            db.execute("BEGIN")
+            if expected_project_id is not None:
+                owner=db.execute("SELECT project_id FROM production_jobs WHERE job_id=?",
+                                 (job_id,)).fetchone()
+                if owner is None or owner["project_id"]!=expected_project_id:
+                    raise PermissionError("Production job outside authorized project")
+            job,_=self._verified_manifest(db,job_id)
+            totals=db.execute("""SELECT COUNT(*), SUM(CASE WHEN state='VERIFIED' THEN 1 ELSE 0 END)
+                  FROM production_segments WHERE job_id=?""",(job_id,)).fetchone()
+            count, verified=totals[0],totals[1] or 0
+            if first_position >= count:
+                raise ValueError("Production status cursor outside original manifest")
+            rows=[dict(row) for row in db.execute("""SELECT position,start_tick,end_tick,state,
+                          verified_sha256,verified_bytes,verified_at FROM production_segments
+                   WHERE job_id=? AND position>=? ORDER BY position LIMIT ?""",
+                   (job_id,first_position,limit))]
+            if not rows or [x["position"] for x in rows]!=list(range(first_position, first_position+len(rows))):
+                raise RuntimeError("Production status positions changed")
+            end=first_position+len(rows)
+            return {"format":FORMAT,"job_id":job_id,"project_id":job["project_id"],
+                    "assembly_id":job["assembly_id"],"assembly_revision":job["assembly_revision"],
+                    "state":job["state"],"task_kind":job["task_kind"],
+                    "manifest_sha256":job["manifest_sha256"],"assembly_sha256":job["assembly_sha256"],
+                    "cancel_requested":bool(job["cancel_requested"]),"owner_pid":job["owner_pid"],
+                    "updated_at":job["updated_at"],"segments":rows,"verified_segments":verified,
+                    "total_segments":count,"next_position":end if end<count else None,
+                    "production_dcp_accepted":False}
 
     def events(self, job_id, *, limit=200):
         if type(limit) is not int or not 1<=limit<=1000:

@@ -24,6 +24,8 @@ from backend.nvp_original_clock_binding import verified_original_clock
 from backend.nvp_independent_device_sync import interpolated_window
 from backend.nvp_temporal_ledger import TemporalLedger, TICKS_PER_SECOND, _int
 
+from backend import nvp_p1de_hierarchy as hierarchy
+
 FORMAT = "nvp.p1de.source_edit_audio.v1"
 SAMPLE_TICK = TICKS_PER_SECOND // SAMPLE_RATE
 MAX_SEGMENTS = 48
@@ -180,8 +182,8 @@ def _bound_segments(index, pid, segments):
             "audio": checked
         })
         duration += end - start
-        if duration > 3 * 60 * 60 * TICKS_PER_SECOND:
-            raise ValueError("This native edit exceeds the initial three-hour clock cap")
+        if duration > hierarchy.MAX_SOURCE_TICK:
+            raise ValueError("Native edit exceeds exact OpenUSD clock range")
     if len(deps) > 128:
         raise ValueError("Edit needs paged source dependencies before it can be published")
     return ready, duration, list(deps.values())
@@ -241,12 +243,56 @@ class P1DEConform:
         return {**receipt, "source_edit_sha256": sha,
                 "duration_tick": duration, "source_modified": False}
 
+    def publish_manifest(self, pid, edit_id, children, *, expected_revision=0, creator_event):
+        """Compose separately approved edit pages, never approve their workers."""
+        _require_pid(pid)
+        _id(edit_id, "editorial manifest identity")
+        _int(expected_revision, "expected edit revision")
+        if type(children) is not list or not 1 <= len(children) <= hierarchy.MAX_CHILDREN:
+            raise ValueError("Bounded editorial child list required")
+        frozen = json.loads(_canonical(children))
+        if any(c.get("edit_id") == edit_id for c in frozen if type(c) is dict):
+            raise ValueError("Editorial manifest cannot depend on its own identity")
+        doc, deps = hierarchy.compose(frozen, lambda ident, rev: self.read(pid, ident, rev))
+        sha = _digest(doc)
+        scope = {"operation": "nvp.p1de.publish_source_edit_manifest.v2",
+                 "project_id": pid, "edit_id": edit_id,
+                 "expected_revision": expected_revision, "source_edit_sha256": sha}
+        if self.approve_edit(creator_event, dict(scope)) is not True:
+            raise PermissionError("Creator refused exact original editorial hierarchy")
+        current, current_deps = hierarchy.compose(frozen, lambda ident, rev: self.read(pid, ident, rev))
+        if current != doc or current_deps != deps:
+            raise RuntimeError("Editorial children changed during creator consent")
+
+        def guard(db):
+            for child in doc["children"]:
+                row = self.index._read_revision(db, pid, child["edit_id"], child["revision"])
+                if row is None or row["document_sha"] != child["document_sha256"]:
+                    raise RuntimeError("Editorial child changed before publication")
+            if _digest(doc) != sha:
+                raise RuntimeError("Approved editorial hierarchy changed before publication")
+
+        receipt = self.index.register_revision(pid, edit_id, "edit", doc,
+            expected_revision=expected_revision, dependencies=deps, precommit_guard=guard)
+        return {**receipt, "source_edit_sha256": sha, "duration_tick": doc["duration_tick"],
+                "source_modified": False}
+
     def read(self, pid, edit_id, revision=None):
         _require_pid(pid)
         row = self.index.read_revision(pid, edit_id, revision)
-        if row["kind"] != "edit" or row["data"].get("format") != FORMAT:
+        if row["kind"] != "edit":
             raise RuntimeError("Not a P1-D/E native source edit")
         doc = row["data"]
+        if doc.get("format") == hierarchy.FORMAT:
+            # Check direct immutable child identities. Descendant leaf sources
+            # are independently validated on each requested window.
+            expected, deps = hierarchy.compose(hierarchy.references(doc),
+                lambda ident, rev: self.index.read_revision(pid, ident, rev))
+            if expected != doc or deps != row["dependencies"]:
+                raise RuntimeError("Editorial hierarchy or child dependencies changed")
+            return {**row, "source_edit_sha256": _digest(doc)}
+        if doc.get("format") != FORMAT:
+            raise RuntimeError("Not a P1-D/E native source edit")
         source_segments = [
             {key: segment[key] for key in (
                 "take_id", "take_sha256", "in_tick", "out_tick",
@@ -266,6 +312,22 @@ class P1DEConform:
             raise RuntimeError("Source edit record and approved dependencies differ")
         return {**row, "source_edit_sha256": _digest(doc)}
 
+    def manifest_page(self, pid, edit_id, revision=None, *, first_index=0, limit=64):
+        """Read a bounded direct-child or leaf-cut page of one immutable edit."""
+        start = _int(first_index, "editorial page cursor")
+        n = _int(limit, "editorial page size", minimum=1, maximum=64)
+        record = self.read(pid, edit_id, revision)
+        doc = record["data"]
+        leaf = doc["format"] == FORMAT
+        rows = doc["segments"] if leaf else doc["children"]
+        if start >= len(rows):
+            raise ValueError("Editorial page cursor outside verified manifest")
+        end = min(start+n, len(rows))
+        return {"edit_document_sha256": record["document_sha256"], "leaf": leaf,
+                "entries": rows[start:end], "total_entries": len(rows),
+                "next_index": end if end < len(rows) else None,
+                "master_approved": False}
+
     def plan(self, pid, edit_id, revision, *, first_sample, count):
         """Exact bounded source-time plan for P1-F and future P2 workers."""
         start = _int(first_sample, "film audio sample")
@@ -273,6 +335,12 @@ class P1DEConform:
         record = self.read(pid, edit_id, revision)
         if (start + n) * SAMPLE_TICK > record["data"]["duration_tick"]:
             raise ValueError("Requested sound window crosses approved film end")
+        if record["data"].get("format") == hierarchy.FORMAT:
+            slices = hierarchy.slices_for_window(record["data"], start, n,
+                lambda ident, rev, a, b: self.plan(pid, ident, rev, first_sample=a, count=b))
+            return {"edit_document_sha256": record["document_sha256"],
+                    "source_edit_sha256": record["source_edit_sha256"],
+                    "first_sample": start, "sample_count": n, "slices": slices}
         slices = []
         cursor = 0
         for seg in record["data"]["segments"]:

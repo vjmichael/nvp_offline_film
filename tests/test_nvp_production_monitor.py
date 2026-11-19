@@ -62,6 +62,20 @@ class ScopedMonitor(unittest.TestCase):
         with self.assertRaises(PermissionError):
             view.catalog("a"*32)
 
+    def test_authenticated_bounded_segment_view(self):
+        monitor=ProductionMonitor(self.index,self.journal,
+            authorize_project_read=lambda scope:scope["project_id"]==self.projects[0])
+        page=monitor.inspect_page(self.projects[0],self.jobs[0],limit=1)
+        self.assertEqual(page["total_segments"],1)
+        self.assertEqual(len(page["segments"]),1)
+        self.assertIsNone(page["next_position"])
+        self.assertFalse(page["source_paths_exposed"])
+        self.assertNotIn(str(self.root),str(page))
+        with self.assertRaises(PermissionError):
+            monitor.inspect_page(self.projects[0],self.jobs[1],limit=1)
+        with self.assertRaises(PermissionError):
+            monitor.inspect_page(self.projects[1],self.jobs[1],limit=1)
+
     def test_reconnect_reloads_verified_progress_from_sqlite(self):
         monitor=ProductionMonitor(
             self.index,self.journal,authorize_project_read=lambda _:True)

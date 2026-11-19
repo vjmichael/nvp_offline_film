@@ -421,9 +421,7 @@ class P1FOriginalPictureSound:
         original=receipt["original_source"]
         expected=self.plan.picture_instant(
             pid,plan_id,
-            next(i for i,x in enumerate(plan["data"]["reels"])
-                 if x["first_frame"]<=original["output_tick"]//(TICKS_PER_SECOND//24)
-                 <x["first_frame"]+x["frame_count"]),
+            original["output_tick"]//(TICKS_PER_SECOND*10),
             (original["output_tick"]//(TICKS_PER_SECOND//24))%240)
         if (expected["source_take_sha256"]!=original["take_document_sha256"] or
                 expected["source_tick"]!=original["source_tick"]):

@@ -16,7 +16,7 @@ from backend.nvp_film_index import _require_pid,_id
 from backend.nvp_p1f_multishot_reel import P1FDurableShotReels
 from backend.nvp_p1f_picture_audio_delivery import P1FVerifiedSegmentDelivery
 from backend.nvp_p1f_p2_verified_coverage import P1FVerifiedFilmCoverage
-from backend.nvp_p1f_p2_reel_plan import P1FReelPlan
+from backend.nvp_p1f_p2_reel_plan import P1FReelPlan, reel_at, FRAMES_PER_REEL
 
 FORMAT="nvp.p1f.sustained.verified_source_work_review.v1"
 MAX_BATCH=240
@@ -58,13 +58,8 @@ class P1FReviewedReelQueue:
             }
         if cursor>total:
             raise RuntimeError("Source coverage count exceeds original film duration")
-        reels=original["data"]["reels"]
-        matches=[(i,reel) for i,reel in enumerate(reels)
-                 if reel["first_frame"]<=cursor<
-                    reel["first_frame"]+reel["frame_count"]]
-        if len(matches)!=1:
-            raise RuntimeError("Original film cursor has no unique source reel")
-        reel_index,reel=matches[0]
+        reel_index=cursor//FRAMES_PER_REEL
+        reel=reel_at(original["data"],reel_index)
         offset=cursor-reel["first_frame"]
         length=min(max_frames,reel["frame_count"]-offset)
         if length<1:

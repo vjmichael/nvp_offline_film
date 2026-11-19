@@ -67,6 +67,19 @@ class DurableProductionJobTests(unittest.TestCase):
         self.assertEqual(report["verified_segments"],0)
         self.assertFalse(report["production_dcp_accepted"])
 
+    def test_native_status_page_preserves_full_manifest_guard(self):
+        job=self.submit()["job_id"]
+        first=self.journal.status_page(job,limit=2)
+        self.assertEqual(first["next_position"],2)
+        self.assertEqual(first["total_segments"],3)
+        self.assertEqual([x["position"] for x in first["segments"]],[0,1])
+        last=self.journal.status_page(job,first_position=2,limit=2)
+        self.assertIsNone(last["next_position"])
+        self.assertEqual(last["manifest_sha256"],first["manifest_sha256"])
+        self.assertFalse(last["production_dcp_accepted"])
+        with self.assertRaises(ValueError): self.journal.status_page(job,limit=65)
+        with self.assertRaises(ValueError): self.journal.status_page(job,first_position=3)
+
     def test_creator_scope_changes_cannot_rewrite_trusted_manifest(self):
         def malicious(scope):
             scope["assembly_sha256"]="f"*64

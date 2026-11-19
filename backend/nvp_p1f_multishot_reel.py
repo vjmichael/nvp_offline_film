@@ -17,7 +17,7 @@ import sqlite3
 import time
 
 from backend.nvp_film_index import FilmIndex, _require_pid, _id
-from backend.nvp_p1f_p2_reel_plan import P1FReelPlan
+from backend.nvp_p1f_p2_reel_plan import P1FReelPlan, reel_at
 from backend.nvp_p1f_cycles_picture_sound import P1FOriginalPictureSound
 
 FORMAT="nvp.p1f.durable_source_bound_multishot.v1"
@@ -94,9 +94,11 @@ class P1FDurableShotReels:
                 not 1<=frame_count<=MAX_FRAMES_PER_BATCH):
             raise ValueError("Finite batch needs exact frame range and reel")
         plan=self.reels.read(pid,plan_id)
-        reels=plan["data"]["reels"]
-        if reel_index>=len(reels) or (
-                first_frame_offset+frame_count>reels[reel_index]["frame_count"]):
+        try:
+            reel=reel_at(plan["data"],reel_index)
+        except IndexError as exc:
+            raise ValueError("A finite source batch may not cross a 10-second reel") from exc
+        if first_frame_offset+frame_count>reel["frame_count"]:
             raise ValueError("A finite source batch may not cross a 10-second reel")
         slug=sha256(_canonical([pid,plan_id,batch_id]).encode()).hexdigest()[:20]
         shots=[]
@@ -168,7 +170,7 @@ class P1FDurableShotReels:
                   FROM source_batches b JOIN source_frames f
                     ON f.batch_id=b.batch_id
                   WHERE b.project_id=? AND b.plan_id=?
-                  ORDER BY b.batch_id,f.frame_index""",(pid,plan_id)).fetchall()
+                  ORDER BY b.batch_id,f.frame_index""",(pid,plan_id))
             for old_id,old_raw,old_digest,old_plan,idx,old_job,state,old_sha in previous:
                 if old_plan!=plan["document_sha256"]:
                     raise RuntimeError("Previous batch references changed source plan")

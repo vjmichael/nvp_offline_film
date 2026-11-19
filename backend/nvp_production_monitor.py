@@ -41,7 +41,7 @@ class ProductionMonitor:
         self._project(project_id)
         jobs=[]
         for item in self.journal.list_jobs(project_id):
-            snapshot=self.journal.status(item["job_id"])
+            snapshot=self.journal.status_page(item["job_id"],limit=1,expected_project_id=project_id)
             if snapshot["project_id"]!=project_id:
                 raise PermissionError("Production journal changed project scope")
             jobs.append({
@@ -66,7 +66,17 @@ class ProductionMonitor:
 
     def inspect(self, project_id, job_id):
         self._project(project_id)
-        snapshot=self.journal.status(job_id)
+        return self._view(project_id,job_id,self.journal.status(job_id))
+
+    def inspect_page(self, project_id, job_id, *, first_position=0, limit=64):
+        self._project(project_id)
+        snapshot=self.journal.status_page(job_id,first_position=first_position,limit=limit,
+                                          expected_project_id=project_id)
+        return {**self._view(project_id,job_id,snapshot),
+                "next_position":snapshot["next_position"]}
+
+    @staticmethod
+    def _view(project_id,job_id,snapshot):
         if snapshot["project_id"]!=project_id:
             raise PermissionError("Job does not belong to approved project")
         return {
