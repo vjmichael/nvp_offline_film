@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from hashlib import sha256
 import struct
 import unittest
-from backend.nvp_dci_dual_decode import compare_xyz12
+from backend.nvp_dci_dual_decode import compare_xyz12,summarize_xyz12
 from backend.nvp_wo3_codec_bundle_provenance import (DUAL_QUALIFICATION_FORMAT,
     DUAL_QUALIFICATION_REQUIRED, verify_native_codec_bundle)
 from tools.nvp_dci_patch_openjpeg import patch_bytes, ANCHOR, GUARD, TARGET
@@ -25,6 +25,43 @@ class DCIQualificationTests(unittest.TestCase):
         self.assertFalse(r['normative_decoder_tolerance_verified'])
         for bad in (b'',b'123',a+b'123456',struct.pack('>6H',4096,0,0,0,0,0)):
             with self.assertRaises(ValueError):compare_xyz12(a,bad)
+    def test_squared_signed_and_peak_metrics(self):
+        a=struct.pack('>6H',1,2,3,4,5,6)
+        b=struct.pack('>6H',3,1,3,2,6,6)
+        r=compare_xyz12(a,b)
+        self.assertEqual(r['sum_squared_delta_xyz'],[8,2,0])
+        self.assertEqual(r['sum_signed_delta_xyz'],[0,0,0])
+        self.assertEqual(r['rmse_xyz'],[2.,1.,0.])
+        self.assertEqual(r['psnr_db_xyz'][2],None)
+        self.assertAlmostEqual(r['psnr_db_xyz'][0],66.22448,places=4)
+        other=compare_xyz12(a,a)
+        agg=summarize_xyz12([r,other],expected_frames=2,pixels_per_frame=2)
+        self.assertEqual(agg['sum_squared_delta_xyz'],[8,2,0])
+        self.assertEqual(agg['pixels_compared'],4)
+        self.assertAlmostEqual(agg['rmse_xyz'][0],2**.5)
+        for rows,n,pixels in (([r],2,2),([r,other],1,2),([r],1,3)):
+            with self.assertRaises(ValueError):summarize_xyz12(rows,expected_frames=n,pixels_per_frame=pixels)
+
+    def test_reference_ledger_mismatch(self):
+        from backend.nvp_wo3_independent_essence import _reference_ledger,_read_reference
+        a=struct.pack('>3H',0,4095,1);digest=sha256(a).hexdigest()
+        read=lambda _:a
+        original=[digest]
+        self.assertEqual(_reference_ledger(original,read,1),(digest,))
+        self.assertEqual(_read_reference(read,digest,1,1),a)
+        for corrupt in (lambda _:b'x'*6,lambda _:a+b'x',lambda _:bytearray(a)):
+            with self.assertRaises(PermissionError):_read_reference(corrupt,digest,1,1)
+        for hashes,reader,count in ((original,None,1),(None,read,1),(original,read,2),(['x'],read,1)):
+            with self.assertRaises(PermissionError):_reference_ledger(hashes,reader,count)
+
+    def test_jasper_build_outside_pinned_source(self):
+        workflow=(Path(__file__).resolve().parents[1]/'.github/workflows/nvp-wo3-dcp-native.yml').read_text()
+        self.assertIn('Join-Path $env:RUNNER_TEMP "nvp-jasper-qualification-build"',workflow)
+        self.assertIn('cmake -S deps/jasper -B $jasperBuild',workflow)
+        self.assertIn('cmake --build $jasperBuild',workflow)
+        self.assertNotIn('deps/jasper/build',workflow)
+        self.assertNotIn('ALLOW_IN_SOURCE_BUILD',workflow)
+
     def test_component_chunk_boundary_and_wide_accumulator(self):
         # Maximum 4K raster: channel sum exceeds a signed 32-bit counter.
         count=4096*2160
@@ -36,6 +73,8 @@ class DCIQualificationTests(unittest.TestCase):
         self.assertEqual(r['sum_absolute_delta_xyz'],[4095*count,4095*count,count])
         self.assertEqual(r['different_samples_xyz'],[count]*3)
         self.assertEqual(r['mean_absolute_delta_xyz'],[4095.,4095.,1.])
+        self.assertEqual(r['sum_squared_delta_xyz'],[4095**2*count,4095**2*count,count])
+        self.assertEqual(r['sum_signed_delta_xyz'],[-4095*count,4095*count,-count])
         # Reject over-precision beyond a chunk boundary, not just its prefix.
         with self.assertRaises(ValueError):
             compare_xyz12(a,b[:-6]+struct.pack('>3H',4096,0,0))

@@ -68,6 +68,8 @@ def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
         stage=root/f"codec-{i}";stage.mkdir()
         record=encode_disk_xyz12(enc,profile=profile,source_path=str(path),
             source_sha256=digest,source_take_sha=origin,private_work=stage,check_cancel=never)
+        if record["source_sha256"]!=digest:
+            raise PermissionError("Encoded picture reference identity changed")
         encoded.append((stage/"frame.j2c",record["codestream_sha256"],record["codestream_bytes"]))
     if len({e[1] for e in encoded})!=unique:
         raise RuntimeError("Synthetic inputs must encode distinct codestreams")
@@ -84,6 +86,7 @@ def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
         raise RuntimeError("Dual qualification requires both full reels")
     parts=[]
     expected_reels=[]
+    by_source_digest={digest:path for path,digest in originals}
     for n,r in enumerate(plan["reels"]):
         count=r["frame_count"]
         reel=root/f"reel-{n:03d}";reel.mkdir()
@@ -91,8 +94,11 @@ def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
         pstage=reel/"picture";pstage.mkdir()
         sstage=reel/"sound";sstage.mkdir()
         shas=[]
+        references=[]
         for i in range(count):
-            source,digest,size=encoded[((r["first_frame"]+i) if not dual_qualification or n==0 else (unique-1-i))%unique]
+            position=((r["first_frame"]+i) if not dual_qualification or n==0 else (unique-1-i))%unique
+            source,digest,size=encoded[position]
+            references.append(originals[position][1])
             _copy_protected(source,frames/f"{i:06d}.j2c",digest,size,never)
             shas.append(digest)
         pic_id=str(uuid4());snd_id=str(uuid4())
@@ -117,6 +123,7 @@ def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
             frames=count,sound_uuid=snd_id,stage_dir=sstage,check_cancel=never)
         expected_reels.append({"picture_uuid":pic_id,"sound_uuid":snd_id,"frames":count,
             "ordered_codestream_sha256":shas,"pcm_sha256":pcm_digest.hexdigest()})
+        if dual_qualification:expected_reels[-1]["ordered_xyz12_sha256"]=references
         fields={"source_take_sha256":origin,"frame_count":count,"edit_rate":[24,1],
                 "source_modified":False,"production_dcp_accepted":False}
         parts.append({"start_tick":r["start_tick"],"end_tick":r["end_tick"],
@@ -135,14 +142,28 @@ def run(root,profile,frame_count,reel_frames,*,dual_qualification=False):
     dual_report=None
     if dual_qualification:
         from backend.nvp_wo3_independent_essence import decode_full_multireel_candidate
+        def reference_reader(digest):
+            from backend.nvp_wo3_dcp_structure import _linked_entry
+            path=by_source_digest[digest]
+            from backend.nvp_w1g_encrypted_source import verify_efs_inputs
+            if _linked_entry(path) or not path.is_file():
+                raise PermissionError("Reference raster identity changed")
+            verify_efs_inputs(path.parent,names=(path.name,))
+            with path.open("rb") as stream:
+                return stream.read(width*height*6+1)
         dual_report=decode_full_multireel_candidate(result["destination"],
             unwrap=fixture_codec("NVP_NATIVE_ASDCP_UNWRAP","ASDCP-asdcp_unwrap"),
             decoder=fixture_codec("NVP_NATIVE_OPENJPEG_DECODE","OpenJPEG-opj_decompress"),
             second_decoder=fixture_codec("NVP_NATIVE_JASPER_DECODE","JasPer-nvp_decode"),
-            expected_reels=expected_reels,profile=profile)
+            expected_reels=expected_reels,profile=profile,reference_reader=reference_reader)
         if (dual_report["frames_decoded"]!=48 or not dual_report["all_reel_packet_coverage_verified"] or
             not dual_report["all_tracks_minimum_one_second_verified"] or
             not dual_report["all_reels_independent_second_decoder_verified"] or
+            not dual_report["all_reels_source_xyz12_comparison_complete"] or
+            dual_report["feature_source_xyz12_summary"]["source_to_openjpeg"]["frames_compared"]!=48 or
+            dual_report["feature_source_xyz12_summary"]["source_to_jasper"]["frames_compared"]!=48 or
+            not dual_report["all_reels_pcm24_sample_exact"] or
+            dual_report["pcm_channel_count"]!=2 or dual_report["pcm_sample_frames_per_channel"]!=96000 or
             not all(r["pcm24_48000_sample_exact"] for r in dual_report["reels"])):
             raise RuntimeError("Independent full native essence qualification incomplete")
     for path,digest in originals:

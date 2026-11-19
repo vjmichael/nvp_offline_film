@@ -135,11 +135,13 @@ jobs:
           }
           python tools/nvp_dci_stage_jasper.py deps/jasper tools/nvp_dci_jasper_decode.c
           if ($LASTEXITCODE -ne 0) { throw 'JasPer reviewed source preparation' }
-          cmake -S deps/jasper -B deps/jasper/build -DCMAKE_BUILD_TYPE=Release -DJAS_ENABLE_SHARED=OFF -DJAS_ENABLE_LIBJPEG=OFF -DJAS_ENABLE_LIBHEIF=OFF -DJAS_ENABLE_OPENGL=OFF -DJAS_ENABLE_DOC=OFF -DJAS_ENABLE_PROGRAMS=OFF -DJAS_ENABLE_MULTITHREADING_SUPPORT=OFF
+          $jasperBuild=Join-Path $env:RUNNER_TEMP "nvp-jasper-qualification-build"
+          if (Test-Path -LiteralPath $jasperBuild) { throw "Expected fresh out-of-source JasPer build" }
+          cmake -S deps/jasper -B $jasperBuild -DCMAKE_BUILD_TYPE=Release -DJAS_ENABLE_SHARED=OFF -DJAS_ENABLE_LIBJPEG=OFF -DJAS_ENABLE_LIBHEIF=OFF -DJAS_ENABLE_OPENGL=OFF -DJAS_ENABLE_DOC=OFF -DJAS_ENABLE_PROGRAMS=OFF -DJAS_ENABLE_MULTITHREADING_SUPPORT=OFF
           if ($LASTEXITCODE -ne 0) { throw 'Independent decoder configure' }
-          cmake --build deps/jasper/build --config Release --parallel 2 --target nvp_jasper_decode
+          cmake --build $jasperBuild --config Release --parallel 2 --target nvp_jasper_decode
           if ($LASTEXITCODE -ne 0) { throw 'Independent decoder compile' }
-          $matches=@(Get-ChildItem deps/jasper/build -Recurse -File -Filter nvp_jasper_decode.exe | Where-Object {$_.FullName -match 'Release'})
+          $matches=@(Get-ChildItem -LiteralPath $jasperBuild -Recurse -File -Filter nvp_jasper_decode.exe | Where-Object {$_.FullName -match 'Release'})
           if ($matches.Count -ne 1) { throw 'Expected one actual independent decoder' }
           Copy-Item -LiteralPath $matches[0].FullName -Destination (Join-Path $out 'nvp_jasper_decode.exe')
           "NVP_WO3_BUILD_TOOLS=$out" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
