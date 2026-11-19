@@ -176,6 +176,15 @@ class FinishedReviewActions:
             intent_id=payload["intent_id"], shots=payload["shots"],
             approve=self._wo5_approve)
 
+    def wo5_review_feature_page(self, project_id, feature_id, first=0, kind="source"):
+        self._wo5_project(project_id)
+        journal=self._wo5_journal_for_review()
+        result=journal.feature_page(feature_id,project_id=project_id,
+            project_db=Path(self.index.studio.db_path).resolve(strict=True),
+            first=first,limit=32,kind=kind)
+        self._wo5_project(project_id)
+        return result
+
     def wo5_review_inspect_feature(self, project_id, feature_id):
         """A real, possibly slow native hash audit. Never mark film passed."""
         self._wo5_project(project_id)

@@ -54,6 +54,9 @@ class NativeWebviewIPCSurface:
     def wo5_review_save_intent(self, payload):
         return self._delegate.wo5_review_save_intent(payload)
 
+    def wo5_review_feature_page(self, project_id, feature_id, first=0, kind="source"):
+        return self._delegate.wo5_review_feature_page(project_id,feature_id,first,kind)
+
     def wo5_review_inspect_feature(self, project_id, feature_id):
         return self._delegate.wo5_review_inspect_feature(project_id, feature_id)
 

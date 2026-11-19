@@ -139,6 +139,20 @@ class NativeDirectorWindowTests(unittest.TestCase):
             self.api.wo5_review_save_intent(self.intent_request())
         self.assertEqual(self.index.history(self.project,"OriginalIntent01"),[])
 
+    def test_feature_page_native_scope_and_revocation(self):
+        from unittest.mock import Mock
+        reader=Mock()
+        reader.feature_page.return_value={"project_id":self.project,"feature_id":"job","entries":[],"source_paths_exposed":False}
+        with patch.object(self.bridge,"_wo5_journal_for_review",return_value=reader):
+            report=self.api.wo5_review_feature_page(self.project,"job",32,"output")
+            self.assertFalse(report["source_paths_exposed"])
+            reader.feature_page.assert_called_once_with("job",project_id=self.project,
+                project_db=Path(self.studio.db_path).resolve(strict=True),first=32,limit=32,kind="output")
+            self.bridge._project_lock_check=lambda:True
+            with self.assertRaises(PermissionError):
+                self.api.wo5_review_feature_page(self.project,"job")
+            reader.feature_page.assert_called_once()
+
     def test_read_only_native_review_receives_source_bound_feature_report(self):
         evidence={"status":"SOURCE_CUSTODY_READY_FOR_HUMAN_FILM_REVIEW_NOT_ACCEPTED",
                   "project_id":self.project,"feature_id":"real-job",

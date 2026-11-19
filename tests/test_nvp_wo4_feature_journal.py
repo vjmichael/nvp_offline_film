@@ -88,6 +88,16 @@ class PersistentMultiReelFeatureTests(unittest.TestCase):
                              "MULTIREEL_FEATURE_FILMINDEX_RECORDED",indexed)
         result=self.journal.feature(fid)
         self.assertEqual(result["state"],"INDEXED")
+        with self.journal._read() as db:
+            stored=db.execute("SELECT manifest_json,file_sha_json FROM production_features WHERE feature_id=?",(fid,)).fetchone()
+            self.assertEqual(json.loads(stored[0])["format"],"nvp.wo4.feature_pages.v2")
+            self.assertEqual(json.loads(stored[1])["format"],"nvp.wo4.feature_pages.v2")
+        source=self.journal.feature_page(fid,project_id=self.f.pid,project_db=Path(self.f.index.studio.db_path).resolve(),limit=1)
+        self.assertEqual((source["total"],source["next_first"]),(2,1))
+        output=self.journal.feature_page(fid,project_id=self.f.pid,project_db=Path(self.f.index.studio.db_path).resolve(),kind="output")
+        self.assertEqual(output["total"],8)
+        self.assertFalse(output["production_dcp_accepted"])
+
         self.assertEqual(self.owned(self.journal,self.journal.reconcile_features)["jobs"][0]["state"],
                          "INDEXED")
         folder=self.output/("DCP_FEATURE_"+

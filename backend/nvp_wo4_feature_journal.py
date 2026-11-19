@@ -27,6 +27,7 @@ from backend.nvp_w1g_release_gate import inspect_original_process_journals
 from backend.nvp_wo3_dcp_structure import inspect_dcp_structure
 from backend.nvp_wo3_native_codecs import digest_file
 from backend.nvp_film_index import FilmIndex,MAX_DEPENDENCIES
+from backend import nvp_wo4_feature_pages as pages
 
 FORMAT="nvp.wo4.durable_multireel_feature.v1"
 ASSEMBLY_FORMAT="nvp.wo4.approved_feature_assembly.v1"
@@ -59,20 +60,63 @@ class FeatureJournal(CinemaDeliveryJournal):
             CREATE INDEX IF NOT EXISTS production_feature_ready
               ON production_features(state,created_at);
             """)
+            pages.initialize(db)
+
+    @staticmethod
+    def _feature_row(db, feature_id):
+        row=db.execute("SELECT * FROM production_features WHERE feature_id=?",(feature_id,)).fetchone()
+        if row is None:
+            raise KeyError("Native feature assembly not found")
+        return row
+
+    @staticmethod
+    def _check_header(row,manifest):
+        if any(manifest.get(k)!=row[k] for k in
+            ("project_id","assembly_id","assembly_revision","assembly_sha256",
+             "project_db","output_root","title","profile")):
+            raise PermissionError("Feature manifest changed")
+
+    def _verified_feature(self,db,feature_id):
+        row=self._feature_row(db,feature_id)
+        manifest=pages.source(db,feature_id,row["manifest_json"],row["manifest_sha256"])
+        self._check_header(row,manifest)
+        files=pages.output(db,feature_id,row["file_sha_json"],row["manifest_sha256"])
+        result=dict(row)
+        result["manifest_json"]=_canonical(manifest).decode('ascii')
+        result["file_sha_json"]=None if files is None else _canonical(files).decode('ascii')
+        return result
 
     def feature(self,feature_id):
         with self._read() as db:
-            row=db.execute("""SELECT * FROM production_features
-                          WHERE feature_id=?""",(feature_id,)).fetchone()
-            if row is None:
-                raise KeyError("Native feature assembly not found")
-            manifest=json.loads(row["manifest_json"])
-            if (_digest(_canonical(manifest))!=row["manifest_sha256"] or
-                any(manifest.get(k)!=row[k] for k in
-                    ("project_id","assembly_id","assembly_revision","assembly_sha256",
-                     "project_db","output_root","title","profile"))):
-                raise PermissionError("Feature manifest changed")
-            return dict(row)
+            if not db.in_transaction:db.execute("BEGIN")
+            return self._verified_feature(db,feature_id)
+
+    def feature_page(self,feature_id,*,project_id,project_db,first=0,limit=32,kind="source"):
+        """Read only; validate complete page chain, then return a redacted page."""
+        if (type(first) is not int or first<0 or type(limit) is not int or
+                not 1<=limit<=pages.PAGE or kind not in ("source","output")):
+            raise ValueError("Bounded feature page required")
+        with self._read() as db:
+            if not db.in_transaction:db.execute("BEGIN")
+            row=self._feature_row(db,feature_id)
+            if row["project_id"]!=project_id or row["project_db"]!=str(project_db):
+                raise PermissionError("Feature outside approved movie")
+            header,count,items=pages.source(db,feature_id,row["manifest_json"],row["manifest_sha256"],first=first if kind=="source" else 0,limit=limit if kind=="source" else 1)
+            self._check_header(row,header)
+            n,files=pages.output(db,feature_id,row["file_sha_json"],row["manifest_sha256"],first=first if kind=="output" else 0,limit=limit if kind=="output" else 1)
+            if kind=="source":
+                entries=[{"reel":first+i+1,"frames":item["reels"]["frames"],
+                          "picture_sha256":item["reels"]["picture"]["file_sha256"],
+                          "sound_sha256":item["reels"]["sound"]["file_sha256"]} for i,item in enumerate(items)]
+                total=count
+            else:
+                entries=[{"name":name,"sha256":digest} for name,digest in files];total=n
+            if first>=total and (first!=0 or total!=0):raise ValueError("Feature page outside manifest")
+            end=first+len(entries)
+            return {"project_id":project_id,"feature_id":feature_id,"state":row["state"],
+                    "kind":kind,"entries":entries,"total":total,"first":first,
+                    "next_first":end if end<total else None,"manifest_sha256":row["manifest_sha256"],
+                    "source_paths_exposed":False,"production_dcp_accepted":False}
 
     def submit_feature(self,index,project_id,*,assembly_id,
                        assembly_revision,ordered_job_ids,title,profile,
@@ -191,17 +235,30 @@ class FeatureJournal(CinemaDeliveryJournal):
                 assembly["document_sha256"],str(project_db.resolve(strict=True)),
                 str(root),title,profile,encoded.decode("ascii"),manifest_sha,
                 "QUEUED",now,now))
+            stored=pages.store_source(db,fid,manifest,manifest_sha)
+            db.execute("UPDATE production_features SET manifest_json=? WHERE feature_id=?",(stored,fid))
         return {"format":FORMAT,"status":"QUEUED","feature_id":fid,
                 "manifest_sha256":manifest_sha,"reel_count":len(parts),
                 "total_frames":start//FRAME_TICKS,
                 "production_dcp_accepted":False}
 
-    def claim_next(self,owner_token,pid,**kwargs):
+    def _assert_feature_idle(self):
         _require_owner(self.root)
         with self._read() as db:
             if db.execute("SELECT 1 FROM production_features WHERE state='STAGING'").fetchone():
                 raise PermissionError("Interrupted feature lease requires reconciliation")
+
+    def claim_next(self,owner_token,pid,**kwargs):
+        self._assert_feature_idle()
         return super().claim_next(owner_token,pid,**kwargs)
+
+    def next_track(self,owner,pid):
+        self._assert_feature_idle()
+        return super().next_track(owner,pid)
+
+    def next_delivery(self,owner,pid):
+        self._assert_feature_idle()
+        return super().next_delivery(owner,pid)
 
     def next_feature(self,owner):
         _require_owner(self.root)
@@ -216,12 +273,12 @@ class FeatureJournal(CinemaDeliveryJournal):
                 ORDER BY created_at LIMIT 1""").fetchone()
             if row is None:
                 return None
-            self.feature(row["feature_id"])
+            verified=self._verified_feature(db,row["feature_id"])
             db.execute("""UPDATE production_features SET
                 state='STAGING',owner=?,updated_at=? WHERE feature_id=?""",
                 (owner,_now(),row["feature_id"]))
             return {"feature_id":row["feature_id"],
-                    "manifest":json.loads(row["manifest_json"])}
+                    "manifest":json.loads(verified["manifest_json"])}
 
     def feature_cancel_requested(self,feature_id,owner):
         _require_owner(self.root)
@@ -250,9 +307,12 @@ class FeatureJournal(CinemaDeliveryJournal):
                 _linked_entry(folder) or not folder.is_dir()):
             raise PermissionError("No exact native multi-reel DCP published")
         expected=receipt.get("file_sha256")
-        if (type(expected) is not dict or
+        names={"CPL.xml","PKL.xml","ASSETMAP.xml","VOLINDEX.xml"}
+        names.update(f"{kind}_{i:04d}.mxf" for i in range(len(manifest["reels"])) for kind in ("picture","sound"))
+        if (type(expected) is not dict or set(expected)!=names or
                 set(expected)!={p.name for p in folder.iterdir()} or
-                any(digest_file(folder/name)!=digest for name,digest in expected.items())):
+                any(_linked_entry(folder/name) or not (folder/name).is_file() or
+                    digest_file(folder/name)!=digest for name,digest in expected.items())):
             raise PermissionError("Multi-reel output SHA manifest differs")
         audit=inspect_dcp_structure(folder)
         if (audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
@@ -268,10 +328,13 @@ class FeatureJournal(CinemaDeliveryJournal):
                     row["owner"]!=owner or row["cancel_requested"] or
                     row["manifest_sha256"]!=f["manifest_sha256"]):
                 raise PermissionError("Stale feature worker may not commit output")
+            if self._verified_feature(db,feature_id)!=f:
+                raise PermissionError("Feature changed during output checkpoint")
+            stored=pages.store_output(db,feature_id,expected,f["manifest_sha256"])
             db.execute("""UPDATE production_features SET
                 state='PUBLISHED_PENDING_INDEX',owner=NULL,
                 file_sha_json=?,updated_at=? WHERE feature_id=?""",
-                (json.dumps(expected,sort_keys=True),_now(),feature_id))
+                (stored,_now(),feature_id))
         return {"status":"PUBLISHED_PENDING_INDEX","feature_id":feature_id,
                 "destination":str(folder),"production_dcp_accepted":False}
 
@@ -341,9 +404,11 @@ class FeatureJournal(CinemaDeliveryJournal):
         if _linked_entry(folder) or not folder.is_dir():
             raise PermissionError("Indexed feature package is missing")
         expected=json.loads(f["file_sha_json"])
-        if (not expected or set(expected)!={p.name for p in folder.iterdir()}
-                or any(digest_file(folder/name)!=sha
-                       for name,sha in expected.items())):
+        names={"CPL.xml","PKL.xml","ASSETMAP.xml","VOLINDEX.xml"}
+        names.update(f"{kind}_{i:04d}.mxf" for i in range(len(manifest["reels"])) for kind in ("picture","sound"))
+        if (type(expected) is not dict or set(expected)!=names or set(expected)!={p.name for p in folder.iterdir()}
+                or any(_linked_entry(folder/name) or not (folder/name).is_file() or
+                       digest_file(folder/name)!=sha for name,sha in expected.items())):
             raise PermissionError("Committed feature output hash mismatch")
         audit=inspect_dcp_structure(folder)
         if (audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
@@ -372,7 +437,7 @@ class FeatureJournal(CinemaDeliveryJournal):
         return f,manifest,folder,expected
 
     def next_feature_index(self):
-        _require_owner(self.root)
+        self._assert_feature_idle()
         with self._read() as db:
             row=db.execute("""SELECT feature_id FROM production_features
                    WHERE state='PUBLISHED_PENDING_INDEX' AND cancel_requested=0
@@ -481,6 +546,9 @@ class FeatureJournal(CinemaDeliveryJournal):
 
     def finalize_feature_cancel(self,feature_id,owner):
         _require_owner(self.root)
+        f=self.feature(feature_id);m=json.loads(f["manifest_json"])
+        root=Path(f["output_root"])
+        artifacts=[root/(prefix+m["ids"]["cpl"]) for prefix in (".nvp-feature-stage-","DCP_FEATURE_")]
         with self._tx() as db:
             row=db.execute("""SELECT state,owner,cancel_requested
                 FROM production_features WHERE feature_id=?""",
@@ -489,41 +557,44 @@ class FeatureJournal(CinemaDeliveryJournal):
                     row["state"] not in ("QUEUED","STAGING") or
                     (row["owner"] not in (None,owner))):
                 raise PermissionError("Only authorized uncommitted feature can stop")
+            if self._verified_feature(db,feature_id)!=f:
+                raise PermissionError("Feature cancellation state changed")
+            state="REVIEW_REQUIRED" if any(p.exists() or _linked_entry(p) for p in artifacts) else "CANCELLED"
             db.execute("""UPDATE production_features SET
-                state='CANCELLED',owner=NULL,updated_at=? WHERE feature_id=?""",
-                (_now(),feature_id))
-        return {"status":"CANCELLED","feature_id":feature_id}
+                state=?,owner=NULL,updated_at=? WHERE feature_id=?""",
+                (state,_now(),feature_id))
+        return {"status":state,"feature_id":feature_id}
 
     def reconcile_features(self):
         _require_owner(self.root)
-        reports=[]
-        with self._read() as db:
-            jobs=[dict(x) for x in db.execute("""SELECT feature_id,state,
-                output_root,manifest_json FROM production_features""")]
-        for f in jobs:
-            uid=f["feature_id"]
-            f=self.feature(uid)
-            manifest=json.loads(f["manifest_json"])
-            root=Path(f["output_root"])
-            stage=root/(".nvp-feature-stage-"+manifest["ids"]["cpl"])
-            target=root/("DCP_FEATURE_"+manifest["ids"]["cpl"])
-            state=f["state"]
-            if state in ("QUEUED","STAGING"):
-                if f["cancel_requested"]:
-                    self.finalize_feature_cancel(uid,f["owner"])
-                    state="CANCELLED"
-                elif (state=="STAGING" or stage.exists() or _linked_entry(stage)
-                        or target.exists() or _linked_entry(target)):
-                    self._mark_feature_restart_review(uid)
-                    state="REVIEW_REQUIRED"
-            elif state in ("PUBLISHED_PENDING_INDEX","INDEXED"):
-                try:self._recheck_feature(uid)
-                except (OSError,RuntimeError,PermissionError,ValueError,TypeError):
-                    self._mark_feature_restart_review(uid)
-                    state="REVIEW_REQUIRED"
-            reports.append({"feature_id":uid,"state":state})
-        return {"format":FORMAT,"jobs":reports,
-                "deleted_uncommitted_files":False,
+        reports=[];count=0;after=""
+        while True:
+            with self._read() as db:
+                jobs=[row[0] for row in db.execute("SELECT feature_id FROM production_features WHERE feature_id>? ORDER BY feature_id LIMIT ?",(after,pages.PAGE))]
+            if not jobs:break
+            for uid in jobs:
+                try:
+                    f=self.feature(uid)
+                    manifest=json.loads(f["manifest_json"])
+                    root=Path(f["output_root"])
+                    stage=root/(".nvp-feature-stage-"+manifest["ids"]["cpl"])
+                    target=root/("DCP_FEATURE_"+manifest["ids"]["cpl"])
+                    state=f["state"]
+                    artifacts=stage.exists() or _linked_entry(stage) or target.exists() or _linked_entry(target)
+                    if state in ("QUEUED","STAGING"):
+                        if artifacts or state=="STAGING":
+                            self._mark_feature_restart_review(uid);state="REVIEW_REQUIRED"
+                        elif f["cancel_requested"]:
+                            state=self.finalize_feature_cancel(uid,f["owner"])["status"]
+                    elif state in ("PUBLISHED_PENDING_INDEX","INDEXED"):
+                        self._recheck_feature(uid)
+                except (OSError,RuntimeError,ValueError,TypeError,KeyError):
+                    self._mark_feature_restart_review(uid);state="REVIEW_REQUIRED"
+                count+=1
+                if len(reports)<pages.PAGE:reports.append({"feature_id":uid,"state":state})
+            after=jobs[-1]
+        return {"format":FORMAT,"jobs":reports,"total_jobs":count,
+                "report_truncated":count>len(reports),"deleted_uncommitted_files":False,
                 "production_dcp_accepted":False}
 
     def approve_orphan_feature_adoption(self,feature_id,authorize):
@@ -603,10 +674,13 @@ class FeatureJournal(CinemaDeliveryJournal):
                     row["manifest_sha256"]!=f["manifest_sha256"] or
                     row["file_sha_json"] is not None or row["cancel_requested"]):
                 raise PermissionError("Feature review changed before durable adoption")
+            if self._verified_feature(db,feature_id)!=f:
+                raise PermissionError("Feature changed during creator review")
+            stored=pages.store_output(db,feature_id,files,f["manifest_sha256"])
             db.execute("""UPDATE production_features SET
                 state='PUBLISHED_PENDING_INDEX',file_sha_json=?,
                 owner=NULL,updated_at=? WHERE feature_id=?""",
-                (json.dumps(files,sort_keys=True),_now(),feature_id))
+                (stored,_now(),feature_id))
         return {"status":"PUBLISHED_PENDING_INDEX","feature_id":feature_id,
                 "destination":str(folder),"file_sha256":files,
                 "filesystem_mutated":False,"production_dcp_accepted":False}

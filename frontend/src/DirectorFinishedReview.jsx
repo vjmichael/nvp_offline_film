@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from 'react';
 import FinishedFilmPlaybackPanel from './FinishedFilmPlaybackPanel.jsx';
+import FeatureExportDetails from './FeatureExportDetails.jsx';
 
 const FRAME_TICKS=294000000;
 const fields=['action','camera','sound'];
@@ -40,6 +41,7 @@ export default function DirectorFinishedReview({movie}){
         <button disabled={busy||shots.length>=512} onClick={addShot}>Add shot</button>
         <button disabled={busy||!shots.length} onClick={()=>void perform(async()=>{const result=await api.wo5_review_save_intent({project_id:id,assembly_id:assembly,assembly_revision:selected.assembly_revision,intent_id:'Intent'+crypto.randomUUID().replaceAll('-',''),shots});setNotice(result.status==='DENIED'?'Not saved.':'Director notes saved.');await refresh();})}>Save Director Notes</button>
       </div>}
+      <FeatureExportDetails key={id} projectId={id} features={catalog.features} api={api}/>
       <label>Finished film <select disabled={busy} value={feature} onChange={e=>{setFeature(e.target.value);setIntent('');setObservations([]);setWatched(false);setHeard(false);}}><option value="">Choose finished film</option>{finished.map(x=><option value={x.feature_id} key={x.feature_id}>{x.assembly_id}</option>)}</select></label>
       {!finished.length&&<p>No finished cinema film is ready for review.</p>}
       {feature&&<FinishedFilmPlaybackPanel key={id+':'+feature} projectId={id} featureId={feature} nativeBridge={api}/>}

@@ -49,7 +49,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "wo6_plan_catalog","wo6_plan_preview","wo6_plan_save","wo6_plan_read","wo6_retake_execute",
             "wo6_retake_cancel","wo6_retake_recover",
             "wo5_review_catalog","wo5_review_read_intent","wo5_review_save_intent",
-            "wo5_review_inspect_feature","wo5_review_save_observations","wo5_film_capabilities",
+            "wo5_review_feature_page","wo5_review_inspect_feature","wo5_review_save_observations","wo5_film_capabilities",
             "wo5_film_begin","wo5_film_frame","wo5_film_window","wo5_film_stop",
             "camera_render_capabilities",
             "request_camera_still","poll_camera_still","cancel_camera_still",
@@ -89,7 +89,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_film_stage_chunk_poll","data_av_film_stage_chunk_cancel",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),79)
+        self.assertEqual(len(names),80)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)
