@@ -204,6 +204,7 @@ class G04Preproduction:
         with self.live._guard:
             key=self.live._session(pid,self.token)
             db,_=self.live._read_db(self.live._folder(pid),pid,key)
+            db._nvp_payload_guard=lambda:self.live._session(pid,self.token)
             try:
                 self._schema(db)
                 row=db.execute("SELECT title,idea,screenplay,revision FROM film_metadata WHERE id=1").fetchone()

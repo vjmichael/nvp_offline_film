@@ -13,6 +13,20 @@ on:
       - 'tests/test_nvp_perf03g_r2_paged_active.py'
       - 'tests/test_nvp_perf03g_r3_media.py'
       - 'tests/test_nvp_perf03g_r4_protected_output.py'
+      - 'tests/test_nvp_perf03g_r5_storage.py'
+      - 'tests/test_nvp_perf03g_r5_finishing.py'
+      - 'tests/test_nvp_perf03g_r6_feature_reels.py'
+      - 'backend/nvp_g07_feature_reels.py'
+      - 'backend/nvp_g07_feature_native.py'
+      - 'tools/nvp_g07_feature_reel_worker.py'
+      - 'tests/test_nvp_perf03g_r7_feature_worker.py'
+      - 'tests/test_nvp_perf03g_r8_working_movie.py'
+      - 'tests/test_nvp_perf03g_r9_playback.py'
+      - 'backend/nvp_g07_feature_playback.py'
+      - 'backend/nvp_g07_recovery_dialog.py'
+      - 'backend/nvp_g03_payloads.py'
+      - 'backend/nvp_g07_feature_finish.py'
+      - 'backend/nvp_g09d_finishing.py'
       - 'backend/nvp_g07_review_reels.py'
       - 'backend/nvp_g03_live_backup.py'
       - 'backend/nvp_g03_pcm_pages.py'
@@ -61,6 +75,20 @@ on:
       - 'tests/test_nvp_perf03g_r2_paged_active.py'
       - 'tests/test_nvp_perf03g_r3_media.py'
       - 'tests/test_nvp_perf03g_r4_protected_output.py'
+      - 'tests/test_nvp_perf03g_r5_storage.py'
+      - 'tests/test_nvp_perf03g_r5_finishing.py'
+      - 'tests/test_nvp_perf03g_r6_feature_reels.py'
+      - 'backend/nvp_g07_feature_reels.py'
+      - 'backend/nvp_g07_feature_native.py'
+      - 'tools/nvp_g07_feature_reel_worker.py'
+      - 'tests/test_nvp_perf03g_r7_feature_worker.py'
+      - 'tests/test_nvp_perf03g_r8_working_movie.py'
+      - 'tests/test_nvp_perf03g_r9_playback.py'
+      - 'backend/nvp_g07_feature_playback.py'
+      - 'backend/nvp_g07_recovery_dialog.py'
+      - 'backend/nvp_g03_payloads.py'
+      - 'backend/nvp_g07_feature_finish.py'
+      - 'backend/nvp_g09d_finishing.py'
       - 'backend/nvp_g07_review_reels.py'
       - 'backend/nvp_g03_live_backup.py'
       - 'backend/nvp_g03_pcm_pages.py'
@@ -174,6 +202,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Protected source preview, continuity and recovery regression failed' }
           python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r4_protected_output.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==7 else 1)"
           if ($LASTEXITCODE -ne 0) { throw 'Protected review reel, recording migration and full backup recovery failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r5_storage.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==9 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected EDL and Original OpenUSD storage/recovery failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r5_finishing.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==2 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected whole-film sound analysis failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r6_feature_reels.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==6 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Resumable protected working-film reel regression failed' }
+          python -c "import sys,unittest; sys.path.insert(0,'tests'); import test_nvp_perf03g_r7_feature_worker as r; suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(r.R7Protocol),unittest.defaultTestLoader.loadTestsFromTestCase(r.R7Longer)]); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==6 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Feature worker protocol and sustained working-reel regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r8_working_movie.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==4 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Working movie controlled production and extended reel regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r9_playback.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==1 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected continuous playback regression failed' }
           python -m unittest discover -s tests -p test_nvp_g03_live_store.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Original encrypted live store regression failed' }
           python -m unittest discover -s tests -p test_nvp_g03_windows_vault.py -v

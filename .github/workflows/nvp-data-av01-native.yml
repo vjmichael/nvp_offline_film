@@ -43,6 +43,14 @@ on:
       - 'tools/nvp_data_av_installed_acceptance.py'
       - 'tools/nvp_desktop_alpha.py'
       - 'tools/nvp_perf03g_gui_smoke.py'
+      - 'tools/nvp_perf03g_worker_smoke.py'
+      - 'tools/nvp_perf03g_production_gui_smoke.py'
+      - 'frontend/src/DirectorWorkingMovie*'
+      - 'frontend/src/DirectorReelPlayback.jsx'
+      - 'backend/nvp_g07_feature_playback.py'
+      - 'tests/test_nvp_perf03g_r9_playback.py'
+      - 'frontend/src/DirectorFinishingRoom.jsx'
+      - 'tools/nvp_g07_feature_reel_worker.py'
       - 'frontend/src/DirectorPagedTimeline*'
       - 'frontend/src/DirectorEditorialSections*'
       - 'frontend/src/DirectorFilmEditor.jsx'
@@ -211,7 +219,7 @@ jobs:
           node-version: '22.16.0'
       - run: npm ci --no-audit --no-fund
       - run: npm run build
-      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeCameraRailPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx src/FilmmakerHome.test.jsx
+      - run: npm run test:ui -- src/DataFirstAVPanel.test.jsx src/NativeCameraRailPanel.test.jsx src/NativeOriginalCapturePanel.test.jsx src/FilmCameraSourcePanel.test.jsx src/CameraLensWorkbench.test.jsx src/FilmCameraNativeBridge.test.jsx src/FilmmakerHome.test.jsx src/DirectorWorkingMovie.test.jsx src/DirectorPagedMedia.test.jsx
 
   installed-windows-native:
     name: Real packaged / installed Windows NVP.exe with OpenUSD and PCM (no FFmpeg)
@@ -420,6 +428,36 @@ jobs:
           $chapterLeftovers=@(Get-CimInstance Win32_Process -Filter "Name = 'NVP.exe'" | Where-Object { $_.ExecutablePath -eq $installed })
           if ($chapterLeftovers.Count -ne 0) { throw 'Installed chapter editor left NVP.exe running' }
           if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift after installed chapter editor' }
+          # Separate generated-only installed native feature worker gate. Neither
+          # portable pipe execution nor a working-frame fixture is creator consent.
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-feature-worker.txt'
+          Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
+          $denied=Start-Process -FilePath $installed -ArgumentList '--g07-protected-reel-worker' -PassThru
+          if (-not $denied.WaitForExit(15000)) { $denied.Kill($true); throw 'Uncontained worker direct invocation did not fail closed' }
+          if ($denied.ExitCode -ne 3) { throw 'Uncontained worker direct invocation was not refused' }
+          $feature=Start-Process -FilePath $installed -ArgumentList '--smoke-perf03g-worker' -PassThru
+          if (-not $feature.WaitForExit(540000)) { $feature.Refresh(); if (-not $feature.HasExited) { $feature.Kill($true) }; throw 'Installed feature worker qualification timed out' }
+          if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output }
+          if ($feature.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH)) { throw 'Installed private feature worker failed' }
+          $featureReport=Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw
+          foreach ($marker in @('perf03g_native_active_worker_cancelled','perf03g_native_reels_and_pcm_verified','perf03g_native_worker_clean_exit')) {
+            if (-not $featureReport.Contains('NVP_SMOKE_STAGE '+$marker)) { throw 'Missing installed native feature worker receipt' }
+          }
+          # Genuine installed WebView2 native creator controls and stop.
+          # Isolated public fixture, no actual owner approval implied.
+          $env:NVP_SMOKE_DIAGNOSTIC_PATH=Join-Path $env:RUNNER_TEMP 'nvp-installed-working-movie.txt'
+          Remove-Item -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -ErrorAction SilentlyContinue
+          $working=Start-Process -FilePath $installed -ArgumentList '--smoke-perf03g-production-window' -PassThru
+          if (-not $working.WaitForExit(900000)) { $working.Refresh(); if (-not $working.HasExited) { $working.Kill($true) }; throw 'Installed graphical production qualification timed out' }
+          if (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH) { Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH | Write-Output }
+          if ($working.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH)) { throw 'Installed graphical production qualification failed' }
+          $workingReport=Get-Content -LiteralPath $env:NVP_SMOKE_DIAGNOSTIC_PATH -Raw
+          foreach ($marker in @('perf03g_r8_actual_graphical_worker_stop_verified','perf03g_r8_actual_graphical_resume_and_native_reels_verified','perf03g_r10_actual_graphical_playback_complete','perf03g_r8_actual_graphical_clean_exit')) {
+            if (-not $workingReport.Contains('NVP_SMOKE_STAGE '+$marker)) { throw 'Missing installed graphical production receipt' }
+          }
+          $featureLeftovers=@(Get-CimInstance Win32_Process -Filter "Name = 'NVP.exe'" | Where-Object { $_.ExecutablePath -eq $installed })
+          if ($featureLeftovers.Count -ne 0) { throw 'Installed feature worker left NVP.exe running' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift after native feature worker' }
           $uninstall=Join-Path $env:LOCALAPPDATA 'Programs/NVP/Uninstall NVP.exe'
           if (-not (Test-Path $uninstall)) { throw 'NVP uninstaller unavailable' }
           $result=Start-Process -FilePath $uninstall -ArgumentList '/S' -Wait -PassThru

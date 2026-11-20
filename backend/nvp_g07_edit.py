@@ -18,6 +18,7 @@ from decimal import Decimal,InvalidOperation
 
 from backend.nvp_g06_filming import G06Filming,TAKE_FORMAT,RATE,HEX,_sha,_json
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
+from backend import nvp_g03_payloads as protected_payloads
 
 FORMAT="nvp.g07.non_destructive_edit.v1"
 MAX_EDL_CLIPS=250
@@ -181,10 +182,7 @@ def _project(db,pid,*,allow_paged=False):
        (pid,head["revision"])).fetchone()
     if not version or version["document_sha256"]!=head["document_sha256"]:
         raise RuntimeError("The movie edit history is incomplete")
-    raw=version["document_json"]
-    if _sha(raw.encode("utf8"))!=version["document_sha256"]:
-        raise RuntimeError("A movie edit revision was altered")
-    document=json.loads(raw)
+    document=protected_payloads.resolve_edit(db,pid,head["revision"],version["document_json"],version["document_sha256"])
     from backend.nvp_g07_paged_active import FORMAT as PAGED, check
     if isinstance(document,dict) and document.get("format")==PAGED:
         check(document)
@@ -303,6 +301,8 @@ class G07Editor:
             raise RuntimeError("Edit version limit reached")
         encoded=_json(doc)
         sha=_sha(encoded.encode("utf8"))
+        if protected_payloads.enabled(db,pid,"edl"):
+            encoded=protected_payloads.seal_edit(db,pid,new,encoded,sha)
         db.execute("""INSERT INTO g07_edit_versions
             (project_id,revision,document_json,document_sha256,created_at)
             VALUES (?,?,?,?,?)""",(pid,new,encoded,sha,_now()))
@@ -534,9 +534,7 @@ class G07Editor:
                 (pid,source_revision)).fetchone()
             if row is None:
                 raise KeyError("This previous edit version is unavailable")
-            if _sha(row["document_json"].encode("utf8"))!=row["document_sha256"]:
-                raise RuntimeError("An older edit history entry is damaged")
-            older=json.loads(row["document_json"])
+            older=protected_payloads.resolve_edit(db,pid,source_revision,row["document_json"],row["document_sha256"])
             self._validate(db,pid,older)
             from backend.nvp_g07_sections import EditorialSections, _digest, _schema as section_schema
             from backend.nvp_g07_paged_active import FORMAT as PAGED
@@ -719,9 +717,9 @@ class G07Editor:
                 row=db.execute("""SELECT document_json,document_sha256
                     FROM g07_edit_versions WHERE project_id=? AND revision=?""",
                     (pid,source_revision)).fetchone()
-                if row is None or _sha(row["document_json"].encode("utf8"))!=row["document_sha256"]:
+                if row is None:
                     raise RuntimeError("An earlier edit is unavailable")
-                document=json.loads(row["document_json"])
+                document=protected_payloads.resolve_edit(db,pid,source_revision,row["document_json"],row["document_sha256"])
             from backend.nvp_g07_sections import EditorialSections
             EditorialSections(self).verify_activated_edit(db,pid,source_revision,document)
             total,segments=self._validate(db,pid,document)
@@ -758,21 +756,10 @@ class G07Editor:
                         # this prevents a single enormous Take or an unsafe
                         # set of simultaneous tracks from exhausting RAM.
                         if participating is not None:
-                            size_row=db.execute("""SELECT
-                                length(original_usd)+length(performance_usd)
-                                AS source_bytes FROM g06_frozen_takes
-                                WHERE project_id=? AND take_id=?""",
-                                (pid,take_id)).fetchone()
-                            if size_row is None:
-                                raise RuntimeError("Original film world was removed")
-                            source_budget+=size_row["source_bytes"]
-                        original=db.execute("""SELECT original_usd,performance_usd
-                            FROM g06_frozen_takes WHERE project_id=? AND take_id=?""",
-                            (pid,take_id)).fetchone()
-                        if (original is None or
-                            _sha(original["original_usd"])!=row["original_usd_sha256"] or
-                            _sha(original["performance_usd"])!=row["performance_usd_sha256"]):
-                            raise RuntimeError("Participating original OpenUSD changed before rendering")
+                            source_budget+=row["original_usd_size"]+row["performance_usd_size"]
+                            if source_budget>256*1024*1024:
+                                raise ValueError("A film window exceeds its original media budget")
+                        original=protected_payloads.read_take_payloads(db,pid,take_id)
                         source_audio=[]
                         for item in audio:
                             if participating is not None:

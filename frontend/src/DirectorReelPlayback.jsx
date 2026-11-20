@@ -68,6 +68,7 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
   const loadFrames=async(p,first,token)=>{
     if(first>=info.picture_frames||first<0)return;
     if(p.frameRequests.has(first))return p.frameRequests.get(first);
+    if(Array.from({length:Math.min(FRAME_BLOCK,info.picture_frames-first)},(_,i)=>first+i).every(i=>cache.current.has(i)))return;
     // Requests never encode an arbitrary host file path.
     const promise=(async()=>{
       const count=Math.min(FRAME_BLOCK,info.picture_frames-first);
@@ -78,8 +79,8 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
       if(data.source_sha256!==info.source_sha256||
          data.start_frame!==first||data.frames?.length!==count)
         throw Error('The film changed after its picture source was verified.');
-      for(const frame of data.frames){
-        if(!Number.isInteger(frame.frame)||typeof frame.picture_base64!=='string')
+      for(const [i,frame] of data.frames.entries()){
+        if(frame.frame!==first+i||typeof frame.picture_base64!=='string')
           throw Error('One original finished frame is missing');
         cache.current.set(frame.frame,
           'data:image/jpeg;base64,'+frame.picture_base64);
@@ -94,7 +95,7 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
     return promise;
   };
 
-  const loadSound=async(p,token)=>{
+  const loadSound=async(p,token,preload=false)=>{
     if(p.nextSample>=info.audio_samples)return;
     const start=p.nextSample;
     const count=Math.min(AUDIO_BLOCK,info.audio_samples-start);
@@ -112,6 +113,11 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
     if(buffer.sampleRate!==RATE||buffer.numberOfChannels!==2||
        buffer.length!==count)throw Error(
          'The sound device did not preserve the film sample rate.');
+    p.nextSample+=count;
+    if(preload){p.initial.push(buffer);return;}
+    schedule(p,buffer);
+  };
+  const schedule=(p,buffer)=>{
     if(p.at<p.ctx.currentTime+.025)
       throw Error('Playback could not maintain synchronization; resume when ready.');
     const src=p.ctx.createBufferSource();
@@ -119,14 +125,14 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
     src.onended=()=>p.nodes.delete(src);
     src.start(p.at);
     p.nodes.add(src);
-    p.at+=count/RATE;p.nextSample+=count;
+    p.at+=buffer.length/RATE;
   };
 
   async function play(){
     if(!info||playing||preparing||run.current)return;
     setError('');setNotice('Opening verified picture and sound…');
     setPreparing(true);
-    const id=++epoch.current;
+    const id=++epoch.current;cache.current.clear();setPicture('');
     let ctx=null;
     try{
       const Context=window.AudioContext||window.webkitAudioContext;
@@ -135,6 +141,7 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
       if(ctx.sampleRate!==RATE)throw Error(
         'The playback device did not select the original film sample clock.');
       await ctx.resume();
+      if(id!==epoch.current){await ctx.close();return;}
       const first=Math.max(0,Math.min(info.audio_samples-1,
         Math.floor(current.current*RATE)));
       const gain=ctx.createGain();
@@ -142,7 +149,7 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
       const p={ctx,gain,abort:new AbortController(),
         frameRequests:new Map(),nodes:new Set(),
         nextSample:first,clockSample:first,
-        at:0,clockAt:0,timer:0,feeder:0,feeding:false};
+        at:0,clockAt:0,timer:0,feeder:0,feeding:false,initial:[]};
       run.current=p;
       const frame=Math.floor(first/2000);
       const block=Math.floor(frame/FRAME_BLOCK)*FRAME_BLOCK;
@@ -150,10 +157,12 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
         loadFrames(p,block+FRAME_BLOCK,id),
         loadFrames(p,block+FRAME_BLOCK*2,id)]);
       if(id!==epoch.current)return;
-      p.at=ctx.currentTime+.85;p.clockAt=p.at;
       for(let i=0;i<3&&p.nextSample<info.audio_samples;i++)
-        await loadSound(p,id);
+        await loadSound(p,id,true);
       if(id!==epoch.current)return;
+      p.at=ctx.currentTime+.25;p.clockAt=p.at;
+      for(const buffer of p.initial)schedule(p,buffer);
+      p.initial=[];
       setPreparing(false);setPlaying(true);setNotice('');
       const draw=()=>{
         if(id!==epoch.current||run.current!==p)return;

@@ -119,7 +119,7 @@ def _assembly(service,pid,expected):
     return {**source,'format':'nvp.g07.non_destructive_edit.v1','source_media_modified':False,'edit_revision':expected['revision'],'edit_document_sha256':expected['active_digest'],'production_looks':maps[0],'actor_performances':maps[1],'acoustic_looks':maps[2],**expected['decisions'],'approved_finishing':None,'finishing_sha256':_digest({})}
 
 
-def inspect(data,frames,*,expected_sha,expected_pcm=None):
+def inspect(data,frames,*,expected_sha,expected_pcm=None,guard=None):
     """Independent reader: strict interleaved chunks, actual JPEG decode, PCM
     hash, every idx entry and exact native header. No renderer-provided counts."""
     if type(data) is not bytes or len(data)>MAX_CHUNK_BYTES or _sha(data)!=expected_sha:raise VaultError('Review reel integrity failed')
@@ -131,6 +131,7 @@ def inspect(data,frames,*,expected_sha,expected_pcm=None):
     end=at+8+struct.unpack_from('<I',data,at+4)[0];origin=at+8;at+=12
     pic=hashlib.sha256();pcm=hashlib.sha256();entries=[]
     for i in range(frames):
+        if guard is not None:guard()
         for tag in (b'00dc',b'01wb'):
             if at+8>end or data[at:at+4]!=tag:raise VaultError('Review reel frame order changed')
             size=struct.unpack_from('<I',data,at+4)[0];stop=at+8+size

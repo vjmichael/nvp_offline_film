@@ -67,7 +67,11 @@ def _binding(db,pid,editor):
     from backend.nvp_g09_environment import G09Environment
     from backend.nvp_g09_actor import G09Actors
     from backend.nvp_g09c_acoustics import G09CAcoustics
-    version,document=_project(db,pid)
+    version,document=_project(db,pid,allow_paged=True)
+    from backend.nvp_g07_paged_active import FORMAT as PAGED
+    if document.get("format")==PAGED:
+        from backend.nvp_g07_feature_finish import binding
+        return binding(db,pid,editor,version,document)
     duration,segments=editor._validate(db,pid,document)
     if version<1 or duration<=0 or not segments:
         raise ValueError("Add and save film shots before finishing")

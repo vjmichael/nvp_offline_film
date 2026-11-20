@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime,timezone
 from decimal import Decimal,InvalidOperation
 
+from backend import nvp_g03_payloads as protected_payloads
 from backend.nvp_g05_scene_authoring import G05SceneAuthoring,_reopen_usd
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND
 
@@ -805,6 +806,9 @@ class G06Filming:
                 "source_is_original_openusd":True,
                 "picture_frames_rendered":False}
             digest=_sha(_json(document).encode("utf8"))
+            stored_original,stored_performance=original,animated
+            if protected_payloads.enabled(db,pid,"take"):
+                stored_original,stored_performance=protected_payloads.seal_new_take(db,pid,take_id,original,animated)
             db.execute("""INSERT INTO g06_frozen_takes(
                 take_id,project_id,scene_id,source_stage_revision,
                 source_sha256,original_usd_sha256,original_usd,
@@ -812,7 +816,7 @@ class G06Filming:
                 audio_json,take_sha256,frozen_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (take_id,pid,scene_id,head["revision"],head["source_sha256"],
-                 _sha(original),original,_sha(animated),animated,
+                 _sha(original),stored_original,_sha(animated),stored_performance,
                  _json(document),_json(audio),digest,_now()))
             # The source was approved at the time of capture. A future edit
             # cannot change the frozen original, performance, or PCM.
@@ -865,6 +869,8 @@ class G06Filming:
         if row is None:raise KeyError("The original Digital Take is missing")
         if len(row["performance_json"].encode("utf8"))>2*1024*1024:
             raise ValueError("Original Take metadata exceeds safe render limits")
+        row=dict(row)
+        row.update(protected_payloads.take_sizes(db,pid,take_id,row))
         data=json.loads(row["performance_json"])
         if (data.get("format")!=TAKE_FORMAT or
             _sha(_json(data).encode("utf8"))!=row["take_sha256"] or
@@ -892,6 +898,8 @@ class G06Filming:
         row=db.execute("""SELECT * FROM g06_frozen_takes
             WHERE project_id=? AND take_id=?""",(pid,take_id)).fetchone()
         if row is None:raise KeyError("Take not found in this movie")
+        row=dict(row)
+        row.update(protected_payloads.read_take_payloads(db,pid,take_id))
         data=json.loads(row["performance_json"])
         if (data.get("format")!=TAKE_FORMAT or
             _sha(row["original_usd"])!=row["original_usd_sha256"] or

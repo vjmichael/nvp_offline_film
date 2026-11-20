@@ -22,7 +22,7 @@ FORMAT = 'nvp.g03.live_movie_backup.v1'
 BLOCK = 512 * 1024
 MAX_FILES = 100_000
 INVENTORY_LIMIT = 32 * 1024 * 1024
-ENTRY = re.compile(r'(?:HEAD\.json|key\.nvpdpapi|revisions/db\.[0-9]{12}\.nvpsealed|assets/[a-f0-9]{64}\.nvpsealed|editorial-pages/[a-f0-9]{64}/body\.nvpsealed|pcm-pages/[a-f0-9]{64}/(?:root\.nvpsealed|[0-9]{8}\.nvpsealed)|review-reels/[a-f0-9]{64}/body\.nvpsealed)\Z')
+ENTRY = re.compile(r'(?:HEAD\.json|key\.nvpdpapi|revisions/db\.[0-9]{12}\.nvpsealed|assets/[a-f0-9]{64}\.nvpsealed|editorial-pages/[a-f0-9]{64}/body\.nvpsealed|pcm-pages/[a-f0-9]{64}/(?:root\.nvpsealed|[0-9]{8}\.nvpsealed)|(?:review-reels|protected-objects|feature-reels)/[a-f0-9]{64}/body\.nvpsealed)\Z')
 MANIFEST = 'backup.nvpinventory'
 
 
@@ -50,7 +50,7 @@ def _entries(folder, *, backup=False):
             p=base/d
             if not stat.S_ISDIR(_no_link(p).st_mode):raise VaultError('Unsafe backup directory')
             rel=p.relative_to(folder).as_posix()
-            if rel not in ('revisions','assets','editorial-pages','pcm-pages','review-reels') and not re.fullmatch(r'(editorial-pages|pcm-pages|review-reels)/[a-f0-9]{64}',rel):
+            if rel not in ('revisions','assets','editorial-pages','pcm-pages','review-reels','protected-objects','feature-reels') and not re.fullmatch(r'(editorial-pages|pcm-pages|review-reels|protected-objects|feature-reels)/[a-f0-9]{64}',rel):
                 raise VaultError('Unreviewed movie storage; finish interrupted writes before backup')
         for name in files:
             p=base/name;rel=p.relative_to(folder).as_posix()
@@ -145,6 +145,11 @@ def _verify_index(store,folder,pid,key,guard):
                 if _decrypt_file(p,_HashSink(),key=key,project_id=pid,name=name,max_plain_bytes=row[3])!={'sha256':row[2],'size_bytes':row[3]}:raise VaultError('Finished asset changed')
         # Existing inline source records remain byte-identical through the
         # snapshot; also independently hash every original BLOB in bounded reads.
+        from backend import nvp_g03_payloads as protected_payloads
+        db._nvp_payload_guard=guard
+        protected_payloads.verify_index(db,pid,guard)
+        from backend.nvp_g07_feature_finish import verify_index as verify_finish_analysis
+        verify_finish_analysis(db,pid,guard)
         for table,columns in (('g06_original_pcm',(('pcm','pcm_sha256'),)),('g06_frozen_takes',(('original_usd','original_usd_sha256'),('performance_usd','performance_usd_sha256')))):
             if table not in tables:continue
             for col,digest_col in columns:
@@ -153,6 +158,9 @@ def _verify_index(store,folder,pid,key,guard):
                     if row['project_id']!=pid:raise VaultError('Foreign movie source')
                     if table=='g06_original_pcm' and row['n']==0:
                         if 'g03_pcm_pages' not in tables or db.execute('SELECT 1 FROM g03_pcm_pages p JOIN g06_original_pcm a ON a.id=p.clip_id AND a.project_id=p.project_id WHERE a.rowid=?',(row['rowid'],)).fetchone() is None:raise VaultError('Missing indexed original PCM')
+                        continue
+                    if table=='g06_frozen_takes' and row['n']==0:
+                        if 'g03_r5_take_payloads' not in tables or db.execute('SELECT 1 FROM g03_r5_take_payloads p JOIN g06_frozen_takes t ON p.project_id=t.project_id AND p.take_id=t.take_id WHERE t.rowid=? AND p.kind=?',(row['rowid'],col)).fetchone() is None:raise VaultError('Missing indexed original OpenUSD')
                         continue
                     if not 0<row['n']<=MAX_DB_BYTES:raise VaultError('Original media length changed')
                     h=hashlib.sha256();size=0
@@ -168,6 +176,8 @@ def _verify_index(store,folder,pid,key,guard):
         if 'g07_review_reels' in tables:
             from backend.nvp_g07_review_reels import verify_indexed_reels
             verify_indexed_reels(db,folder,pid,key,guard)
+        from backend.nvp_g07_feature_reels import verify_index as verify_feature_reels
+        verify_feature_reels(db,folder,pid,key,guard)
     finally:db.close()
     return head
 

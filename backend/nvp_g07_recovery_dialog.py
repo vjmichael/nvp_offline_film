@@ -23,8 +23,55 @@ class NativeRecoveryDialog:
         for name in ('get_current_url','create_file_dialog','create_confirmation_dialog'):
             if not callable(getattr(window,name,None)):raise TypeError('Native recovery window required')
         self._window=window;self._origin=f'http://127.0.0.1:{u.port}';self._lock=threading.Lock();self._closed=False
+        self._feature_lock=threading.Lock();self._feature=None;self._feature_ids=set()
 
-    def close(self):self._closed=True
+    def close(self):
+        with self._feature_lock:
+            self._closed=True
+            if self._feature:self._feature[4].set()
+
+    @contextmanager
+    def feature_operation(self,pid,origin,guard,token,operation_id):
+        if type(operation_id) is not str or not HEX.fullmatch(operation_id) or not isinstance(token,str) or not token:
+            raise PermissionError("Exact movie operation required")
+        self._check(pid,origin,guard)
+        event=threading.Event();done=threading.Event();record=(pid,origin,token,operation_id,event,{"phase":"preparing","saved_frames":0,"total_frames":0},done)
+        with self._feature_lock:
+            if self._closed or self._feature is not None:raise RuntimeError("A working movie action is already running")
+            if operation_id in self._feature_ids or len(self._feature_ids)>=4096:raise PermissionError("Use a new working movie operation")
+            self._feature_ids.add(operation_id);self._feature=record
+        try:yield event
+        finally:
+            with self._feature_lock:
+                if self._feature is record:self._feature=None
+                done.set()
+
+    def wait_feature_closed(self,timeout=60):
+        with self._feature_lock:done=self._feature[6] if self._feature else None
+        return done is None or done.wait(timeout)
+
+    def feature_progress(self,operation_id,phase,saved,total):
+        with self._feature_lock:
+            if self._feature is None or self._feature[3]!=operation_id:raise RuntimeError("Working movie action lost")
+            self._feature[5].update(phase=phase,saved_frames=saved,total_frames=total)
+
+    def stop_feature(self,pid,origin,guard,token,operation_id):
+        # The stop path does not acquire the live movie writer mutex or wait
+        # for a native modal, backend operation or renderer response.
+        guard()
+        import hmac
+        with self._feature_lock:
+            active=self._feature
+            if self._closed or origin!=self._origin or active is None or active[:2]!=(pid,origin) or not isinstance(token,str) or not hmac.compare_digest(active[2],token) or active[3]!=operation_id:
+                return False
+            active[4].set();return True
+
+    def feature_status(self,pid,origin,guard,token,operation_id):
+        guard()
+        with self._feature_lock:
+            active=self._feature
+            if self._closed or origin!=self._origin or active is None or active[:4]!=(pid,origin,token,operation_id):return {"active":False}
+            return {"active":True,**active[5],"stop_requested":active[4].is_set()}
 
     def _check(self,pid,origin,guard):
         if self._closed or origin!=self._origin:raise PermissionError('Native recovery origin denied')
@@ -232,3 +279,119 @@ def optimize_recording_with_dialog(service,pid,origin,dialog):
         if not confirmed:return {'project_id':pid,'migrated':False,'complete':False,'cancelled':True}
         result=migrate_recording(service.editor.filming,pid,row['scene_id'],row['id'],row['pcm_sha256'],guard=check,human_approved=True)
         return {'project_id':pid,'migrated':result['migrated'],'complete':service._run(pid,candidate) is None,'cancelled':False,'original_unchanged':True}
+
+
+def optimize_payloads_with_dialog(service,pid,origin,dialog,family):
+    """Bounded movie-storage optimization, with native review of each batch."""
+    from backend import nvp_g03_payloads as payloads
+    if family not in ('edl','take'):raise ValueError('Choose movie edits or original scenes')
+    with _native_operation(service,pid,origin,dialog):
+        guard=service.access_guard
+        def check():dialog._check(pid,origin,guard)
+        host=service.editor.filming.g05.g04;store=host.live;token=host.token
+        review=payloads.review(store,pid,token,family,pending_only=True,guard=check)
+        count=len(review['entries'])
+        if not count:return {'project_id':pid,'migrated':0,'complete':True,'cancelled':False,'original_unchanged':True}
+        label='saved edits' if family=='edl' else 'original filmed scenes'
+        yes=dialog._window.create_confirmation_dialog('NVP — Optimize movie storage',
+            f'Move {count} {label} into separately protected storage?\n\nTheir original identities, current edit and saved history will remain unchanged.') is True
+        check()
+        if not yes:return {'project_id':pid,'migrated':0,'complete':False,'cancelled':True}
+        result=payloads.migrate(store,pid,token,family,None,review['approval_digest'],human_approved=True,pending_only=True,guard=check)
+        remaining=payloads.review(store,pid,token,family,pending_only=True,guard=check)
+        return {'project_id':pid,'migrated':result['migrated'],'complete':not remaining['entries'],'cancelled':False,'original_unchanged':True}
+
+
+def feature_reel_with_dialog(service,pid,analysis_sha256,origin,dialog,*,cancel=None,worker_started=None):
+    """Trusted host integration only; caller owns cancellation and native window.
+
+    No browser endpoint or arbitrary callback is exposed by this function.
+    """
+    from backend.nvp_g07_feature_reels import review_native_next,execute_native_approved
+    with _native_operation(service,pid,origin,dialog):
+        previous=service.access_guard
+        def check():dialog._check(pid,origin,previous)
+        service.access_guard=check
+        try:
+            review=review_native_next(service,pid,analysis_sha256)
+            action=review['review']['action'];window=review['review']['window']
+            if action=='complete':return {'cancelled':False,'already_complete':True}
+            label='Verify the complete working movie?' if action=='finalize' else f'Render and save the next {((window[1]-window[0])/24):.2f} seconds of your working movie?'
+            yes=dialog._window.create_confirmation_dialog('NVP — Working movie',label+'\n\nYour original recordings and current edit will stay unchanged.') is True
+            check()
+            if not yes:return {'cancelled':True}
+            return {**execute_native_approved(service,pid,review,human_approved=True,cancel=cancel,worker_started=worker_started),'cancelled':False}
+        finally:service.access_guard=previous
+
+
+def feature_step_with_dialog(service,pid,revision,digest,operation_id,origin,dialog):
+    """Explicitly prepare or approve the remaining immutable production range.
+    No browser-selected worker or receipt.
+
+    Cancel is a separate, session-scoped intent; a cancelled result is only
+    returned after the operation unwinds (including native worker cleanup).
+    """
+    from backend.nvp_g07_feature_native import installed_identity
+    from backend.nvp_g07_feature_finish import analyze_approved,current_analysis
+    from backend.nvp_g07_feature_reels import review_native_next,execute_native_approved
+    if type(dialog) is not NativeRecoveryDialog or service.access_guard is None or not service._page_context(pid):raise PermissionError('Open the installed protected movie workspace')
+    installed_identity()  # refuse unsupported/source-only hosts before confirmation
+    token=service.editor.filming.g05.g04.token;previous=service.access_guard
+    result={'project_id':pid,'revision':revision,'active_digest':digest,'operation_id':operation_id,'final_movie_exported':False}
+    with dialog.feature_operation(pid,origin,previous,token,operation_id) as stop:
+        with _native_operation(service,pid,origin,dialog):
+            def check():
+                if stop.is_set():raise InterruptedError('Working movie stopped')
+                dialog._check(pid,origin,previous)
+                if stop.is_set():raise InterruptedError('Working movie stopped')
+            service.access_guard=check
+            try:
+                expected,saved=current_analysis(service,pid,revision,digest)
+                total=expected['frame_count']
+                dialog.feature_progress(operation_id,'preparing',0,total)
+                if saved is None:
+                    yes=dialog._window.create_confirmation_dialog('NVP — Prepare working movie','Measure the complete approved picture and sound arrangement?\n\nYour original recordings and current edit will stay unchanged.') is True
+                    check()
+                    if not yes:return {**result,'state':'refused'}
+                    analyze_approved(service,pid,expected,human_approved=True)
+                    return {**result,'state':'prepared','saved_frames':0,'total_frames':total}
+                native=review_native_next(service,pid,saved)
+                step=native['review'];action=step['action']
+                if action=='complete':
+                    # Do not infer native proof just from completed metadata.
+                    from backend.nvp_g07_feature_reels import verify_complete
+                    verified=verify_complete(service,pid,step['job_id'])
+                    if verified['independent_worker_verified'] is not True:raise VaultError('Saved working movie lacks native verification')
+                    return {**result,'state':'complete','saved_frames':total,'total_frames':total,'job_id':step['job_id']}
+                # One native confirmation authorizes this exact remaining
+                # range, including verification. Subsequent reel reviews must
+                # retain the original job/worker identity and advance exactly.
+                spec=step['spec'];job=step['job_id'];identity=native['native_renderer'];part=step['part']
+                start_frame=min(part*spec['frames_per_reel'],total)
+                dialog.feature_progress(operation_id,'reviewing',start_frame,total)
+                label=('Verify the complete working movie?' if action=='finalize' else
+                       f'Render and verify the remaining {(total-start_frame)/24:.2f} seconds of your working movie?')
+                yes=dialog._window.create_confirmation_dialog('NVP — Working movie',label+'\n\nYour original recordings and current edit will stay unchanged. You can stop at any time; verified parts will be kept.') is True
+                check()
+                if not yes:return {**result,'state':'refused'}
+                while True:
+                    check()
+                    step=native['review'];action=step['action']
+                    if (step['job_id']!=job or step['analysis_sha256']!=saved or step['spec']!=spec or native['native_renderer']!=identity or step['part']!=part or action not in ('render','resume','finalize')):
+                        raise VaultError('Approved working movie range changed')
+                    dialog.feature_progress(operation_id,'verifying' if action=='finalize' else 'starting',start_frame,total)
+                    receipt=execute_native_approved(service,pid,native,human_approved=True,cancel=stop.is_set,worker_started=lambda:dialog.feature_progress(operation_id,'rendering',start_frame,total),worker_finished=lambda:dialog.feature_progress(operation_id,'verifying',start_frame,total))
+                    if action=='finalize':
+                        if receipt['independent_worker_verified'] is not True or receipt['frames']!=total:raise VaultError('Saved working movie lacks native verification')
+                        return {**result,'state':'complete','saved_frames':total,'total_frames':total,'job_id':step['job_id']}
+                    if receipt['native_execution']['job_and_profile_cleanup_verified'] is not True or receipt['part']!=part or receipt['start_frame']!=start_frame or receipt['end_frame']!=min(total,start_frame+spec['frames_per_reel']):raise VaultError('Worker cleanup or range unverified')
+                    start_frame=receipt['end_frame'];part+=1
+                    dialog.feature_progress(operation_id,'starting',start_frame,total)
+                    check()
+                    native=review_native_next(service,pid,saved)
+            except InterruptedError as exc:
+                if not stop.is_set():raise
+                from backend.nvp_g07_feature_native import NativeReelInterrupted
+                active_stopped=type(exc) is NativeReelInterrupted and exc.active_worker_stopped is True
+                return {**result,'state':'stopped','active_render_stopped':active_stopped}
+            finally:service.access_guard=previous

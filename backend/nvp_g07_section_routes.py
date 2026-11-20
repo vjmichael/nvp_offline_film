@@ -1,6 +1,6 @@
 """Existing director session/CSRF boundary for immutable G07 section decisions."""
 from typing import Annotated, Literal
-from fastapi import Request, HTTPException, Query
+from fastapi import Request, HTTPException, Query, Path
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from backend.nvp_g07_edit import G07Editor
@@ -72,6 +72,12 @@ class MediaScope(Exact):
     revision: Revision
     digest: Sha
 
+class FeatureOperation(MediaScope):
+    operation_id: Id
+
+class FeatureStop(Exact):
+    operation_id: Id
+
 class PictureRequest(MediaScope):
     tick: str=Field(pattern=r'^(0|[1-9][0-9]{0,18})$',strict=True)
 
@@ -104,6 +110,7 @@ def mount_section_routes(app, get_studio, live_films, film_access, cookie_name):
         try:
             result=action(service(pid,request))
             if not film_access().permitted(pid,request.cookies.get(cookie_name)):raise HTTPException(423,'Movie locked')
+            if isinstance(result,Response):return result
             if isinstance(result,bytes):
                 return Response(content=result,media_type='audio/wav',headers={'Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Content-Disposition':'inline'})
             return JSONResponse(result,headers={'Cache-Control':'private, no-store, max-age=0'})
@@ -182,7 +189,64 @@ def mount_section_routes(app, get_studio, live_films, film_access, cookie_name):
         from backend.nvp_g07_recovery_dialog import optimize_recording_with_dialog
         origin,dialog=native_origin(request)
         return respond(project_id,request,lambda s:optimize_recording_with_dialog(s,project_id,origin,dialog))
-    for suffix,handler in [('/review-clip',review_clip),('/review-clips',clips),('/copy-review-clip',copy_clip),('/create-backup',backup),('/restore-copy',restore_copy),('/optimize-recording',optimize)]:
+    def optimize_edits(project_id:str,request:Request):
+        from backend.nvp_g07_recovery_dialog import optimize_payloads_with_dialog
+        origin,dialog=native_origin(request)
+        return respond(project_id,request,lambda s:optimize_payloads_with_dialog(s,project_id,origin,dialog,'edl'))
+    def optimize_scenes(project_id:str,request:Request):
+        from backend.nvp_g07_recovery_dialog import optimize_payloads_with_dialog
+        origin,dialog=native_origin(request)
+        return respond(project_id,request,lambda s:optimize_payloads_with_dialog(s,project_id,origin,dialog,'take'))
+    def feature_step(project_id:str,request:Request,payload:FeatureOperation):
+        from backend.nvp_g07_recovery_dialog import feature_step_with_dialog
+        origin,dialog=native_origin(request)
+        return respond(project_id,request,lambda s:feature_step_with_dialog(s,project_id,payload.revision,payload.digest,payload.operation_id,origin,dialog))
+    def feature_stop(project_id:str,request:Request,payload:FeatureStop):
+        from backend.nvp_g07_recovery_dialog import NativeRecoveryDialog
+        origin,dialog=native_origin(request)
+        if type(dialog) is not NativeRecoveryDialog or request.headers.get('x-nvp-director')!='1':raise HTTPException(403,'Open the installed protected movie workspace')
+        token=request.cookies.get(cookie_name)
+        def guard():
+            if not film_access().permitted(project_id,token):raise HTTPException(423,'Movie locked')
+        return JSONResponse({'project_id':project_id,'operation_id':payload.operation_id,'stop_requested':dialog.stop_feature(project_id,origin,guard,token,payload.operation_id)},headers={'Cache-Control':'private, no-store, max-age=0'})
+    def feature_status(project_id:str,request:Request,payload:FeatureStop):
+        from backend.nvp_g07_recovery_dialog import NativeRecoveryDialog
+        origin,dialog=native_origin(request)
+        if type(dialog) is not NativeRecoveryDialog or request.headers.get('x-nvp-director')!='1':raise HTTPException(403,'Open the installed protected movie workspace')
+        token=request.cookies.get(cookie_name)
+        def guard():
+            if not film_access().permitted(project_id,token):raise HTTPException(423,'Movie locked')
+        return JSONResponse({'project_id':project_id,'operation_id':payload.operation_id,**dialog.feature_status(project_id,origin,guard,token,payload.operation_id)},headers={'Cache-Control':'private, no-store, max-age=0'})
+    def playback_access(pid,request,s):
+        from backend.nvp_g07_recovery_dialog import NativeRecoveryDialog
+        origin=f"{request.url.scheme}://{request.url.netloc}"
+        dialog=getattr(request.app.state,'nvp_editorial_recovery_dialog',None)
+        if (type(dialog) is not NativeRecoveryDialog or request.url.hostname!='127.0.0.1' or
+            request.headers.get('sec-fetch-site')!='same-origin' or request.headers.get('origin',origin)!=origin):
+            raise HTTPException(403,'Open the installed protected movie workspace')
+        previous=s.access_guard
+        s.access_guard=lambda:dialog._check(pid,origin,previous)
+        s.access_guard()
+        return s
+    def playback_timeline(project_id:str,revision:Annotated[int,Path(ge=1,le=15000)],digest:Sha,job:Sha,request:Request):
+        from backend.nvp_g07_feature_playback import timeline
+        return respond(project_id,request,lambda s:timeline(playback_access(project_id,request,s),project_id,revision,digest,job))
+    def playback_frames(project_id:str,revision:Annotated[int,Path(ge=1,le=15000)],digest:Sha,job:Sha,request:Request,start_frame:int=Query(ge=0,le=259199),count:int=Query(ge=1,le=12)):
+        from backend.nvp_g07_feature_playback import pictures
+        return respond(project_id,request,lambda s:pictures(playback_access(project_id,request,s),project_id,revision,digest,job,start_frame,count))
+    def playback_sound(project_id:str,revision:Annotated[int,Path(ge=1,le=15000)],digest:Sha,job:Sha,request:Request,start_sample:int=Query(ge=0,le=518399999),count:int=Query(ge=1,le=24000)):
+        from backend.nvp_g07_feature_playback import sound
+        def action(s):
+            raw,headers=sound(playback_access(project_id,request,s),project_id,revision,digest,job,start_sample,count)
+            return Response(raw,media_type='audio/wav',headers={**headers,'Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff'})
+        return respond(project_id,request,action)
+    def inventory_page(project_id:str,request:Request,family:Literal['takes','recordings'],after:Id|None=None,limit:int=Query(default=32,ge=1,le=64)):
+        from backend.nvp_g07_feature_playback import inventory
+        return respond(project_id,request,lambda s:inventory(playback_access(project_id,request,s),project_id,family,after,limit))
+    for suffix,handler in [('timeline',playback_timeline),('frames',playback_frames),('sound',playback_sound)]:
+        app.add_api_route('/api/projects/{project_id}/live/edit/sections/playback/{revision}/{digest}/{job}/'+suffix,handler,methods=['GET'],name='perf03g_'+handler.__name__)
+    app.add_api_route('/api/projects/{project_id}/live/edit/sections/media-inventory',inventory_page,methods=['GET'],name='perf03g_media_inventory')
+    for suffix,handler in [('/feature-step',feature_step),('/feature-stop',feature_stop),('/feature-status',feature_status),('/review-clip',review_clip),('/review-clips',clips),('/copy-review-clip',copy_clip),('/create-backup',backup),('/restore-copy',restore_copy),('/optimize-recording',optimize),('/optimize-edits',optimize_edits),('/optimize-scenes',optimize_scenes)]:
         app.add_api_route('/api/projects/{project_id}/live/edit/sections'+suffix,handler,methods=['POST'],name='perf03g_protected_'+handler.__name__)
     for prefix,tag in [('edit','ordinary'),('live/edit','protected')]:
         for method,suffix,handler in [('GET','',directory),('POST','/page',page),('POST','/preview',preview),('POST','/save',publish),('POST','/activation-preview',preview_activation),('POST','/activate',activate),('POST','/paged-activation-preview',preview_paged),('POST','/paged-activate',activate_paged),('POST','/active-page',active_page),('POST','/picture',picture),('POST','/sound',sound),('POST','/delivery-review',delivery_review),('GET','/storage-review',storage_review)]:

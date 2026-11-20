@@ -29,7 +29,7 @@ from test_nvp_perf03g_sections import SECRET,T
 
 
 class Fixture:
-    def __init__(self,owner,*,native=False):
+    def __init__(self,owner,*,native=False,count=4):
         tmp=tempfile.TemporaryDirectory();owner.addCleanup(tmp.cleanup);self.root=Path(tmp.name)
         self.studio=Studio(self.root/'studio.sqlite3');self.pid=self.studio.create_project('Fixture','')['id']
         self.store=LiveFilmStore(self.root/'secured');self.token='r4-test-'+'x'*32
@@ -45,7 +45,7 @@ class Fixture:
         self.editor=G07Editor(self.studio,live=self.store,token=self.token)
         # Native G08 supports box, not G07 preview's cube shorthand. Use exact
         # source fixture geometry and a front-facing camera before freezing the edit.
-        service,group=seed_media(self.editor,self.pid)
+        service,group=seed_media(self.editor,self.pid,count=count)
         def convert(db,movie):
             doc=json.loads(db.execute('SELECT document_json FROM g07_edit_versions WHERE project_id=? AND revision=1',(self.pid,)).fetchone()[0])
             for clip in doc['clips']:
@@ -59,7 +59,7 @@ class Fixture:
         self.editor._execute(self.pid,convert,mutate=True)
         from test_nvp_perf03g_sections import saved,ref
         self.service=EditorialSections(self.editor,access_guard=self.guard)
-        entry=self.service.directory(self.pid,'edits')['items'][0];a=saved(self.service,self.pid,'Act one',[ref(entry,0,2)]);b=saved(self.service,self.pid,'Act two',[ref(entry,2,2)]);group=saved(self.service,self.pid,'Review film',[ref(a),ref(b)])
+        entry=self.service.directory(self.pid,'edits')['items'][0];a=saved(self.service,self.pid,'Act one',[ref(entry,0,count//2)]);b=saved(self.service,self.pid,'Act two',[ref(entry,count//2,count-count//2)]);group=saved(self.service,self.pid,'Review film',[ref(a),ref(b)])
         activate(self.service,self.pid,group,1);self.digest=self.editor.view(self.pid)['active_digest'];self.rev=2
     def guard(self):self.store._session(self.pid,self.token)
     def source(self,cid=9002):return f'{cid:032x}'

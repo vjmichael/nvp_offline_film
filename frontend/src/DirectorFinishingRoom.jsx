@@ -28,7 +28,7 @@ const input=(label,key,value,onChange,min,max,step)=><label key={key}>
 </label>;
 
 export default function DirectorFinishingRoom({
-  movie,editRevision,onChanged,durationSeconds=0}){
+  movie,editRevision,onChanged,durationSeconds=0,chapterBased=false}){
   const base=baseProject(movie.id)+(movie.encrypted?'/live':'')+'/finish';
   const [record,setRecord]=useState(null);
   const [color,setColor]=useState(null);
@@ -51,13 +51,13 @@ export default function DirectorFinishingRoom({
     let active=true;const controller=new AbortController();
     Promise.all([
       call(base,'GET',undefined,controller.signal),
-      call(base+'/cinema-readiness','GET',undefined,controller.signal)
+      chapterBased?Promise.resolve(null):call(base+'/cinema-readiness','GET',undefined,controller.signal)
     ]).then(([doc,dcp])=>{
       if(active){setRecord(doc);setReadiness(dcp)}
     }).catch(e=>{if(active&&e.name!=='AbortError')setError(e.message)});
     return()=>{active=false;alive.current=false;controller.abort();
       abort.current?.abort()};
-  },[base,editRevision]);
+  },[base,editRevision,chapterBased]);
 
   useEffect(()=>{
     if(!record)return;
@@ -121,7 +121,7 @@ export default function DirectorFinishingRoom({
 
   async function preview(kind){
     if(!record||record.source_changed||audition||busy)return;
-    if(durationSeconds>30){
+    if(chapterBased||durationSeconds>30){
       setNotice('For longer films, final sound levels are measured in the '
         +'bounded native render rather than a memory-heavy preview.');
       return;
@@ -212,7 +212,7 @@ export default function DirectorFinishingRoom({
             the selected peak limit will not be falsely marked as met.</p>
         </section>
       </div>
-      {durationSeconds>30?<p className="film-hint">
+      {chapterBased?<p className="film-hint">Your chapter edit stays intact. Review the original scenes in the timeline; NVP measures the complete sound arrangement before rendering the working movie.</p>:durationSeconds>30?<p className="film-hint">
         A full-length preview must not load all original film media into
         memory. You can save/approve your finishing decisions here;
         source-windowed picture and whole-film sound auditing are built

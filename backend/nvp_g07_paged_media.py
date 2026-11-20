@@ -116,23 +116,29 @@ def native_source_window(service,pid,revision,digest,start,end,*,plan_sha256):
     from backend.nvp_g08_native_avi import TICKS_FRAME
     if type(start) is not int or type(end) is not int or start%TICKS_FRAME or end%TICKS_FRAME:
         raise ValueError('Choose whole-frame source windows')
-    def read(db,movie):
-        doc,segments=window(service,db,pid,revision,digest,start,end)
-        from backend.nvp_g07_sections import _check_sha
-        if _check_sha(plan_sha256)!=_plan_record(pid,revision,digest,doc)['plan_sha256']:
-            raise PermissionError('Review the exact delivery source again')
-        budget=admit(service,db,pid,segments);sources={}
-        for seg in segments:
-            tid=seg['take_id']
-            if tid in sources:continue
-            if service.access_guard:service.access_guard()
-            row,take,audio=service.editor._take(db,pid,tid,{})
-            if row['take_sha256']!=seg['take_sha256']:raise RuntimeError('Original Take changed')
-            sounds=[]
-            for item in audio:
-                pcm=service.editor.filming._pcm(db,pid,row['scene_id'],item['clip_id'])
-                if pcm is None or _sha(pcm['pcm'])!=item['pcm_sha256'] or pcm['pcm_sha256']!=item['pcm_sha256']:raise RuntimeError('Original sound changed')
-                sounds.append({**item,'pcm16le':bytes(pcm['pcm'])})
-            sources[tid]={'scene_id':row['scene_id'],'take_sha256':row['take_sha256'],'original_usd':bytes(row['original_usd']),'performance_usd':bytes(row['performance_usd']),'original_sha256':row['original_usd_sha256'],'performance_sha256':row['performance_usd_sha256'],'duration_tick':take['duration_tick'],'stage_objects':take['stage_objects'],'stage_setting':take['stage_setting'],'events':take['events'],'audio':sounds}
-        return {'format':WINDOW_FORMAT,'project_id':pid,'revision':revision,'active_digest':digest,'ordered_cuts_sha256':doc['ordered_cuts_sha256'],'plan_sha256':plan_sha256,'window':[start,end],'duration_tick':doc['duration_tick'],'segments':segments,'original_takes':sources,'source_payload_budget_bytes':budget,'master_gain':doc['master_gain'],'render_approved':False,'final_movie_exported':False}
-    return service._run(pid,read)
+    return service._run(pid,lambda db,movie:_native_source_window(service,db,pid,revision,digest,start,end,plan_sha256=plan_sha256))
+
+
+def _native_source_window(service,db,pid,revision,digest,start,end,*,plan_sha256):
+    """Host-only source read within a caller-owned immutable SQLite snapshot."""
+    from backend.nvp_g08_native_avi import TICKS_FRAME
+    if type(start) is not int or type(end) is not int or start%TICKS_FRAME or end%TICKS_FRAME:
+        raise ValueError('Choose whole-frame source windows')
+    doc,segments=window(service,db,pid,revision,digest,start,end)
+    from backend.nvp_g07_sections import _check_sha
+    if _check_sha(plan_sha256)!=_plan_record(pid,revision,digest,doc)['plan_sha256']:
+        raise PermissionError('Review the exact delivery source again')
+    budget=admit(service,db,pid,segments);sources={}
+    for seg in segments:
+        tid=seg['take_id']
+        if tid in sources:continue
+        if service.access_guard:service.access_guard()
+        row,take,audio=service.editor._take(db,pid,tid,{})
+        if row['take_sha256']!=seg['take_sha256']:raise RuntimeError('Original Take changed')
+        sounds=[]
+        for item in audio:
+            pcm=service.editor.filming._pcm(db,pid,row['scene_id'],item['clip_id'])
+            if pcm is None or _sha(pcm['pcm'])!=item['pcm_sha256'] or pcm['pcm_sha256']!=item['pcm_sha256']:raise RuntimeError('Original sound changed')
+            sounds.append({**item,'pcm16le':bytes(pcm['pcm'])})
+        sources[tid]={'scene_id':row['scene_id'],'take_sha256':row['take_sha256'],'original_usd':bytes(row['original_usd']),'performance_usd':bytes(row['performance_usd']),'original_sha256':row['original_usd_sha256'],'performance_sha256':row['performance_usd_sha256'],'duration_tick':take['duration_tick'],'stage_objects':take['stage_objects'],'stage_setting':take['stage_setting'],'events':take['events'],'audio':sounds}
+    return {'format':WINDOW_FORMAT,'project_id':pid,'revision':revision,'active_digest':digest,'ordered_cuts_sha256':doc['ordered_cuts_sha256'],'plan_sha256':plan_sha256,'window':[start,end],'duration_tick':doc['duration_tick'],'segments':segments,'original_takes':sources,'source_payload_budget_bytes':budget,'master_gain':doc['master_gain'],'render_approved':False,'final_movie_exported':False}

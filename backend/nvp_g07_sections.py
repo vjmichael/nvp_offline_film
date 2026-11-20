@@ -8,6 +8,7 @@ import copy
 import json
 import re
 
+from backend import nvp_g03_payloads as protected_payloads
 from backend.nvp_g07_edit import G07Editor, _project, _blank, MAX_EDL_CLIPS, MAX_PROJECT_SECONDS, FORMAT as FINITE_FORMAT
 from backend.nvp_g06_filming import _json, _sha, HEX
 from backend.nvp_temporal_ledger import TICKS_PER_SECOND, MAX_TICK
@@ -88,9 +89,9 @@ class EditorialSections:
         row=db.execute('''SELECT document_json,document_sha256 FROM g07_edit_versions
             WHERE project_id=? AND revision=?''',(pid,revision)).fetchone()
         if row is None:raise KeyError('Saved edit not found')
-        if _sha(row['document_json'].encode('utf8'))!=row['document_sha256'] or (digest is not None and _check_sha(digest)!=row['document_sha256']):
+        if digest is not None and _check_sha(digest)!=row['document_sha256']:
             raise RuntimeError('Saved edit source changed')
-        doc=json.loads(row['document_json'])
+        doc=protected_payloads.resolve_edit(db,pid,revision,row['document_json'],row['document_sha256'])
         ticks,segments=self.editor._validate(db,pid,doc)
         return doc,row['document_sha256'],ticks,segments
 
@@ -193,8 +194,7 @@ class EditorialSections:
                 rows=list(db.execute('SELECT revision FROM g07_edit_versions WHERE project_id=? AND revision>? ORDER BY revision LIMIT ?',(pid,last,n+1)))
                 for row in rows[:n]:
                     raw=db.execute('SELECT document_json,document_sha256 FROM g07_edit_versions WHERE project_id=? AND revision=?',(pid,row[0])).fetchone()
-                    if _sha(raw['document_json'].encode('utf8'))!=raw['document_sha256']:raise RuntimeError('Saved edit source changed')
-                    doc=json.loads(raw['document_json'])
+                    doc=protected_payloads.resolve_edit(db,pid,row[0],raw['document_json'],raw['document_sha256'])
                     if doc.get('format')==paged.FORMAT:
                         section,sha=self._paged_root(db,pid,row[0],doc)
                         items.append({**self._summary(section,sha),'label':section['title']})
@@ -476,8 +476,7 @@ class EditorialSections:
                 if json.loads(row['document_json']).get('format')==pages.FORMAT:sealed+=1
             audits=0
             for row in db.execute('SELECT revision,document_json,document_sha256 FROM g07_edit_versions WHERE project_id=? ORDER BY revision',(pid,)):
-                if _sha(row['document_json'].encode('utf8'))!=row['document_sha256']:raise RuntimeError('Saved edit source changed')
-                doc=json.loads(row['document_json'])
+                doc=protected_payloads.resolve_edit(db,pid,row['revision'],row['document_json'],row['document_sha256'])
                 if doc.get('format')==paged.FORMAT:
                     root,sha=self._paged_root(db,pid,row['revision'],doc)
                     if paged.build(self,db,pid,root,sha)!=doc:raise RuntimeError('Saved section timeline changed')

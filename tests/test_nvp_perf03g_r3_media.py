@@ -24,7 +24,7 @@ import test_nvp_perf03g_r2_paged_active as prior
 from test_nvp_perf03g_sections import fixture_take,saved,ref,T,SECRET,HEADERS
 
 
-def seed_media(editor,pid):
+def seed_media(editor,pid,*,count=4):
     """Tiny generated self-contained USD/PCM originals in actual G06 schema.
 
     Synthetic input recording, not physical microphone or production-quality
@@ -32,9 +32,9 @@ def seed_media(editor,pid):
     """
     def create(db,movie):
         doc=_blank();doc['title']='Scene arrangement'
-        for n in range(1,5):
+        for n in range(1,count+1):
             clip=fixture_take(db,pid,n);tid=clip['take_id'];cid=f'{9000+n:032x}';sid='SC_abcdef012345'
-            pcm=struct.pack('<h',n*2000)*(2*RATE);digest=_sha(pcm)
+            pcm=struct.pack('<h',((n*2000+32768)%65536)-32768)*(2*RATE);digest=_sha(pcm)
             db.execute('INSERT INTO g06_original_pcm VALUES(?,?,?,?,?,?,?,?,?,?,?)',(cid,pid,sid,'actor_fixture','native_microphone_pcm16le',pcm,digest,RATE,1,2*RATE,'2026-11-19'))
             raw=(f'#usda 1.0\n( defaultPrim = "World" )\ndef Xform "World" {{\n def Scope "Objects" {{\n  def Xform "Actor" {{\n   double3 xformOp:translate = ({n}, 0, 0)\n   uniform token[] xformOpOrder = ["xformOp:translate"]\n  }}\n }}\n}}\n').encode()
             sha=_sha(raw);manifest=json.loads(db.execute('SELECT performance_json FROM g06_frozen_takes WHERE take_id=?',(tid,)).fetchone()[0])
@@ -47,7 +47,7 @@ def seed_media(editor,pid):
         editor._validate(db,pid,doc);editor._save(db,pid,doc,0,0)
     editor._execute(pid,create,mutate=True);service=EditorialSections(editor)
     entry=service.directory(pid,'edits')['items'][0]
-    a=saved(service,pid,'Act one',[ref(entry,0,2)]);b=saved(service,pid,'Act two',[ref(entry,2,2)])
+    a=saved(service,pid,'Act one',[ref(entry,0,count//2)]);b=saved(service,pid,'Act two',[ref(entry,count//2,count-count//2)])
     root=saved(service,pid,'Complete film',[ref(a),ref(b)])
     return service,root
 

@@ -1301,6 +1301,16 @@ def run_g03_vault_smoke():
 
 def main(argv=None):
     args=list(sys.argv[1:] if argv is None else argv)
+    if args==["--smoke-perf03g-production-window"]:
+        from tools.nvp_perf03g_production_gui_smoke import run
+        return run(create_app=create_app,serve=serve,start_private=_start_private_webview,
+                   await_loaded=_await_native_window_load,checkpoint=_smoke_checkpoint)
+    if args==["--smoke-perf03g-worker"]:
+        from tools.nvp_perf03g_worker_smoke import run
+        return run(_smoke_checkpoint)
+    if args==["--g07-protected-reel-worker"]:
+        from tools.nvp_g07_feature_reel_worker import installed_worker_entry
+        return installed_worker_entry()
     if len(args)==2 and args[0]=="--wo6-protected-take-worker":
         from tools.nvp_wo6_take_worker import worker_entry
         return worker_entry(args[1])
@@ -1501,7 +1511,10 @@ def main(argv=None):
             raise RuntimeError("Managed desktop qualification did not verify real window")
         return 0
     finally:
-        if recovery_dialog is not None:recovery_dialog.close()
+        feature_closed=True
+        if recovery_dialog is not None:
+            recovery_dialog.close()
+            feature_closed=recovery_dialog.wait_feature_closed(timeout=60)
         app.state.nvp_editorial_recovery_dialog=None
         try:
             if bridge is not None:
@@ -1510,6 +1523,7 @@ def main(argv=None):
             server.should_exit=True
             worker.join(timeout=12)
             sock.close()
+        if not feature_closed:raise RuntimeError("Working movie shutdown was not verified; reopen for review")
 
 
 def _smoke_checkpoint(stage):

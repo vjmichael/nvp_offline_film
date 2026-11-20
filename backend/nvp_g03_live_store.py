@@ -175,7 +175,8 @@ class LiveFilmStore:
     def _open_sqlite(raw):
         if type(raw) is not bytes or len(raw)>MAX_DB_BYTES:
             raise LiveFilmError("Invalid encrypted SQLite size")
-        db=sqlite3.connect(":memory:")
+        from backend.nvp_g03_payloads import ProtectedConnection
+        db=sqlite3.connect(":memory:",factory=ProtectedConnection)
         db.row_factory=sqlite3.Row
         try:
             db.deserialize(raw)
@@ -283,6 +284,8 @@ class LiveFilmStore:
         except VaultError as exc:
             raise LiveFilmError("Encrypted SQLite HEAD integrity or size mismatch") from exc
         db=self._open_sqlite(memory.getvalue())
+        from backend.nvp_g03_payloads import attach
+        attach(db,folder,pid,key,head)
         return db,head
 
     def authorize(self,pid,passphrase,session_token):
@@ -350,6 +353,7 @@ class LiveFilmStore:
 
     def _change_locked(self,pid,token,mutator,key,folder,*,compact=False):
         db,head=self._read_db(folder,pid,key)
+        db._nvp_payload_guard=lambda:self._session(pid,token)
         try:
             result=mutator(db,key,folder)
             db.commit()
@@ -370,7 +374,9 @@ class LiveFilmStore:
                 if match:
                     highest=max(highest,int(match.group(1)))
             next_seq=highest+1
+            db._nvp_payload_guard()
             record=self._seal_db(folder,pid,key,raw,next_seq)
+            db._nvp_payload_guard()
             self._session(pid,token)
             self._publish_head(folder,record)
             return result
