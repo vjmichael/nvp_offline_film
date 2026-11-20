@@ -124,7 +124,7 @@ def create_private_group_and_launch(
             leaf = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
             try:
                 for control in ("cgroup.procs", "cgroup.kill", "cgroup.events"):
-                    control_fd = os.open(control, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=leaf)
+                    control_fd = os.open(control, (os.O_WRONLY if control == "cgroup.kill" else os.O_RDONLY) | os.O_NOFOLLOW, dir_fd=leaf)
                     os.close(control_fd)
             finally:
                 os.close(leaf)

@@ -47,6 +47,8 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
         names={name for name in dir(self.api) if not name.startswith("_")}
         expected={
             "slate_publish_section",
+            "audio_recovery_catalog","audio_recovery_act",
+            "audio_preview_catalog","audio_preview_start","audio_preview_cancel",
             "wo6_plan_catalog","wo6_plan_preview","wo6_plan_save","wo6_plan_read","wo6_retake_execute",
             "wo6_retake_cancel","wo6_retake_recover",
             "wo5_review_catalog","wo5_review_read_intent","wo5_review_save_intent",
@@ -90,7 +92,7 @@ class NativeWebviewSurfaceTests(unittest.TestCase):
             "data_av_film_stage_chunk_poll","data_av_film_stage_chunk_cancel",
         }
         self.assertEqual(names,expected)
-        self.assertEqual(len(names),81)
+        self.assertEqual(len(names),86)
         self.assertFalse(hasattr(self.api,"__dict__"))
         for name in names:
             method=getattr(self.api,name)
@@ -371,13 +373,14 @@ class WebviewLoadObservationTests(unittest.TestCase):
 
 class PrivateProfileTests(unittest.TestCase):
     @staticmethod
-    def _helper():
+    def _helper(platform="win32"):
         import tempfile
+        from types import SimpleNamespace
         path = Path(__file__).resolve().parents[1] / "tools" / "nvp_desktop_alpha.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         node = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
                     and n.name == "_start_private_webview")
-        scope = {"tempfile": tempfile, "Path": Path}
+        scope = {"tempfile": tempfile, "Path": Path, "sys": SimpleNamespace(platform=platform)}
         exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), scope)
         return scope[node.name]
 
@@ -420,6 +423,12 @@ class PrivateProfileTests(unittest.TestCase):
         self.assertNotIn("SECRET_PATH", repr(observed))
         self.assertEqual(logger.handlers, original_handlers)
         self.assertFalse(paths[0].parent.exists())
+
+    def test_linux_uses_gtk_and_private_profile(self):
+        from types import SimpleNamespace
+        calls=[]
+        self._helper("linux")(SimpleNamespace(start=lambda **kw:calls.append((kw["gui"],kw["private_mode"],Path(kw["storage_path"]).is_dir())),renderer="gtk"))
+        self.assertEqual(calls,[("gtk",True,True)])
 
     def test_fallback_renderer_is_not_misreported(self):
         from types import SimpleNamespace

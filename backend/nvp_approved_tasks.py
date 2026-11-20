@@ -123,7 +123,7 @@ class ApprovedTaskBindings:
         self._check(approval_id,digest,document)
         return document
 
-    def claim_next(self,*,owner_key,expected_task_id=None):
+    def claim_next(self,*,owner_key,expected_task_id=None,_prepare_admission=None):
         # Preflight the head-of-line binding before reserving memory. A
         # revoked approval should not strand host RAM merely because the
         # queued task has become unauthorized. The policy is rechecked again
@@ -145,7 +145,8 @@ class ApprovedTaskBindings:
         self.verified_spec(candidate[0],owner_key=owner_key,require_active=False)
         # Always fence the actual preflighted ID, even for generic callers.
         # A concurrent priority change or cancellation cannot claim another task.
-        result=self.ledger.claim_next(owner_key=owner_key,expected_task_id=candidate[0])
+        kwargs={} if _prepare_admission is None else {"_prepare_admission":_prepare_admission}
+        result=self.ledger.claim_next(owner_key=owner_key,expected_task_id=candidate[0],**kwargs)
         if result is None or not result["admitted"]:
             return result
         self.verified_spec(result["task_id"],owner_key=owner_key)

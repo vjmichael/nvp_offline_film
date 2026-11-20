@@ -194,7 +194,7 @@ class TaskLedger:
                 not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", expected_task_id)):
             raise ValueError("Exact native task notice identity required")
 
-    def claim_next(self,*,owner_key:str,expected_task_id=None):
+    def claim_next(self,*,owner_key:str,expected_task_id=None,_prepare_admission=None):
         """Reserve the highest priority queued task for a trusted producer.
 
         Atomic admission checks and reservation hold the same SQLite write
@@ -227,6 +227,10 @@ class TaskLedger:
                 self.sampler(),request,int(reserved[0]),int(reserved[1]))
             now=time.time()
             if allowed:
+                # Trusted native producer records its recovery binding in this
+                # very transaction, before any reservation becomes visible.
+                if _prepare_admission is not None:
+                    _prepare_admission(db,task_id)
                 db.execute("""UPDATE tasks SET state='ACTIVE',phase='starting',
                     detail=?,reserved=1,updated_at=? WHERE id=? AND state='QUEUED'""",
                     (reason,now,task_id))

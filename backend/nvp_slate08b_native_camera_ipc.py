@@ -151,6 +151,8 @@ class TrustedDesktopCameraBridge(CreatorPlanningActions, FinishedReviewActions, 
         self._edited_export = None
         self._p1f_export = None
         self._closing = False
+        self._audio_recovery = None
+        self._audio_admission = None
         self._wo5_configure_review(production_root=production_root,bundle_root=review_codec_bundle)
         if project_lock_check is not None and not callable(project_lock_check):
             raise TypeError("Native project-lock check must be a trusted host callback")
@@ -2076,6 +2078,54 @@ class TrustedDesktopCameraBridge(CreatorPlanningActions, FinishedReviewActions, 
         self._native_window()
         return self._original_capture().interrupted(project_id)
 
+    def _attach_audio_recovery(self, ledger, root, authority):
+        # Host-only: never forwarded through the JavaScript projection.
+        from backend.nvp_linux_desktop_audio_recovery import ManagedAudioRecoveryControls
+        from backend.nvp_linux_desktop_audio_admission import ManagedAudioAdmission
+        with self._lock:
+            if self._closing or self._audio_recovery is not None:
+                raise PermissionError("Desktop recovery already attached or closed")
+            self._audio_recovery = ManagedAudioRecoveryControls(
+                ledger, root, authority, self._native_window)
+            self._audio_admission = ManagedAudioAdmission(
+                self.index, ledger, root, authority, self._native_window)
+
+    def audio_preview_catalog(self, project_id, after=None):
+        if self._audio_admission is None:
+            return {"available": False, "items": [], "next_after": None}
+        return self._audio_admission.catalog(project_id, after)
+
+    def audio_preview_start(self, project_id, source_id, revision):
+        if self._audio_admission is None:
+            raise PermissionError("Managed sound preview unavailable")
+        try:
+            return self._audio_admission.preview(project_id, source_id, revision)
+        except (OSError, RuntimeError, KeyError, TypeError, ValueError):
+            raise PermissionError("Sound preview needs review") from None
+
+    def audio_preview_cancel(self, project_id):
+        if self._audio_admission is None:
+            raise PermissionError("Managed sound preview unavailable")
+        return self._audio_admission.cancel(project_id)
+
+    def audio_recovery_catalog(self, page=None):
+        if self._audio_recovery is None:
+            return {"available": False, "items": [], "held": 0, "more": False, "next_page": None}
+        import sqlite3
+        try:
+            return self._audio_recovery.catalog(page)
+        except (OSError, RuntimeError, KeyError, TypeError, ValueError, sqlite3.Error):
+            raise PermissionError("Saved sound work needs review") from None
+
+    def audio_recovery_act(self, selection, action):
+        if self._audio_recovery is None:
+            raise PermissionError("Managed audio recovery unavailable")
+        import sqlite3
+        try:
+            return self._audio_recovery.act(selection, action)
+        except (OSError, RuntimeError, KeyError, TypeError, ValueError, sqlite3.Error):
+            raise PermissionError("Saved sound work needs review") from None
+
     def _close(self):
         """Stop accepting JS requests and cancel this window's active workers.
 
@@ -2116,6 +2166,10 @@ class TrustedDesktopCameraBridge(CreatorPlanningActions, FinishedReviewActions, 
                 self._original_capture_controller.close()
             host=self._host
             tickets=list(self._tickets.values())
+        if self._audio_admission is not None:
+            self._audio_admission.close()
+        if self._audio_recovery is not None:
+            self._audio_recovery.close()
         review_error=None
         try:
             self._wo5_close_review()

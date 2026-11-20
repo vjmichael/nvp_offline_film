@@ -30,7 +30,6 @@ if not getattr(sys, "frozen", False):
 # pywebview walks js_api's PUBLIC object graph before page-loaded. The full
 # trusted bridge owns GUI/SQLite/custody objects and can deadlock WebView2;
 # expose only the existing reviewed narrow per-window method surface.
-from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
 
 
 def bundle_root():
@@ -276,9 +275,9 @@ def run_persistent_installed_smoke(mode):
         if worker.is_alive():
             raise RuntimeError("Installed NVP failed clean server shutdown")
 
-def create_trusted_camera_bridge(port):
+def create_trusted_camera_bridge(port, *, managed_authority=None):
     """Desktop-only pywebview IPC; never registered as an HTTP route."""
-    from backend.nvp_api import studio, film_access
+    from backend.nvp_api import studio, film_access, resource_activity
     from backend.nvp_film_index import FilmIndex
     from backend.nvp_slate08b_native_camera_ipc import TrustedDesktopCameraBridge
     # The production journal must already exist; this view never creates a
@@ -290,11 +289,15 @@ def create_trusted_camera_bridge(port):
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,r"SOFTWARE\Microsoft\Windows\CurrentVersion",0,
                             winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
             codec_bundle=Path(winreg.QueryValueEx(key,"ProgramFilesDir")[0]).resolve(strict=True)/"NVP"/"native-codecs"/RELEASE_CODEC_MANIFEST_SHA256
-    return TrustedDesktopCameraBridge(
+    production_root=Path(os.environ["NVP_HOME"]).resolve()/".native-production-runtime"
+    bridge=TrustedDesktopCameraBridge(
         FilmIndex(studio),origin="http://127.0.0.1:"+str(port),
         project_lock_check=film_access().any_protected,
-        production_root=Path(os.environ["NVP_HOME"]).resolve()/".native-production-runtime",
-        review_codec_bundle=codec_bundle)
+        production_root=production_root, review_codec_bundle=codec_bundle)
+    if managed_authority is not None:
+        bridge._attach_audio_recovery(resource_activity, production_root/"audio-native",
+                                      managed_authority)
+    return bridge
 
 
 def _start_private_webview(webview, *, func=None, diagnostics=None):
@@ -327,7 +330,7 @@ def _start_private_webview(webview, *, func=None, diagnostics=None):
         with tempfile.TemporaryDirectory(prefix="nvp-webview2-") as root:
             profile = Path(root) / "profile"
             profile.mkdir()
-            webview.start(func=func, gui="edgechromium", debug=False,
+            webview.start(func=func, gui="gtk" if sys.platform=="linux" else "edgechromium", debug=False,
                           private_mode=True, storage_path=str(profile))
     finally:
         if observer is not None:
@@ -361,6 +364,7 @@ def run_visible_window_smoke():
     or mutate the creator's durable Projects directory.
     """
     import webview
+    from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
     test_home=Path(tempfile.mkdtemp(prefix="nvp-slate08b-installed-"))
     old_home=os.environ.get("NVP_HOME")
     os.environ["NVP_HOME"]=str(test_home)
@@ -1311,6 +1315,9 @@ def main(argv=None):
         from tools.nvp_g08_export_worker import main as g08_worker
         return g08_worker(args[1:])
     parser=argparse.ArgumentParser()
+    parser.add_argument("--linux-managed-desktop",action="store_true",help=argparse.SUPPRESS)
+    parser.add_argument("--smoke-linux-gi",action="store_true",help=argparse.SUPPRESS)
+    parser.add_argument("--smoke-linux-native-audio",action="store_true",help=argparse.SUPPRESS)
     parser.add_argument("--smoke",action="store_true",
                         help="Temporary bundled UI/backend/SQLite acceptance")
     parser.add_argument("--smoke-create",action="store_true",
@@ -1350,7 +1357,13 @@ def main(argv=None):
     parser.add_argument("--smoke-data-av",action="store_true",
                         help="Verify native frozen USD and spatial PCM in this packaged executable")
     args=parser.parse_args(args)
-    if sum((args.smoke,args.smoke_create,args.smoke_reopen,
+    managed_authority=None
+    if args.linux_managed_desktop:
+        if any(value for key,value in vars(args).items() if key!="linux_managed_desktop"):
+            parser.error("Managed desktop cannot run alternate entrypoints")
+        from backend.nvp_linux_desktop_service import managed_desktop_authority
+        managed_authority=managed_desktop_authority()
+    if sum((args.smoke_linux_gi,args.smoke_linux_native_audio,args.smoke,args.smoke_create,args.smoke_reopen,
             args.smoke_window,args.smoke_g03_window,args.smoke_perf03g_window,args.smoke_vault,
             args.smoke_live_create,args.smoke_live_reopen,
             args.g03_protected_scene_worker,args.g03_protected_capture_worker,
@@ -1359,6 +1372,16 @@ def main(argv=None):
             args.g03_candidate_readback,args.g03_candidate_reconstruction,
             args.smoke_data_av,args.smoke_producer_bundle))>1:
         parser.error("Choose only one installed-app smoke mode")
+    if args.smoke_linux_gi:
+        if sys.platform != "linux" or not getattr(sys, "frozen", False):
+            parser.error("GI smoke requires native frozen Linux executable")
+        from tools.nvp_linux_gi_packaging import exercise_gi
+        exercise_gi()
+        _smoke_checkpoint("linux_frozen_gi_callbacks_verified")
+        return 0
+    if args.smoke_linux_native_audio:
+        from tools.nvp_linux_frozen_acceptance import run_audio_smoke
+        return run_audio_smoke()
     if args.g03_protected_scene_worker:
         from tools.nvp_g03_protected_scene_worker import worker_entry
         return worker_entry()
@@ -1419,12 +1442,16 @@ def main(argv=None):
             "create" if args.smoke_create else "reopen")
     configure_home()
     app=create_app()
+    # This object remains on the native host, never a JSON/IPC grant. The
+    # ordinary direct-launch desktop does not get systemd recovery authority.
+    app.state.nvp_linux_service_recovery=managed_authority
     server,worker,port,sock=serve(app)
     bridge=None
     recovery_dialog=None
     try:
         import webview
-        bridge=create_trusted_camera_bridge(port)
+        from backend.nvp_webview_ipc_surface import NativeWebviewIPCSurface
+        bridge=create_trusted_camera_bridge(port, managed_authority=managed_authority)
         window=webview.create_window("NVP — Make Your Movie",
             "http://127.0.0.1:"+str(port),
             width=1280,height=800,min_size=(960,600),js_api=NativeWebviewIPCSurface(bridge))
@@ -1432,7 +1459,46 @@ def main(argv=None):
         from backend.nvp_g07_recovery_dialog import NativeRecoveryDialog
         recovery_dialog=NativeRecoveryDialog(window,"http://127.0.0.1:"+str(port))
         app.state.nvp_editorial_recovery_dialog=recovery_dialog
-        _start_private_webview(webview)
+        # Opt-in read-only installed qualification. The actual production
+        # unit/entrypoint/window remain unchanged. No fixture or creator
+        # mutation is admitted by this observation.
+        observe=bool(managed_authority is not None and os.environ.get("NVP_SMOKE_DIAGNOSTIC_PATH"))
+        observed={"ok":False}
+        def inspect_managed_window():
+            try:
+                _await_native_window_load(window,server,worker,timeout=60)
+                _smoke_checkpoint("linux_managed_native_load_verified")
+                # pywebview's GUI selector is 'gtk'; its actual renderer
+                # identifier is 'gtkwebkit2' (the locked 6.2.1 release).
+                if webview.renderer!="gtkwebkit2":
+                    raise RuntimeError("Managed desktop did not select GTK/WebKit2")
+                _smoke_checkpoint("linux_managed_gtkwebkit2_renderer_verified")
+                def wait_js(expression, timeout):
+                    deadline=time.monotonic()+timeout
+                    while time.monotonic()<deadline:
+                        if window.evaluate_js(expression) is True:
+                            return
+                        time.sleep(.25)
+                    raise RuntimeError("Managed desktop observation timed out")
+                wait_js("Boolean(document.querySelector('#root') && document.body.textContent.includes('New Movie') && typeof window.pywebview?.api?.audio_recovery_catalog==='function')",45)
+                _smoke_checkpoint("linux_managed_home_dom_verified")
+                window.evaluate_js("window.__nvpManagedCheck='PENDING';Promise.resolve(window.pywebview.api.audio_recovery_catalog()).then(x=>{window.__nvpManagedCheck=x?.available===true?'PASSED':'FAILED'}).catch(()=>{window.__nvpManagedCheck='FAILED'})")
+                wait_js("window.__nvpManagedCheck==='PASSED'",30)
+                _smoke_checkpoint("linux_managed_recovery_catalog_verified")
+                # Read-only navigation, not a creator approval or a recovery
+                # action. Verify the actual React panel can query its catalog.
+                window.evaluate_js("Array.from(document.querySelectorAll('button')).find(x=>x.textContent.trim()==='Resume Working')?.click()")
+                wait_js("Boolean(document.querySelector('[aria-label=\"Interrupted sound work\"]') && Array.from(document.querySelectorAll('button')).some(x=>x.textContent.trim()==='Check sound work'))",30)
+                _smoke_checkpoint("linux_managed_recovery_panel_verified")
+                observed["ok"]=True
+                _smoke_checkpoint("linux_managed_gtk_dom_and_recovery_ipc_verified")
+                return
+            except Exception:
+                _smoke_checkpoint("linux_managed_window_observation_failed")
+                window.destroy()
+        _start_private_webview(webview,func=inspect_managed_window if observe else None)
+        if observe and not observed["ok"]:
+            raise RuntimeError("Managed desktop qualification did not verify real window")
         return 0
     finally:
         if recovery_dialog is not None:recovery_dialog.close()
@@ -1469,6 +1535,22 @@ def installed_smoke_entry():
     """Report packaged --windowed smoke exceptions through an opt-in CI file."""
     try:
         _smoke_checkpoint("entry")
+        # Fixed first-party Linux entrypoints, not a general Python/script runner.
+        # Dispatch before importing the desktop bridge or opening an API/window.
+        role=sys.argv[1] if len(sys.argv)>1 else None
+        if role in ("--nvp-linux-cgroup-guardian","--nvp-linux-containment-shim",
+                    "--nvp-linux-audio-worker"):
+            if sys.platform!="linux" or not getattr(sys,"frozen",False):
+                raise PermissionError("Linux helper requires the installed frozen runtime")
+            if role=="--nvp-linux-cgroup-guardian":
+                from backend.nvp_worker_cgroup_guardian import main as helper
+            elif role=="--nvp-linux-containment-shim":
+                from backend.nvp_worker_linux_launcher import main as helper
+            else:
+                from tools.nvp_linux_frozen_acceptance import require_audio_worker_cgroup
+                require_audio_worker_cgroup()
+                from tools.nvp_audio_native_worker import main as helper
+            return helper(sys.argv[2:])
         # Trusted native launcher owns this role; dispatch before FastAPI,
         # WebView2 and any GUI/native project initialization. The worker's
         # own parser verifies exact spool, source scope and bounded capture.

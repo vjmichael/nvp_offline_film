@@ -285,3 +285,19 @@ class NativeWebviewIPCSurface:
 
     def plan02c_model_candidate(self, request):
         return self._delegate.plan02c_model_candidate(request)
+
+    # Managed Linux recovery: no paths, witnesses, leases or executable grants.
+    def audio_recovery_catalog(self, page=None):
+        return self._delegate.audio_recovery_catalog(page)
+
+    def audio_recovery_act(self, selection, action):
+        return self._delegate.audio_recovery_act(selection, action)
+
+    def audio_preview_catalog(self, project_id, after=None):
+        return self._delegate.audio_preview_catalog(project_id, after)
+
+    def audio_preview_start(self, project_id, source_id, revision):
+        return self._delegate.audio_preview_start(project_id, source_id, revision)
+
+    def audio_preview_cancel(self, project_id):
+        return self._delegate.audio_preview_cancel(project_id)

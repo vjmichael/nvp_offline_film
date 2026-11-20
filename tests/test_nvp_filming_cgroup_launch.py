@@ -24,7 +24,7 @@ class CgroupLaunchContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             worker = root / "worker"
-            worker.write_text("#!/bin/sh\\nexit 0\\n")
+            worker.write_text("#!/bin/sh\nexit 0\n")
             worker.chmod(0o700)
             linked_worker = root / "worker-link"
             linked_worker.symlink_to(worker)
@@ -68,6 +68,7 @@ class CgroupLaunchContractTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "posix", "POSIX open flags required")
     def test_membership_uses_pinned_directory_after_path_replacement(self):
+        from backend.nvp_filming_cgroup_launch import _verify_current_process_membership as original_verify
         with tempfile.TemporaryDirectory() as tmp:
             group = Path(tmp) / "group"
             group.mkdir()
@@ -79,8 +80,7 @@ class CgroupLaunchContractTests(unittest.TestCase):
                 (group / "cgroup.procs").write_text(str(os.getpid()))
                 # Reopened path would observe the attacker-controlled replacement;
                 # pinned descriptor must still read the original empty mock file.
-                from backend.nvp_filming_cgroup_launch import _verify_current_process_membership
-                _verify_current_process_membership(directory)
+                original_verify(directory)
             with patch("backend.nvp_filming_cgroup_launch._verify_current_process_membership", side_effect=replace_group_and_verify), patch("backend.nvp_filming_cgroup_launch.os.execv") as execv:
                 with self.assertRaisesRegex(RuntimeError, "membership"):
                     attach_then_exec(group, "/bin/true", ["/bin/true"])

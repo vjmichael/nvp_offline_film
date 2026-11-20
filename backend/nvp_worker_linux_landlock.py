@@ -116,7 +116,7 @@ def restrict_native_producer_writes(spool):
             "abi":abi, "ancestor_cgroup_writes_allowed":False}
 
 
-def restrict_strict_worker_writes(cwd):
+def restrict_strict_worker_writes(cwd, *, inside_private_namespace=False, audio_output=None):
     """Mandatory inherited kernel write fence before strict cgroup worker READY.
 
     Native producer hardware gets a separate spool/audio-device policy;
@@ -126,7 +126,9 @@ def restrict_strict_worker_writes(cwd):
     if not root.is_absolute() or root.is_symlink() or not root.is_dir():
         raise PermissionError("Native worker requires pinned absolute work directory")
     root=root.resolve(strict=True)
-    mount=Path("/sys/fs/cgroup").resolve(strict=True)
+    mount=Path("/sys/fs/cgroup").resolve(strict=not inside_private_namespace)
+    if inside_private_namespace and mount.exists():
+        raise PermissionError("Private namespace unexpectedly exposes cgroup mount")
     if root==Path("/") or root.is_relative_to(mount) or mount.is_relative_to(root):
         raise PermissionError("Worker workdir cannot encompass kernel cgroup mount")
     libc=ctypes.CDLL(None,use_errno=True)
@@ -134,18 +136,33 @@ def restrict_strict_worker_writes(cwd):
               ctypes.c_size_t(0),ctypes.c_uint(LANDLOCK_CREATE_RULESET_VERSION))
     if abi<1:
         raise RuntimeError("SEC-06 kernel Landlock ABI unavailable")
-    rights=WRITE_FILE | (TRUNCATE if abi>=3 else 0)
+    # Deny creation, removal and cross-directory moves as well as writes.
+    rights=(WRITE_FILE | REMOVE_DIR | REMOVE_FILE | MAKE_CHAR | MAKE_DIR | MAKE_REG |
+            MAKE_SOCK | MAKE_FIFO | MAKE_BLOCK | MAKE_SYM)
+    if abi>=2: rights |= REFER
+    if abi>=3: rights |= TRUNCATE
+    roots=[root]
+    if audio_output is not None:
+        output=Path(audio_output)
+        if (inside_private_namespace or not output.is_absolute() or output.is_symlink()
+            or output.resolve(strict=True)!=output or not output.is_dir()
+            or output==Path('/') or output.is_relative_to(mount) or mount.is_relative_to(output)
+            or output.is_relative_to(root) or root.is_relative_to(output)):
+            raise PermissionError("Audio output requires a separate exact host-owned directory")
+        roots.append(output)
     attr=RulesetAttr(rights)
     ruleset_fd=_call(libc,SYS_LANDLOCK_CREATE_RULESET,ctypes.byref(attr),
                      ctypes.c_size_t(ctypes.sizeof(attr)),ctypes.c_uint(0))
     try:
-        root_fd=os.open(root,os.O_PATH|os.O_CLOEXEC)
-        try:
-            beneath=PathBeneathAttr(rights,root_fd)
-            _call(libc,SYS_LANDLOCK_ADD_RULE,ctypes.c_int(ruleset_fd),
-                  ctypes.c_int(LANDLOCK_RULE_PATH_BENEATH),
-                  ctypes.byref(beneath),ctypes.c_uint(0))
-        finally: os.close(root_fd)
+        for path in roots:
+            access=rights
+            root_fd=os.open(path,os.O_PATH|os.O_CLOEXEC|os.O_NOFOLLOW)
+            try:
+                beneath=PathBeneathAttr(access,root_fd)
+                _call(libc,SYS_LANDLOCK_ADD_RULE,ctypes.c_int(ruleset_fd),
+                      ctypes.c_int(LANDLOCK_RULE_PATH_BENEATH),
+                      ctypes.byref(beneath),ctypes.c_uint(0))
+            finally: os.close(root_fd)
         _call(libc,157,ctypes.c_int(PR_SET_NO_NEW_PRIVS),ctypes.c_ulong(1),
               ctypes.c_ulong(0),ctypes.c_ulong(0),ctypes.c_ulong(0))
         _call(libc,SYS_LANDLOCK_RESTRICT_SELF,ctypes.c_int(ruleset_fd),ctypes.c_uint(0))

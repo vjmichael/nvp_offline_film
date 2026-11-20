@@ -66,6 +66,7 @@ jobs:
             test_nvp_w1g_physical_efs_review.py \
             test_nvp_w1g_supply_chain_hardening.py \
             test_nvp_webview_ipc_surface.py \
+            test_nvp_managed_desktop_audio_recovery.py \
             test_blender_worker.py \
             test_nvp_native_live_take.py \
             test_nvp_data_first_filming.py; do

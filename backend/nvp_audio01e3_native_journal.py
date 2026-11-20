@@ -83,7 +83,7 @@ class AudioJobJournal:
             db.close()
 
     def register(self, job_id, plan, sources, total_samples, directory, *,
-                 verify_creator_action, creator_event):
+                 verify_creator_action, creator_event, project_source=None):
         """Only trusted desktop creator policy may authorize the exact scope."""
         _id(job_id, "native audio job identity")
         if not callable(verify_creator_action):
@@ -101,6 +101,19 @@ class AudioJobJournal:
                 "source_sha256": {
                     sid: _sha_source(paths[sid]) for sid in sorted(paths)},
                 "final_master": False, "director_approved": False}
+        if project_source is not None:
+            from backend.nvp_film_index import _require_pid, _sha
+            if (type(project_source) is not dict or set(project_source) !=
+                {"project_id", "source_id", "revision", "document_sha256", "media_sha256"} or
+                type(project_source["revision"]) is not int or project_source["revision"] < 1):
+                raise ValueError("Exact project audio source required")
+            _require_pid(project_source["project_id"])
+            _id(project_source["source_id"], "project audio source")
+            _sha(project_source["document_sha256"])
+            _sha(project_source["media_sha256"])
+            if spec["source_sha256"] != {"original": project_source["media_sha256"]}:
+                raise PermissionError("Authorized project source bytes differ")
+            spec["project_source"] = dict(project_source)
         if verify_creator_action(creator_event, dict(spec)) is not True:
             raise PermissionError("Creator did not approve this native audio job")
         raw = canonical(spec).decode("ascii")

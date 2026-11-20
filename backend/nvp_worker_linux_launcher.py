@@ -38,6 +38,7 @@ def main(argv=None):
         raise SystemExit("Supervisor vanished before parent-death guard")
 
     index=4
+    namespace_command=None
     if len(argv)>=9 and argv[index]=="--cgroup-dir":
         target=Path(argv[index+1]).resolve(strict=True)
         if argv[index+2]!="--ready-fd":
@@ -66,8 +67,12 @@ def main(argv=None):
         # worker-ready signal and exec. A cgroup alone does not confine
         # same-UID descendants from the writable host subgroup.
         index+=4
-        from nvp_worker_linux_landlock import (
-            restrict_native_producer_writes,restrict_strict_worker_writes)
+        if __package__:
+            from backend.nvp_worker_linux_landlock import (
+                restrict_native_producer_writes,restrict_strict_worker_writes)
+        else:
+            from nvp_worker_linux_landlock import (
+                restrict_native_producer_writes,restrict_strict_worker_writes)
         if index<len(argv) and argv[index]=="--landlock-spool":
             if index+2>=len(argv):
                 raise SystemExit("Missing original source spool or executable")
@@ -75,6 +80,23 @@ def main(argv=None):
             if spool!=Path.cwd().resolve(strict=True):
                 raise PermissionError("Device spool differs from original worker cwd")
             restrict_native_producer_writes(spool)
+            index+=2
+        elif index<len(argv) and argv[index]=="--private-namespace":
+            # Only the pinned trusted Bubblewrap setup may execute before
+            # Landlock: UID-map setup needs procfs writes. Its payload first
+            # verifies the new namespaces and installs the irreversible fence.
+            # No user-controlled executable starts before the fence.
+            index+=1
+            if __package__:
+                from backend.nvp_worker_private_sandbox import sandbox_command_with_landlock
+            else:
+                from nvp_worker_private_sandbox import sandbox_command_with_landlock
+            namespace_command=sandbox_command_with_landlock(argv[index:],str(Path.cwd().resolve()))
+            if libc.prctl(38,1,0,0,0)!=0:
+                raise OSError(ctypes.get_errno(),"PR_SET_NO_NEW_PRIVS failed")
+        elif index<len(argv) and argv[index]=="--audio-output":
+            if index+2>=len(argv): raise SystemExit("Missing exact audio output scope")
+            restrict_strict_worker_writes(Path.cwd(),audio_output=argv[index+1])
             index+=2
         else:
             restrict_strict_worker_writes(Path.cwd())
@@ -88,6 +110,8 @@ def main(argv=None):
     executable=argv[index]
     if not os.path.isabs(executable) or not os.path.isfile(executable):
         raise SystemExit("Unpinned executable path")
+    if namespace_command is not None:
+        os.execv(namespace_command[0],namespace_command)
     os.execv(executable,argv[index:])
 
 

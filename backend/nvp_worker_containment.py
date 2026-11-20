@@ -117,7 +117,7 @@ class WindowsJobProcess:
             self._release_slot = None
 
 
-def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False, private_isolation_required=False, stdin=None, linux_write_spool=None, env=None, windows_appcontainer_required=False, appcontainer_code_roots=(), appcontainer_code_files=(), appcontainer_machine_codec_pin=None):
+def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_tree_required=False, private_isolation_required=False, stdin=None, linux_write_spool=None, env=None, windows_appcontainer_required=False, appcontainer_code_roots=(), appcontainer_code_files=(), appcontainer_machine_codec_pin=None, linux_audio_output=None):
     """Trusted host launches pinned absolute executable with OS containment."""
     if not isinstance(command, list) or not command or not Path(command[0]).is_absolute():
         raise ValueError("Containment requires an absolute executable path")
@@ -127,6 +127,9 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
         raise ValueError("Linux whole-tree containment mode must be boolean")
     if linux_write_spool is not None and not linux_cgroup_tree_required:
         raise ValueError("Original-device write sandbox requires strict cgroup custody")
+    if linux_audio_output is not None and (sys.platform!="linux" or not linux_cgroup_tree_required or
+            private_isolation_required or linux_write_spool is not None or windows_appcontainer_required):
+        raise PermissionError("Audio output requires separate strict Linux worker policy")
     if type(private_isolation_required) is not bool:
         raise ValueError("Private source isolation mode must be boolean")
     if type(windows_appcontainer_required) is not bool:
@@ -164,7 +167,9 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
         from backend.nvp_worker_private_sandbox import sandbox_command
         # This is a real OS namespace execution contract. A Windows Job Object
         # without AppContainer/WFP is NOT a filesystem/no-egress sandbox.
-        command=sandbox_command(command,cwd)["command"]
+        if linux_write_spool is not None:
+            raise PermissionError("Private namespace and original-device spool are distinct policies")
+        sandbox_command(command,cwd)  # validate the reviewed request; launcher constructs the trusted envelope
     if os.name == "nt":
         return _launch_windows(command, cwd=cwd, stdout=stdout, stderr=stderr, memory_mb=memory_mb, stdin=stdin, env=env)
     if sys.platform == "linux":
@@ -173,9 +178,13 @@ def launch_contained(command, *, cwd, stdout, stderr, memory_mb=0, linux_cgroup_
         if linux_cgroup_tree_required:
             from backend.nvp_worker_linux_cgroup import launch_cgroup_tree
             return launch_cgroup_tree(command,cwd=cwd,stdout=stdout,stderr=stderr,
-                                      memory_mb=memory_mb,linux_write_spool=linux_write_spool)
+                                      memory_mb=memory_mb,linux_write_spool=linux_write_spool,
+                                      private_namespace=private_isolation_required,
+                                      **({"audio_output":linux_audio_output} if linux_audio_output is not None else {}))
         shim = Path(__file__).with_name("nvp_worker_linux_launcher.py").resolve()
-        command = [sys.executable, str(shim), "--parent", str(os.getpid()),
+        shim_cmd = ([sys.executable, "--nvp-linux-containment-shim"]
+                    if getattr(sys,"frozen",False) else [sys.executable, str(shim)])
+        command = [*shim_cmd, "--parent", str(os.getpid()),
                    "--memory-mb", str(memory_mb)] + command
         proc = subprocess.Popen(command, cwd=cwd, stdin=stdin if stdin is not None else subprocess.DEVNULL,
                                 stdout=stdout, stderr=stderr, env=env, shell=False, close_fds=True,

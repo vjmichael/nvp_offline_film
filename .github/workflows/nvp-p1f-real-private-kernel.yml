@@ -6,8 +6,27 @@ on:
       - 'backend/nvp_worker_private_sandbox.py'
       - 'backend/nvp_worker_containment.py'
       - 'backend/nvp_worker_linux_cgroup.py'
+      - 'backend/nvp_worker_linux_launcher.py'
+      - 'backend/nvp_worker_linux_landlock.py'
+      - 'backend/nvp_linux_service_recovery.py'
+      - 'backend/nvp_audio01e3_native_host.py'
+      - 'tools/nvp_systemd_recovery_hook.py'
+      - 'tests/test_nvp_linux_service_recovery.py'
+      - 'tests/test_nvp_service_publication_lifecycle.py'
+      - 'backend/nvp_audio_initial_output.py'
+      - 'tests/test_nvp_audio_initial_output.py'
+      - 'backend/nvp_linux_desktop_service.py'
+      - 'tests/test_nvp_linux_desktop_service.py'
+      - 'tools/nvp_linux_desktop_recovery_hook.py'
+      - 'packaging/linux/nvp-desktop@.service'
+      - 'packaging/build-nvp-deb.sh'
+      - 'tools/nvp_desktop_alpha.py'
+      - 'tests/fixtures/sec06/nvp-sec06-qualification@.service'
+      - 'tools/nvp_sec06_installed_controller.py'
+      - 'tools/nvp_sec06_installed_fixture.py'
       - 'backend/nvp_p1f_cycles_picture_sound.py'
       - 'tests/test_nvp_p1f_private_kernel_real.py'
+      - 'tests/test_nvp_p1f_namespace_landlock.py'
       - 'tests/test_nvp_p1f_private_sandbox_native.py'
       - '.github/workflows/nvp-p1f-real-private-kernel.yml'
   workflow_dispatch:
@@ -37,9 +56,18 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q backend/nvp_worker_private_sandbox.py backend/nvp_worker_containment.py backend/nvp_p1f_cycles_picture_sound.py tests/test_nvp_p1f_private_kernel_real.py
+          python -m unittest discover -s tests -p 'test_nvp_linux_service_recovery.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_audio_initial_output.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_linux_desktop_service.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_private_sandbox_native.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_p1f_namespace_landlock.py' -v
           python -m unittest discover -s tests -p 'test_linux_cgroup_tree.py' -v
           python -m unittest discover -s tests -p 'test_nvp_p1f_multishot_recovery.py' -v
+
+      - name: Real root-owned filesystem publication interruption and retention
+        run: |
+          set -euo pipefail
+          sudo env PYTHONPATH="$PWD" "$(command -v python)" -m unittest discover -s tests -p 'test_nvp_service_publication_lifecycle.py' -v
 
   linux-genuine-delegated-kernel:
     name: REQUIRED real systemd delegated cgroup/bwrap net+mount cancel/guardian-loss/hard-exit
@@ -72,13 +100,15 @@ jobs:
               python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v
             env NVP_REQUIRE_REAL_P1F_KERNEL=1 \
               python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v
+            env NVP_REQUIRE_REAL_P1F_KERNEL=1 \
+              python -m unittest discover -s tests -p test_nvp_p1f_namespace_landlock.py -v
           }
           export -f run_native
           if systemd-run --user --scope --collect --quiet \
               -p Delegate=yes -p DelegateSubgroup=nvp.host \
               env PATH="$PATH" PYTHONPATH="$PWD" \
                 NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
-              bash -ec 'run_native() { python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v; }; run_native' \
+              bash -ec 'run_native() { python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v; python -m unittest discover -s tests -p test_nvp_p1f_namespace_landlock.py -v; }; run_native' \
               2>&1 | tee kernel-actual-output.txt; then
             echo 'REAL_USER_SYSTEMD_DELEGATION_PROVED' | tee -a kernel-actual-output.txt
           elif sudo systemd-run --system --scope --collect --quiet \
@@ -86,7 +116,7 @@ jobs:
               --uid="$(id -un)" \
               env PATH="$PATH" PYTHONPATH="$PWD" \
                 NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
-              bash -ec 'python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v' \
+              bash -ec 'python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v; python -m unittest discover -s tests -p test_nvp_p1f_namespace_landlock.py -v' \
               2>&1 | tee -a kernel-actual-output.txt; then
             echo 'REAL_UNPRIVILEGED_SYSTEMD_DELEGATION_PROVED' | tee -a kernel-actual-output.txt
           else
@@ -104,7 +134,7 @@ jobs:
               -p "WorkingDirectory=$PWD" \
               env PATH="$PATH" PYTHONPATH="$PWD" \
                 NVP_REQUIRE_REAL_CGROUP=1 NVP_REQUIRE_REAL_P1F_KERNEL=1 \
-              bash -ec 'set -euo pipefail; test -f tests/test_nvp_p1f_private_kernel_real.py; python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v' \
+              bash -ec 'set -euo pipefail; test -f tests/test_nvp_p1f_private_kernel_real.py; python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v; python -m unittest discover -s tests -p test_nvp_p1f_private_kernel_real.py -v; python -m unittest discover -s tests -p test_nvp_p1f_namespace_landlock.py -v' \
               2>&1 | tee -a kernel-actual-output.txt
             echo 'REAL_ROOT_OWNED_SYSTEMD_SERVICE_KERNEL_PROVED; UNPRIVILEGED_SCOPE_UNVERIFIED' | tee -a kernel-actual-output.txt
           fi

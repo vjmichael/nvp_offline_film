@@ -76,6 +76,17 @@ class DurableAdmissionOutbox(unittest.TestCase):
                 (job,)).fetchone()[0],"enqueued")
         self.assertEqual(restored.reconcile_admission_outbox(job)["status"],"VERIFIED_QUEUED")
 
+    def test_atomic_reservation_rolls_back_if_generation_binding_fails(self):
+        job=self.host.stage_and_approve(self.plan,{'voice':self.source},48000,self.root/'result','approved')['job_id']
+        def fail(db,task):
+            self.assertEqual(task,job)
+            db.execute("UPDATE audio_native_grants SET revoked=1 WHERE job_id=?",(job,))
+            raise RuntimeError('fault within atomic reservation')
+        with self.assertRaisesRegex(RuntimeError,'atomic reservation'):
+            self.host.binding.claim_next(owner_key=self.host.owner,_prepare_admission=fail)
+        self.assertEqual(self.ledger.get_task(job)['state'],'QUEUED')
+        self.assertFalse(self.host._grant(job)['revoked'])
+
     def test_revoked_creator_blocks_recovery(self):
         job=self.prepare_crash(RuntimeError("simulated crash before queue"))
         restored=NativeAudioHost(self.ledger,self.root/"native",

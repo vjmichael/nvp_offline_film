@@ -22,6 +22,9 @@ if [ ! -d "$bundle" ] || [ -L "$bundle" ] || \
   echo "Genuine Linux PyInstaller onedir binary/React bundle missing." >&2
   exit 3
 fi
+if [ -e "$bundle/service-support" ] || [ -L "$bundle/service-support" ]; then
+  echo "Reserved root-hook support path already present in bundle." >&2;exit 3
+fi
 if [ -n "$(find "$bundle" -type l -print -quit)" ]; then
   echo "Refusing unreviewed symbolic links in the installer payload." >&2;exit 3
 fi
@@ -47,6 +50,21 @@ trap 'rm -rf -- "$stage"' EXIT
 mkdir -p "$stage/DEBIAN" "$stage/opt/nvp" "$stage/usr/share/applications"
 cp -a "$bundle/." "$stage/opt/nvp/"
 chmod 755 "$stage/opt/nvp/NVP"
+# Optional administrator-managed desktop service. No auto-start, global
+# environment import, or privilege grant to an ordinary desktop process.
+# The root hook imports only these reviewed stdlib-only support modules.
+install -d -m 0755 "$stage/opt/nvp/service-support/backend" \
+  "$stage/opt/nvp/service-support/tools" "$stage/usr/lib/systemd/system" \
+  "$stage/var/lib/nvp-service-recovery"
+install -m 0644 "$repo/backend/nvp_linux_service_recovery.py" \
+  "$repo/backend/nvp_linux_desktop_service.py" "$stage/opt/nvp/service-support/backend/"
+install -m 0644 "$repo/tools/nvp_linux_desktop_recovery_hook.py" "$stage/opt/nvp/service-support/tools/"
+install -m 0644 "$repo/packaging/linux/nvp-desktop@.service" "$stage/usr/lib/systemd/system/"
+# Package ownership is assigned by dpkg-deb; root-controlled hook paths
+# must not be group/other writable, even with an unusual bundle build umask.
+chmod go-w "$stage/opt" "$stage/opt/nvp" "$stage/opt/nvp/service-support"
+# The service's own support files require system Python and DelegateSubgroup.
+depends="$depends, python3, systemd (>= 254)"
 cat > "$stage/DEBIAN/control" <<EOF
 Package: nvp-alpha
 Version: 0.1.0

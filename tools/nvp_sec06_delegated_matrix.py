@@ -18,6 +18,8 @@ from backend.nvp_worker_linux_cgroup import (
 REQUIRED = (
     "test_audio_linux_strict_cgroup.py",
     "test_nvp_sec06_linux_ancestor_migration.py",
+    "test_nvp_filming_cgroup_real_kernel.py",
+    "test_nvp_sec06_runtime_scopes.py",
     "test_audio_native_os_termination.py",
     "test_audio_admission_outbox.py",
     "test_audio_admission_crash_gap.py",
@@ -37,6 +39,7 @@ def main() -> int:
         set((scope / "cgroup.controllers").read_text("ascii").split())
     ):
         raise RuntimeError("SEC-06 delegated memory and pids controllers unavailable")
+    os.environ["NVP_TEST_DELEGATED_CGROUP_ROOT"]=str(scope)
     source = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     print("SEC-06 exact-head source SHA:", source, flush=True)
     print("SEC-06 kernel delegated parent:", scope, flush=True)

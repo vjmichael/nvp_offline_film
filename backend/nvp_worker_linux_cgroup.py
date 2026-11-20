@@ -166,12 +166,14 @@ class CgroupTreeProcess:
             self._worker.wait(timeout=15)
 
 
-def launch_cgroup_tree(command,*,cwd,stdout,stderr,memory_mb,linux_write_spool=None):
+def launch_cgroup_tree(command,*,cwd,stdout,stderr,memory_mb,linux_write_spool=None,private_namespace=False,audio_output=None):
     """Start guardian FIRST, and only launch Blender after guardian READY."""
     if sys.platform!="linux" or os.name!="posix":
         raise RuntimeError("Linux kernel cgroup v2 mode is unavailable on this OS")
     if not command or not Path(command[0]).is_absolute():
         raise ValueError("Pinned worker executable must be absolute")
+    if type(private_namespace) is not bool or (private_namespace and linux_write_spool is not None):
+        raise PermissionError("Distinct strict cgroup worker policies required")
     if linux_write_spool is not None:
         source=Path(linux_write_spool)
         if (not source.is_absolute() or source.is_symlink() or
@@ -180,6 +182,11 @@ def launch_cgroup_tree(command,*,cwd,stdout,stderr,memory_mb,linux_write_spool=N
             raise PermissionError("Cannot authorize an arbitrary Linux worker write scope")
     if linux_write_spool is not None and Path(linux_write_spool).resolve(strict=True)!=Path(cwd).resolve(strict=True):
         raise PermissionError("Original device write scope must equal worker cwd")
+    if audio_output is not None:
+        audio=Path(audio_output)
+        if (private_namespace or linux_write_spool is not None or not audio.is_absolute()
+                or audio.is_symlink() or audio.resolve(strict=True)!=audio or not audio.is_dir()):
+            raise PermissionError("Invalid exact audio output scope")
     target=provision_worker_cgroup(memory_mb)
     watch_r,watch_w=os.pipe()
     ready_r,ready_w=os.pipe()
@@ -187,8 +194,10 @@ def launch_cgroup_tree(command,*,cwd,stdout,stderr,memory_mb,linux_write_spool=N
     worker=None
     try:
         guardian_path=Path(__file__).with_name("nvp_worker_cgroup_guardian.py").resolve()
+        guardian_cmd=([sys.executable,"--nvp-linux-cgroup-guardian"]
+                      if getattr(sys,"frozen",False) else [sys.executable,"-S",str(guardian_path)])
         guardian=subprocess.Popen([
-            sys.executable,"-S",str(guardian_path),
+            *guardian_cmd,
             "--cgroup",str(target),"--watch-fd",str(watch_r),
             "--ready-fd",str(ready_w)],
             cwd=str(cwd),stdin=subprocess.DEVNULL,
@@ -203,9 +212,13 @@ def launch_cgroup_tree(command,*,cwd,stdout,stderr,memory_mb,linux_write_spool=N
         admitted_r,admitted_w=os.pipe()
         try:
             write_scope=(["--landlock-spool",str(Path(linux_write_spool).resolve(strict=True))]
-                         if linux_write_spool is not None else [])
+                         if linux_write_spool is not None else
+                         (["--private-namespace"] if private_namespace else
+                          (["--audio-output",str(audio)] if audio_output is not None else [])))
             shim=Path(__file__).with_name("nvp_worker_linux_launcher.py").resolve()
-            actual=[sys.executable,"-S",str(shim),
+            shim_cmd=([sys.executable,"--nvp-linux-containment-shim"]
+                      if getattr(sys,"frozen",False) else [sys.executable,"-S",str(shim)])
+            actual=[*shim_cmd,
                     "--parent",str(os.getpid()),"--memory-mb","0",
                     "--cgroup-dir",str(target),"--ready-fd",str(admitted_w),
                     *write_scope,*command]

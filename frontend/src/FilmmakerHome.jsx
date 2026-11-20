@@ -6,6 +6,8 @@ import DirectorProductionPlanning from './DirectorProductionPlanning.jsx';
 import DirectorScreenplayAssistant from './DirectorScreenplayAssistant.jsx';
 import DirectorFilmingStudio from './DirectorFilmingStudio.jsx';
 import DirectorExportFilm from './DirectorExportFilm.jsx';
+import NativeAudioRecoveryPanel from './NativeAudioRecoveryPanel.jsx';
+import NativeAudioPreviewPanel from './NativeAudioPreviewPanel.jsx';
 import './filmmaker-home.css';
 
 const PHASES = [
@@ -361,6 +363,7 @@ export default function FilmmakerHome() {
         <p className="film-muted">Choose a film to continue where you left off. Protected films require their passphrase.</p>
         <div className="film-movie-grid">{projects.map(p=><button className="film-movie-card" key={p.id}
           onClick={()=>openMovie(p.id)}><strong>{p.title}</strong><span>{p.locked&&!p.unlocked?'Locked · Unlock to continue':'Resume movie'}</span></button>)}</div>
+        <NativeAudioRecoveryPanel/>
         <button className="film-secondary" onClick={showWelcome}>Back</button>
       </section>}
 
@@ -476,6 +479,7 @@ export default function FilmmakerHome() {
           <a className="film-primary film-open-editor" href={postUrl} target="_blank" rel="noopener noreferrer">Open Post-Production Window ↗</a>
           <p className="film-hint">Your original recordings remain unchanged when you open the editing window.</p>
         </section>}
+        {phase==='edit'&&!project.encrypted&&<NativeAudioPreviewPanel key={project.id} projectId={project.id}/>}
         {phase==='export'&&<DirectorExportFilm
           key={project.id+':'+project.revision}
           movie={project}

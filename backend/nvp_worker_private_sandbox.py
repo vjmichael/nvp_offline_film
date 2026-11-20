@@ -110,6 +110,44 @@ def sandbox_command(command,jobdir):
             "no_network":True}
 
 
+def sandbox_command_with_landlock(command,jobdir):
+    """Trusted namespace bootstrap, then irreversible write fence before payload.
+
+    Landlock applied before bwrap prevents writing the new user namespace's
+    uid/gid maps. Never grant /proc writes to a payload or disable Landlock.
+    The only pre-fence executable is the root-owned, fixed-argv bwrap binary;
+    its payload is a system Python isolated bootstrap with the reviewed
+    Landlock implementation embedded from the trusted host source. No job
+    code, environment, or extra host mount can select the bootstrap.
+    """
+    wrapped=sandbox_command(command,jobdir)["command"]
+    source=Path(__file__).with_name("nvp_worker_linux_landlock.py").resolve(strict=True)
+    host_ns={name:os.readlink("/proc/self/ns/"+name)
+             for name in ("user","mnt","net","pid","ipc","uts")}
+    # -I -S forbids user/site startup. The source is not staged in any
+    # writable creator directory and is never interpreted as a shell command.
+    bootstrap=source.read_text(encoding="utf-8")+"\n"+r'''
+if __name__ == "__main__":
+    import json
+    expected=json.loads(sys.argv[1])
+    for name, identity in expected.items():
+        if os.readlink("/proc/self/ns/"+name)==identity:
+            raise PermissionError("Private namespace did not change: "+name)
+    if Path.cwd()!=Path(sys.argv[2]) or Path("/sys/fs/cgroup").exists():
+        raise PermissionError("Private namespace job or cgroup mount mismatch")
+    restrict_strict_worker_writes(Path.cwd(),inside_private_namespace=True)
+    if not sys.argv[3:] or not Path(sys.argv[3]).is_absolute():
+        raise PermissionError("Missing pinned payload")
+    os.execv(sys.argv[3],sys.argv[3:])
+'''
+    import json
+    end=wrapped.index("--")
+    # Keep the exact approved public runtime and one job bind. Dropping
+    # capabilities prevents a payload from gaining mount authority.
+    return wrapped[:end]+["--cap-drop","ALL","--","/usr/bin/python3","-I","-S","-c",
+                          bootstrap,json.dumps(host_ns,sort_keys=True),jobdir,*command]
+
+
 def prove_private_kernel_boundary(supervisor_root):
     """Actually run a zero-media kernel probe *before* staging creator sources.
 
