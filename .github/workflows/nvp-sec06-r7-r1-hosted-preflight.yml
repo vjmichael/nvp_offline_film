@@ -1,0 +1,87 @@
+name: NVP SEC-06-R7-R1 isolated hosted runner preflight
+on:
+  push:
+    branches:
+      - ci/nvp-sec06-r7-r1-hosted-preflight-20261119
+    paths:
+      - .github/workflows/nvp-sec06-r7-r1-hosted-preflight.yml
+permissions:
+  contents: read
+concurrency:
+  group: nvp-sec06-r7-r1-hosted-preflight
+  cancel-in-progress: false
+jobs:
+  native-runner-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: c49ed63f522c2d62f3235090ad67d1f791c8c56a
+          persist-credentials: false
+      - name: Verify published baseline and native resource prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = c49ed63f522c2d62f3235090ad67d1f791c8c56a
+          test "$(ps -p 1 -o comm=)" = systemd
+          test -f /sys/fs/cgroup/cgroup.controllers
+          test -f tests/test_nvp_sec06_linux_ancestor_migration.py
+          python3 - <<'PY'
+          from pathlib import Path
+          m = {k: int(v.split()[0])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if ':' in line for k,v in [line.split(':',1)] if v.strip().split() and v.strip().split()[0].isdigit()}
+          gib = 1024**3
+          assert m['MemAvailable'] >= 4*gib, 'Insufficient available RAM for native desktop diagnostic'
+          p = Path('/sys/fs/cgroup')/Path('/proc/self/cgroup').read_text().strip().split('::',1)[1].lstrip('/')
+          for parent in [p,*p.parents]:
+              if not parent.is_relative_to(Path('/sys/fs/cgroup')): break
+              limit = parent/'memory.max'
+              if limit.is_file():
+                  raw = limit.read_text().strip()
+                  assert raw == 'max' or int(raw) >= 5*gib, 'Restrictive ancestor memory limit'
+          print('Native memory prerequisite PASS (not NVP audio admission)')
+          PY
+      - name: Independent published SEC-06 delegated kernel test
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo systemd-run --wait --collect --pipe --same-dir \
+            --unit="nvp-sec06-r7-preflight-$GITHUB_RUN_ID" \
+            --property=Type=exec --property=Delegate=yes \
+            --property=DelegateSubgroup=host \
+            /usr/bin/env NVP_REQUIRE_DELEGATED_CGROUP=1 \
+            PYTHONPATH="$GITHUB_WORKSPACE" \
+            /usr/bin/python3 -m unittest discover -s tests -p test_nvp_sec06_linux_ancestor_migration.py -v
+      - name: Verify graphical runtime prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 xvfb xauth
+          xvfb-run -a /usr/bin/python3 - <<'PY'
+          import gi
+          gi.require_version('Gtk','3.0')
+          gi.require_version('WebKit2','4.1')
+          from gi.repository import Gtk, WebKit2, GLib
+          w=Gtk.Window()
+          v=WebKit2.WebView()
+          w.add(v)
+          loop=GLib.MainLoop()
+          state={'loaded':False}
+          def changed(view,event):
+              if event==WebKit2.LoadEvent.FINISHED:
+                  state['loaded']=True
+                  loop.quit()
+          v.connect('load-changed',changed)
+          w.show_all()
+          v.load_html('<html><title>Hosted runtime preflight</title><body>Native graphical fixture</body></html>',None)
+          GLib.timeout_add_seconds(20,lambda:(loop.quit(),False)[1])
+          loop.run()
+          assert state['loaded'], 'Native WebKit did not finish loading'
+          print('GTK/WebKit graphical runtime PASS')
+          PY
+      - name: Scope of evidence
+        run: |
+          echo 'Runner prerequisites and published baseline kernel gate only.'
+          echo 'NOT installed NVP candidate acceptance; candidate tree a64be51b19b06c881ddecfed3a6ab491bd6bbbd8 is not published on this ref.'
+          echo 'NOT Debian signed package provenance or creator approval.'
