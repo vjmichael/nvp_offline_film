@@ -91,6 +91,9 @@ class SurroundTests(unittest.TestCase):
                 lines += ['[060e2b34]  len:  100 (AudioChannelLabelSubDescriptor)',f'  MCAChannelID = {slot}',f'  MCATagSymbol = ch{label}',f'  MCALinkID = {slot:032x}',f'  MCALabelDictionaryID = 060e2b340401010d030201{n:02x}00000000',f'  SoundfieldGroupLinkID = {group_id}']
             payload='\n'.join(lines).encode()
             self.assertTrue(inspect_mxf_sound_metadata(payload,profile)['configuration_4_verified'])
+            duplicate='\n'.join(lines[5:9]).encode()
+            with self.assertRaisesRegex(ValueError,'exactly one SoundfieldGroupLabelSubDescriptor'):
+                inspect_mxf_sound_metadata(payload+b'\n'+duplicate,profile)
             for altered in [payload.replace(b'ChannelCount = 16',b'ChannelCount = 8'),payload.replace(b'03010400',b'03010500'),payload.replace(b'MCAChannelID = 1\n',b'MCAChannelID = 7\n'),payload.replace(b'SoundfieldGroupLinkID = '+b'a'*32,b'SoundfieldGroupLinkID = '+b'b'*32),payload.replace(b'MCATagSymbol = chL\n',b'MCATagSymbol = chR\n')]:
                 with self.assertRaises(ValueError): inspect_mxf_sound_metadata(altered,profile)
             argv=['-L','-a','a'*32,'-p','24','-d','24','-w','-m',MCA_EXPRESSION[profile],'source.wav','sound.mxf']
@@ -99,6 +102,27 @@ class SurroundTests(unittest.TestCase):
             for i,v in ((9,'71(L,R)'),(10,'../source.wav'),(6,'3'),(7,'-k')):
                 bad=argv[:];bad[i]=v
                 with self.assertRaises(PermissionError):_approved_arguments('ASDCP-asdcp_wrap',bad)
+
+    def test_single_soundfield_expression_with_sparse_slots(self):
+        # Pinned MXF.cpp tracks but never inserts used_soundfields. A repeated
+        # symbol creates two descriptors. Model its slot-counting grammar
+        # independently: '-' consumes one slot without an MCA object.
+        import re
+        from backend.nvp_wo3_native_codecs import _approved_arguments
+        for profile, expected in [('5.1',{1:'L',2:'R',3:'C',4:'LFE',5:'Ls',6:'Rs'}),
+                                  ('7.1DS',{1:'L',2:'R',3:'C',4:'LFE',5:'Lss',6:'Rss',11:'Lrs',12:'Rrs'})]:
+            expr=MCA_EXPRESSION[profile]
+            self.assertEqual(expr.count('('),1)
+            group,inside,outside=re.fullmatch(r'(51|71)\(([^()]*)\)(.*)',expr).groups()
+            self.assertEqual(group,'51' if profile=='5.1' else '71')
+            slots=inside.split(',')+outside.removeprefix(',').split(',')
+            self.assertEqual(len(slots),16)
+            self.assertEqual({i+1:v for i,v in enumerate(slots) if v!='-'},expected)
+            self.assertTrue(all(v=='-' for v in outside.removeprefix(',').split(',')))
+        old=['-L','-a','a'*32,'-p','24','-d','24','-w','-m',
+             '71(L,R,C,LFE,Lss,Rss),-,-,-,-,71(Lrs,Rrs),-,-,-,-','source.wav','sound.mxf']
+        with self.assertRaises(PermissionError):
+            _approved_arguments('ASDCP-asdcp_wrap',old)
 
     def test_each_channel_impulse_independently(self):
         for profile,slots in [('5.1',[0,1,2,3,4,5]),('7.1DS',[0,1,2,3,4,5,10,11])]:

@@ -174,6 +174,41 @@ class PackageProfile(unittest.TestCase):
         self.assertTrue(verify_native_track_descriptor(props,kind='sound',asset_id=self.ids['sound'],frames=24,profile='2K_FLAT_24',channels=6))
         with self.assertRaises(ValueError):verify_native_track_descriptor(props,kind='sound',asset_id=self.ids['sound'],frames=24,profile='2K_FLAT_24',channels=8)
 
+    def test_reviewed_git_blob_extraction_ignores_worktree_conversion(self):
+        # Real Git object read; test-only pins for synthetic schemas. A CRLF
+        # checkout fails the original byte pin, but extraction is byte-exact.
+        import subprocess
+        from unittest.mock import patch
+        from tools import nvp_dci_schema_ci as tool
+        from backend import nvp_dci_package_xsd as mod
+        with TemporaryDirectory() as temp:
+            root=Path(temp);repo=root/'repo';repo.mkdir();(repo/'xsd').mkdir()
+            def git(*args):
+                return subprocess.check_output(['git','-C',str(repo),*args],stderr=subprocess.STDOUT)
+            git('init','-q');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid')
+            git('config','core.autocrlf','false')
+            (repo/'.gitattributes').write_bytes(b'*.xsd text eol=lf\n')
+            pins={}
+            for i,ns in enumerate(mod.MIRROR_SCHEMAS):
+                name=f'test-{i}.xsd';raw=f'<schema ns="{ns}"/>\n'.encode()
+                (repo/'xsd'/name).write_bytes(raw);pins[ns]=(name,mod._blob(raw))
+            git('add','.');git('commit','-qm','synthetic reviewed fixture')
+            commit=git('rev-parse','HEAD').strip().decode('ascii')
+            for name,digest in pins.values():
+                path=repo/'xsd'/name;path.write_bytes(path.read_bytes().replace(b'\n',b'\r\n'))
+                self.assertNotEqual(mod._blob(path.read_bytes()),digest)
+            out=root/'exact'
+            with patch.object(tool,'REVIEWED_MIRROR_COMMIT',commit),patch.object(tool,'MIRROR_SCHEMAS',pins):
+                self.assertEqual(tool.materialize_reviewed_mirror(repo,out),out)
+                for name,digest in pins.values():self.assertEqual(mod._blob((out/name).read_bytes()),digest)
+                with self.assertRaises(FileExistsError):tool.materialize_reviewed_mirror(repo,out)
+                bad=dict(pins);ns=next(iter(bad));bad[ns]=(bad[ns][0],'0'*40)
+                with patch.object(tool,'MIRROR_SCHEMAS',bad),self.assertRaises(PermissionError):
+                    tool.materialize_reviewed_mirror(repo,root/'bad')
+                self.assertFalse((root/'bad').exists())
+            with self.assertRaises(PermissionError):tool.materialize_reviewed_mirror(repo,root/'wrong')
+            self.assertFalse((root/'wrong').exists())
+
     def test_xsd_loader_rejects_unreviewed_schema_before_validation(self):
         from backend.nvp_dci_package_xsd import validate_official_package_xsd,SCHEMAS
         self.single()

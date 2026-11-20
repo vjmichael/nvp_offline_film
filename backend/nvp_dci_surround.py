@@ -167,11 +167,12 @@ def verify_surround_reels(source, *, profile, labels, source_sha256, total_edit_
             "mxf_channel_metadata_verified":False,"production_audio_accepted":False}
 
 # Exact finite expressions reviewed against pinned asdcplib MXF.cpp parser.
-# Repeating group 71 reuses the same group link, rather than creating a
-# second soundfield. Unused container positions are unlabelled and silent.
+# The pinned decoder never populates its used_soundfields map. Keep all
+# 7.1DS channels within one group; hyphens advance the slot without a
+# descriptor, including inside that group. Never repeat the group symbol.
 MCA_EXPRESSION = {
     "5.1": "51(L,R,C,LFE,Ls,Rs),-,-,-,-,-,-,-,-,-,-",
-    "7.1DS": "71(L,R,C,LFE,Lss,Rss),-,-,-,-,71(Lrs,Rrs),-,-,-,-",
+    "7.1DS": "71(L,R,C,LFE,Lss,Rss,-,-,-,-,Lrs,Rrs),-,-,-,-",
 }
 
 

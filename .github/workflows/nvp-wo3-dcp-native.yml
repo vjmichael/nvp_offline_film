@@ -102,7 +102,8 @@ jobs:
         shell: pwsh
         run: |
           if ((git -C deps/dci-schema-reference rev-parse HEAD).Trim() -ne '277f5ff221b073a88111013612d6441928924cbc') { throw 'Schema source drift' }
-          python -m tools.nvp_dci_schema_ci deps/dci-schema-reference/xsd
+          $schemas=Join-Path $env:RUNNER_TEMP "nvp-reviewed-schema-$env:GITHUB_RUN_ATTEMPT"
+          python -m tools.nvp_dci_schema_ci $schemas --reviewed-checkout deps/dci-schema-reference
           if ($LASTEXITCODE -ne 0) { throw 'Independent XSD mirror validation failed' }
   wo3-real-protected-native-cinema:
     name: Real protected Windows OpenJPEG 2K/4K, variable quality and SMPTE MXF PCM roundtrip
@@ -247,7 +248,10 @@ jobs:
         run: |
           $env:PYTHONPATH=(Get-Location).Path
           if ((git -C deps/dci-schema-reference rev-parse HEAD).Trim() -ne '277f5ff221b073a88111013612d6441928924cbc') { throw 'Schema source drift' }
-          $env:NVP_DCI_SCHEMA_REFERENCE=(Resolve-Path deps/dci-schema-reference/xsd).Path
+          $schemas=Join-Path $env:RUNNER_TEMP "nvp-reviewed-schema-$env:GITHUB_RUN_ATTEMPT"
+          python -m tools.nvp_dci_schema_ci $schemas --reviewed-checkout deps/dci-schema-reference
+          if ($LASTEXITCODE -ne 0) { throw 'Independent XSD mirror validation failed' }
+          $env:NVP_DCI_SCHEMA_REFERENCE=(Resolve-Path $schemas).Path
           foreach ($profile in @('2K_FLAT_24','4K_SCOPE_24')) {
             $root=Join-Path $env:NVP_WO3_FIXTURE_ROOT ("dual-"+$profile)
             python tests/nvp_wo4_sustained_ci.py --root $root --profile $profile --frames 48 --reel-frames 24 --dual-qualification
