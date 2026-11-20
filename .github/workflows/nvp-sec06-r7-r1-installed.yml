@@ -1,0 +1,172 @@
+name: NVP SEC-06-R7-R1 exact-source installed graphical execution and cancellation
+on:
+  push:
+    branches:
+      - ci/nvp-sec06-r7-r1-hosted-preflight-20261119
+    paths:
+      - .github/workflows/nvp-sec06-r7-r1-installed.yml
+permissions:
+  contents: read
+concurrency:
+  group: nvp-sec06-r7-r1-installed
+  cancel-in-progress: false
+jobs:
+  installed-graphical:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: qualification-control
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 7f33374a77082ebdc217f4fc4435a3e5be6cd49d
+          path: candidate
+          persist-credentials: false
+      - name: Require exact candidate and native host prerequisites
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nvp-evidence"
+          test "$(git rev-parse HEAD)" = 7f33374a77082ebdc217f4fc4435a3e5be6cd49d
+          test "$(git rev-parse HEAD^{tree})" = a64be51b19b06c881ddecfed3a6ab491bd6bbbd8
+          test -z "$(git status --porcelain --untracked-files=no)"
+          git rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/nvp-evidence/source.txt"
+          test "$(ps -p 1 -o comm=)" = systemd
+          test -f /sys/fs/cgroup/cgroup.controllers
+          awk '/^MemAvailable:/ {if ($2 < 4194304) exit 1; found=1} END{if (!found) exit 1}' /proc/meminfo
+          cat /etc/os-release > "$RUNNER_TEMP/nvp-evidence/os-release.txt"
+          uname -sr > "$RUNNER_TEMP/nvp-evidence/kernel.txt"
+      - name: Provision signed Ubuntu packages for diagnostic installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-venv python3-gi python3-gi-cairo \
+            gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-soup-3.0 gir1.2-girepository-2.0 \
+            libgtk-3-0t64 libwebkit2gtk-4.1-0 libportaudio2 libgl1 bubblewrap binutils \
+            xvfb xauth dbus-x11 at-spi2-core python3-pyatspi xdotool libxtst6
+          dpkg-query -W -f='${Package} ${Version}\n' > "$RUNNER_TEMP/nvp-evidence/debian-package-inventory.txt"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+      - name: Build locked frontend and provision reviewed-version Python inputs
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -m venv --system-site-packages "$RUNNER_TEMP/nvp-venv"
+          py="$RUNNER_TEMP/nvp-venv/bin/python"
+          "$py" -m pip install \
+            fastapi==0.128.2 uvicorn==0.48.0 pydantic==2.13.5 miniaudio==1.71 \
+            Pillow==12.3.0 sounddevice==0.5.6 numpy==2.3.5 scipy==1.17.0 \
+            cryptography==50.0.2 usd-core==26.11 opentimelineio==0.18.1 \
+            pyinstaller==6.16.0 pyinstaller-hooks-contrib==2025.10 pywebview==6.2.1
+          "$py" -m pip freeze > "$RUNNER_TEMP/nvp-evidence/python-inputs.txt"
+          "$py" -m pip check
+          (cd frontend && npm ci && npm run test:ui && npm run build)
+          sha256sum frontend/package-lock.json > "$RUNNER_TEMP/nvp-evidence/frontend-lock.txt"
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Exact candidate native kernel and focused admission tests
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          py="$RUNNER_TEMP/nvp-venv/bin/python"
+          for f in test_nvp_managed_desktop_audio_admission.py test_nvp_managed_desktop_audio_recovery.py test_nvp_linux_desktop_service.py test_nvp_linux_service_recovery.py; do
+            test -f "tests/$f"
+            "$py" -c 'import sys,unittest; n=unittest.TestLoader().discover("tests",pattern=sys.argv[1]).countTestCases(); assert n>0' "$f"
+            "$py" -m unittest discover -s tests -p "$f" -v
+          done
+          sudo systemd-run --wait --collect --pipe --same-dir --unit="nvp-r7-installed-gate-$GITHUB_RUN_ID" \
+            --property=Type=exec --property=Delegate=yes --property=DelegateSubgroup=host \
+            /usr/bin/env NVP_REQUIRE_DELEGATED_CGROUP=1 PYTHONPATH="$PWD" "$py" -m unittest discover \
+              -s tests -p test_nvp_sec06_linux_ancestor_migration.py -v
+      - name: Freeze and package exact source using native production build recipe
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NVP_BUILD_PYTHON="$RUNNER_TEMP/nvp-venv/bin/python"
+          export NVP_BUILD_OUTPUT="$RUNNER_TEMP/nvp-frozen"
+          bash packaging/linux/build-frozen-linux.sh 2>&1 | tee "$RUNNER_TEMP/nvp-evidence/freeze.log"
+          cp "$NVP_BUILD_OUTPUT/gi-bundle-audit.json" "$NVP_BUILD_OUTPUT/aliases.json" "$RUNNER_TEMP/nvp-evidence/"
+          sha256sum dist/nvp-alpha_0.1.0_amd64.deb > "$RUNNER_TEMP/nvp-evidence/deb.sha256"
+          sha256sum "$NVP_BUILD_OUTPUT/NVP/NVP" > "$RUNNER_TEMP/nvp-evidence/built-exe.sha256"
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Genuine native installation and graphical creator fixture
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y --no-install-recommends "$PWD/dist/nvp-alpha_0.1.0_amd64.deb"
+          test "$(sha256sum /opt/nvp/NVP | cut -d' ' -f1)" = "$(cut -d' ' -f1 "$RUNNER_TEMP/nvp-evidence/built-exe.sha256")"
+          sha256sum /opt/nvp/NVP > "$RUNNER_TEMP/nvp-evidence/installed-exe.sha256"
+          dpkg-query -W -f='${Package} ${Version} ${Status}\n' nvp-alpha
+          sudo useradd --create-home --shell /bin/bash nvpcreator
+          sudo runuser -u nvpcreator -- env -u GI_TYPELIB_PATH -u LD_LIBRARY_PATH /opt/nvp/NVP --smoke-linux-gi
+          control="$GITHUB_WORKSPACE/qualification-control/ci/nvp_sec06_r7_graphical.py"
+          PYTHONPATH="$PWD" "$RUNNER_TEMP/nvp-venv/bin/python" "$control" seed "$RUNNER_TEMP/nvp-fixture"
+          sudo cp -a "$RUNNER_TEMP/nvp-fixture" /home/nvpcreator/NVP_Projects
+          sudo chown -R nvpcreator:nvpcreator /home/nvpcreator/NVP_Projects
+          sudo install -d -m 0755 /opt/nvp-ci-control
+          sudo install -m 0644 "$control" /opt/nvp-ci-control/graphical.py
+          uid=$(id -u nvpcreator)
+          sudo loginctl enable-linger nvpcreator
+          sudo systemctl start "user@$uid.service"
+          sudo runuser -u nvpcreator -- sh -c 'touch "$HOME/.Xauthority"; xauth -f "$HOME/.Xauthority" add :99 . "$(mcookie)"'
+          sudo systemd-run --uid=nvpcreator --unit=nvp-r7-ci-display Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -auth /home/nvpcreator/.Xauthority
+          for i in $(seq 1 30); do test -S /tmp/.X11-unix/X99 && break; sleep 1; done
+          test -S /tmp/.X11-unix/X99
+          sudo mkdir -p /etc/systemd/system/nvp-desktop@nvpcreator.service.d
+          sudo tee /etc/systemd/system/nvp-desktop@nvpcreator.service.d/ci-graphical.conf >/dev/null <<ENV
+          [Service]
+          Environment=DISPLAY=:99
+          Environment=XAUTHORITY=/home/nvpcreator/.Xauthority
+          Environment=XDG_RUNTIME_DIR=/run/user/$uid
+          Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus
+          Environment=NO_AT_BRIDGE=0
+          Environment=LANG=C.UTF-8
+          Environment=NVP_SMOKE_DIAGNOSTIC_PATH=/home/nvpcreator/nvp-diagnostic.log
+          ENV
+          sudo systemctl daemon-reload
+          sudo systemctl start nvp-desktop@nvpcreator.service
+          for i in $(seq 1 180); do sudo grep -q linux_managed_gtk_dom_and_recovery_ipc_verified /home/nvpcreator/nvp-diagnostic.log 2>/dev/null && break; sleep 1; done
+          sudo grep -q linux_managed_gtk_dom_and_recovery_ipc_verified /home/nvpcreator/nvp-diagnostic.log
+          sudo systemctl is-active --quiet nvp-desktop@nvpcreator.service
+          sudo install -d -m 0700 -o nvpcreator -g nvpcreator /var/tmp/nvp-r7-graphical-evidence
+          cg=$(sudo systemctl show -p ControlGroup --value nvp-desktop@nvpcreator.service)
+          test -n "$cg" && test "$cg" != /
+          awk '/^MemAvailable:/ {if ($2 < 4194304) exit 1; found=1} END{if (!found) exit 1}' /proc/meminfo
+          sudo runuser -u nvpcreator -- env DISPLAY=:99 XAUTHORITY=/home/nvpcreator/.Xauthority \
+            XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+            NO_AT_BRIDGE=0 LANG=C.UTF-8 \
+            timeout 750 /usr/bin/python3 /opt/nvp-ci-control/graphical.py gui /var/tmp/nvp-r7-graphical-evidence "/sys/fs/cgroup$cg"
+          sudo test -s /var/tmp/nvp-r7-graphical-evidence/result.json
+          sudo systemctl stop nvp-desktop@nvpcreator.service
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Preserve installed generated-fixture evidence, including failures
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nvp-evidence"
+          if sudo test -d /var/tmp/nvp-r7-graphical-evidence; then
+            sudo cp -a /var/tmp/nvp-r7-graphical-evidence/. "$RUNNER_TEMP/nvp-evidence/"
+          fi
+          if sudo test -f /home/nvpcreator/nvp-diagnostic.log; then
+            sudo cp /home/nvpcreator/nvp-diagnostic.log "$RUNNER_TEMP/nvp-evidence/desktop-diagnostic.log"
+          fi
+          sudo journalctl -u nvp-desktop@nvpcreator.service --no-pager -n 200 > "$RUNNER_TEMP/nvp-evidence/desktop-service.log" || true
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/nvp-evidence"
+          (cd "$RUNNER_TEMP/nvp-evidence" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-sec06-r7-r1-hosted-installed-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/nvp-evidence/
+          if-no-files-found: error
+          retention-days: 14
