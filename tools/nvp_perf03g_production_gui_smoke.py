@@ -10,6 +10,43 @@ import tempfile
 import time
 
 
+# The generated fixture is 32 two-second Takes with one half-second dissolve.
+# Use one expectation for preparation, resume, durable readback, and playback.
+FIXTURE_TAKES = 32
+FIXTURE_FPS = 24
+FIXTURE_FRAMES = FIXTURE_TAKES * 2 * FIXTURE_FPS - FIXTURE_FPS // 2
+FIXTURE_REEL_FRAMES = 240
+FIXTURE_REELS = (FIXTURE_FRAMES + FIXTURE_REEL_FRAMES - 1) // FIXTURE_REEL_FRAMES
+FIXTURE_SECONDS = FIXTURE_FRAMES / FIXTURE_FPS
+
+
+class ResumeContractError(RuntimeError):
+    """Fixed, non-sensitive diagnostic codes for generated acceptance only."""
+
+
+def _resume_complete(observed, project, revision, digest, previous_operation):
+    """Strict terminal receipt predicate; pending observations are not success."""
+    status = observed.get('status')
+    if status is None:
+        return False
+    if status != 200:
+        raise ResumeContractError('Resumed movie HTTP failure')
+    receipt = observed.get('receipt')
+    if receipt is None:
+        return False
+    if (receipt.get('project_id') != project or receipt.get('revision') != revision
+            or receipt.get('active_digest') != digest or not receipt.get('operation_id')
+            or receipt['operation_id'] == previous_operation):
+        raise ResumeContractError('Resumed movie receipt identity differs')
+    if receipt.get('state') != 'complete':
+        raise ResumeContractError('Resumed movie did not complete')
+    if (receipt.get('saved_frames') != FIXTURE_FRAMES
+            or receipt.get('total_frames') != FIXTURE_FRAMES
+            or receipt.get('final_movie_exported') is not False):
+        raise ResumeContractError('Resumed movie frame coverage differs')
+    return observed.get('verified_ui') is True
+
+
 def _click_native_choice(title,answer,timeout=45):
     # Bound to this isolated installed test process and the standard native
     # confirmation's exact title/ID. Never click an unrelated dialog/window.
@@ -55,7 +92,7 @@ def run(*,create_app,serve,start_private,await_loaded,checkpoint):
             secret='PERF03G disposable public graphical fixture'
             pid=studio.create_project('Generated working movie','','')['id'];store=live_films();access=film_access()
             store.create(pid,'Generated working movie','','',secret);access.protect(pid,secret);token=access.unlock(pid,secret);store.authorize(pid,secret,token)
-            service=seed_feature(G07Editor(studio,live=store,token=token),pid,count=32)
+            service=seed_feature(G07Editor(studio,live=store,token=token),pid,count=FIXTURE_TAKES)
             revision=service.editor.view(pid)
             access.lock(pid,token);store.revoke(pid)
             server,worker,port,sock=serve(app);origin=f'http://127.0.0.1:{port}'
@@ -84,19 +121,30 @@ def run(*,create_app,serve,start_private,await_loaded,checkpoint):
                     click('Close picture and sound')
                     # Observe the actual HTTP response without intercepting its
                     # arguments, changing decisions or injecting session data.
-                    window.evaluate_js("(()=>{const f=window.fetch;window.__nvpWorkingReceipt=null;window.fetch=async (...args)=>{const r=await f(...args);if(typeof args[0]==='string'&&args[0].endsWith('/feature-step'))r.clone().json().then(v=>window.__nvpWorkingReceipt=v);return r};return true})()")
+                    window.evaluate_js("(()=>{const f=window.fetch;window.__nvpWorkingReceipt=null;window.__nvpWorkingStatus=null;window.fetch=async (...args)=>{const step=typeof args[0]==='string'&&args[0].endsWith('/feature-step');if(step){window.__nvpWorkingReceipt=null;window.__nvpWorkingStatus=null}const r=await f(...args);if(step){window.__nvpWorkingStatus=r.status;r.clone().json().then(v=>window.__nvpWorkingReceipt=v)}return r};return true})()")
                     click('Prepare or continue working movie');_click_native_choice('NVP — Prepare working movie',False)
                     wait("window.__nvpWorkingReceipt?.state==='refused'&&document.querySelector('.film-working-movie').textContent.includes('Not started')",'real_native_refusal')
                     click('Prepare or continue working movie');_click_native_choice('NVP — Prepare working movie',True)
-                    wait("window.__nvpWorkingReceipt?.state==='prepared'&&document.querySelector('.film-working-movie').textContent.includes('Sound preparation complete')",'real_native_preparation',120)
+                    wait(f"window.__nvpWorkingReceipt?.state==='prepared'&&window.__nvpWorkingReceipt.total_frames==={FIXTURE_FRAMES}&&document.querySelector('.film-working-movie').textContent.includes('Sound preparation complete')",'real_native_preparation',120)
                     click('Continue working movie');_click_native_choice('NVP — Working movie',True)
                     wait("document.querySelector('.film-working-movie')?.dataset.productionPhase==='rendering'",'active_native_worker_observed',120)
                     click('Stop')
                     wait("window.__nvpWorkingReceipt?.state==='stopped'&&document.querySelector('.film-working-movie').textContent.includes('Stopped. Verified parts')",'graphical_stop',120)
                     if window.evaluate_js("window.__nvpWorkingReceipt?.active_render_stopped===true") is not True:raise RuntimeError('Stop did not terminate an active protected worker')
                     checkpoint('perf03g_r8_actual_graphical_worker_stop_verified')
+                    previous_operation=window.evaluate_js("window.__nvpWorkingReceipt.operation_id")
+                    window.evaluate_js("window.__nvpWorkingReceipt=null;window.__nvpWorkingStatus=null;true")
                     click('Continue working movie');_click_native_choice('NVP — Working movie',True)
-                    wait("window.__nvpWorkingReceipt?.state==='complete'&&window.__nvpWorkingReceipt.saved_frames===756&&document.querySelector('.film-working-movie').textContent.includes('Working movie verified and saved')",'resumed_multi_reel_movie',600)
+                    result['phase']='resumed_multi_reel_movie'
+                    deadline=time.monotonic()+600
+                    while time.monotonic()<deadline:
+                        try:
+                            observed=json.loads(window.evaluate_js("JSON.stringify({status:window.__nvpWorkingStatus,receipt:window.__nvpWorkingReceipt,verified_ui:document.querySelector('.film-working-movie')?.textContent.includes('Working movie verified and saved')===true})"))
+                        except Exception:
+                            time.sleep(.1);continue
+                        if _resume_complete(observed,pid,revision['revision'],revision['active_digest'],previous_operation):break
+                        time.sleep(.1)
+                    else:raise ResumeContractError('Resumed movie terminal receipt unavailable')
                     # Get the live key only from the native store, not JS.
                     # Read the unique host session for this disposable movie;
                     # no test cookie or approval is added to the browser.
@@ -105,7 +153,7 @@ def run(*,create_app,serve,start_private,await_loaded,checkpoint):
                     from backend.nvp_g07_sections import EditorialSections
                     token=tokens[0];read=EditorialSections(G07Editor(studio,live=store,token=token),access_guard=lambda:store._session(pid,token))
                     _,analysis_sha=current_analysis(read,pid,revision['revision'],revision['active_digest']);step=reels.review_native_next(read,pid,analysis_sha)['review'];complete=reels.verify_complete(read,pid,step['job_id'])
-                    if complete['frames']!=1524 or complete['reel_count']!=7 or complete['independent_worker_verified'] is not True or complete['final_movie_exported'] is not False:raise RuntimeError('Verified native film receipt differs')
+                    if complete['frames']!=FIXTURE_FRAMES or complete['reel_count']!=FIXTURE_REELS or complete['independent_worker_verified'] is not True or complete['final_movie_exported'] is not False:raise RuntimeError('Verified native film receipt differs')
                     checkpoint('perf03g_r8_actual_graphical_resume_and_native_reels_verified')
                     # Playback uses the actual installed React player, WebView2
                     # AudioContext and protected HTTP reader. No media or clock
@@ -119,18 +167,19 @@ def run(*,create_app,serve,start_private,await_loaded,checkpoint):
                     while time.monotonic()-start<100:
                         sample=window.evaluate_js("(()=>{const p=document.querySelector('.director-reel-player');const r=p?.querySelector('input[type=range]');return JSON.stringify({position:Number(r?.value),duration:Number(r?.max),picture:Boolean(p?.querySelector('img')?.complete&&p?.querySelector('img')?.naturalWidth===640),playing:p?.textContent.includes('Playing in sync')===true,ended:p?.textContent.includes('The finished film has ended.')===true,error:p?.querySelector('[role=alert]')?.textContent||''})})()")
                         state=json.loads(sample)
-                        if state['error'] or state['duration']!=63.5 or state['position']<last or (not state['playing'] and not state['ended']):raise RuntimeError('Playback paused, drifted or changed identity')
+                        if state['error'] or state['duration']!=FIXTURE_SECONDS or state['position']<last or (not state['playing'] and not state['ended']):raise RuntimeError('Playback paused, drifted or changed identity')
                         pos=state['position'];last=pos;furthest=max(furthest,pos)
                         if state['picture']:
-                            seen.add(int(pos*24));crossings.add(min(6,int(pos//10)))
+                            seen.add(int(pos*24));crossings.add(min(FIXTURE_REELS-1,int(pos/(FIXTURE_REEL_FRAMES/FIXTURE_FPS))))
                         if state['ended']:
-                            if furthest<63.498 or len(crossings)!=7 or len(seen)<100 or time.monotonic()-start<61:raise RuntimeError('Incomplete real-time playback observation')
+                            if furthest<FIXTURE_SECONDS-.002 or len(crossings)!=FIXTURE_REELS or len(seen)<100 or time.monotonic()-start<61:raise RuntimeError('Incomplete real-time playback observation')
                             break
                         time.sleep(.12)
                     else:raise RuntimeError('Continuous playback deadline exceeded')
                     checkpoint('perf03g_r10_actual_graphical_playback_complete')
                     click('Close playback')
                     result['passed']=True
+                except ResumeContractError as exc:result['failure']=str(exc)
                 except Exception as exc:result['failure']=type(exc).__name__
                 finally:dialog.close();window.destroy()
             start_private(webview,func=inspect)

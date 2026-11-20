@@ -118,9 +118,13 @@ def _row(db,pid,sid,cid):
     if type(cid) is not str or not HEX.fullmatch(cid):raise ValueError('Select an original recording')
     row=db.execute('''SELECT rowid AS source_rowid,id,scene_id,actor_id,pcm_sha256,sample_rate,channels,sample_count,length(pcm) AS pcm_bytes FROM g06_original_pcm WHERE project_id=? AND scene_id=? AND id=?''',(pid,sid,cid)).fetchone()
     if row is None:raise KeyError('Original recording unavailable')
+    pointer=db.execute('SELECT * FROM g03_pcm_pages WHERE project_id=? AND clip_id=?',(pid,cid)).fetchone()
+    return _validate_metadata(row,pointer,sid)
+
+
+def _validate_metadata(row,pointer,sid):
     if row['sample_rate']!=48000 or row['channels']!=1 or type(row['sample_count']) is not int or not 2<=row['sample_count']*2<=MAX_BYTES:raise VaultError('Original recording clock changed')
     if not SHA.fullmatch(row['pcm_sha256']):raise VaultError('Original recording digest is invalid')
-    pointer=db.execute('SELECT * FROM g03_pcm_pages WHERE project_id=? AND clip_id=?',(pid,cid)).fetchone()
     size=row['sample_count']*2
     if pointer is None:
         if row['pcm_bytes']!=size:raise VaultError('Original recording length changed')
@@ -133,6 +137,25 @@ def metadata(db,filming,pid,sid,cid):
     if pointer is not None and context(filming,pid) is None:raise VaultError('Protected recording is not available in this workspace')
     result=dict(row);result['pcm_bytes']=row['sample_count']*2
     return result
+
+
+def inventory_metadata(db,filming,pid,after,limit,guard):
+    """One bounded keyset query and one bounded pointer query, no PCM reads."""
+    if type(limit) is not int or not 1<=limit<=64:raise ValueError('Invalid recording page')
+    rows=list(db.execute('SELECT rowid AS source_rowid,id,scene_id,actor_id,pcm_sha256,sample_rate,channels,sample_count,length(pcm) AS pcm_bytes FROM g06_original_pcm WHERE project_id=? AND id>? ORDER BY id LIMIT ?',(pid,after,limit+1)))
+    selected=rows[:limit]; pointers={}
+    if selected:
+        marks=','.join('?' for _ in selected)
+        pointers={r['clip_id']:r for r in db.execute(f'SELECT * FROM g03_pcm_pages WHERE project_id=? AND clip_id IN ({marks})',(pid,*(r['id'] for r in selected)))}
+    result=[]
+    for row in selected:
+        guard()
+        if not HEX.fullmatch(row['id']):raise VaultError('Invalid original recording identity')
+        pointer=pointers.get(row['id'])
+        _validate_metadata(row,pointer,row['scene_id'])
+        if pointer is not None and context(filming,pid) is None:raise VaultError('Protected recording is not available in this workspace')
+        result.append({**dict(row),'pcm_bytes':row['sample_count']*2})
+    return result,len(rows)>limit
 
 
 def read_pcm(db,filming,pid,sid,cid,*,first=0,count=None,verify_only=False):

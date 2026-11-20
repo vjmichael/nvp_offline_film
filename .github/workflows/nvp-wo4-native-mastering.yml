@@ -22,6 +22,11 @@ on:
       - 'tests/test_nvp_perf03g_r7_feature_worker.py'
       - 'tests/test_nvp_perf03g_r8_working_movie.py'
       - 'tests/test_nvp_perf03g_r9_playback.py'
+      - 'tests/test_nvp_perf03g_r11_playback.py'
+      - 'tests/test_nvp_perf03g_r12_projection.py'
+      - 'backend/nvp_g07_playback_projection.py'
+      - 'backend/nvp_g03_windows_vault.py'
+      - 'backend/nvp_g03_live_store.py'
       - 'backend/nvp_g07_feature_playback.py'
       - 'backend/nvp_g07_recovery_dialog.py'
       - 'backend/nvp_g03_payloads.py'
@@ -84,6 +89,11 @@ on:
       - 'tests/test_nvp_perf03g_r7_feature_worker.py'
       - 'tests/test_nvp_perf03g_r8_working_movie.py'
       - 'tests/test_nvp_perf03g_r9_playback.py'
+      - 'tests/test_nvp_perf03g_r11_playback.py'
+      - 'tests/test_nvp_perf03g_r12_projection.py'
+      - 'backend/nvp_g07_playback_projection.py'
+      - 'backend/nvp_g03_windows_vault.py'
+      - 'backend/nvp_g03_live_store.py'
       - 'backend/nvp_g07_feature_playback.py'
       - 'backend/nvp_g07_recovery_dialog.py'
       - 'backend/nvp_g03_payloads.py'
@@ -214,6 +224,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Working movie controlled production and extended reel regression failed' }
           python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r9_playback.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==1 else 1)"
           if ($LASTEXITCODE -ne 0) { throw 'Protected continuous playback regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r11_playback.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==2 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected paired playback and inventory scale regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r12_projection.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==4 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Authenticated incremental playback and sustained retrieval failed' }
           python -m unittest discover -s tests -p test_nvp_g03_live_store.py -v
           if ($LASTEXITCODE -ne 0) { throw 'Original encrypted live store regression failed' }
           python -m unittest discover -s tests -p test_nvp_g03_windows_vault.py -v

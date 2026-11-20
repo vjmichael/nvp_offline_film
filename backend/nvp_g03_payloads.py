@@ -229,13 +229,13 @@ def _take_pointer(db,pid,tid,kind):
     return db.execute('SELECT sha256,size_bytes FROM g03_r5_take_payloads WHERE project_id=? AND take_id=? AND kind=?',(pid,tid,kind)).fetchone()
 
 
-def take_sizes(db,pid,tid,row):
+def take_sizes(db,pid,tid,row,*,pointers=None):
     """Bounded metadata-only; no media authentication claimed."""
     out={}
     for kind in KINDS:
         size=row[kind+'_size'];digest=row[kind+'_sha256']
         _identity('take',tid,digest,kind)
-        pointer=_take_pointer(db,pid,tid,kind)
+        pointer=_take_pointer(db,pid,tid,kind) if pointers is None else pointers.get((tid,kind))
         if pointer is not None:
             _context(db,pid)
             if size!=0 or pointer['sha256']!=digest:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 from contextlib import suppress
+from contextvars import ContextVar
 import hashlib
 import hmac
 import io
@@ -35,6 +36,9 @@ MAX_FILES = 100_000
 READ_SIZE = 512 * 1024
 NONCE_BYTES = 12
 TAG_BYTES = 16
+# Host-private observation of successfully authenticated ciphertext; scoped to
+# one metadata review, never a new authorization or a plaintext cache.
+_authenticated_reads = ContextVar("nvp_authenticated_reads", default=None)
 
 
 class VaultError(Exception):
@@ -207,6 +211,9 @@ def _decrypt_file(path: Path, output_file, *, key: bytes,
         sealed.update(tag)
         if expected_ciphertext_sha256 is not None and not hmac.compare_digest(sealed.hexdigest(),expected_ciphertext_sha256):
             raise VaultError("Encrypted source ciphertext identity mismatch")
+    observer = _authenticated_reads.get()
+    if observer is not None:
+        observer(path, project_id, length, sealed.hexdigest())
     return {"sha256": checksum.hexdigest(), "size_bytes": count}
 
 

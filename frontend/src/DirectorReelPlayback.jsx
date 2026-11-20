@@ -1,5 +1,6 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import './director-reel-playback.css';
+import {appendPictures,pairedRequest,adaptiveSeconds} from './directorPlaybackBuffer.js';
 
 /** G09-F verified completed AVI reels, one global film/audio clock. */
 const RATE=48000, FPS=24, AUDIO_BLOCK=24000, FRAME_BLOCK=12;
@@ -44,7 +45,8 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
       p.nodes.clear();
       p.ctx.close().catch(()=>{});
     }
-    setPlaying(false);setPreparing(false);
+    cache.current.clear();
+    setPicture('');setPlaying(false);setPreparing(false);
     if(message)setNotice(message);
   },[]);
 
@@ -117,6 +119,27 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
     if(preload){p.initial.push(buffer);return;}
     schedule(p,buffer);
   };
+  const loadPaired=async(p,token,preload=false)=>{
+    if(p.nextSample>=info.audio_samples)return;
+    const start=p.nextSample,{first,count,frames}=pairedRequest(start,info.audio_samples);
+    const began=performance.now();
+    const r=await get(sourceBase+'/paired?start_sample='+start+'&count='+count,p.abort.signal);
+    const data=await r.json();
+    if(token!==epoch.current)return;
+    if(data.source_sha256!==info.source_sha256||data.start_sample!==start||data.start_frame!==first||data.sample_count!==count||typeof data.audio_base64!=='string'||data.audio_base64.length>130000)
+      throw Error('The paired picture and sound window changed.');
+    const raw=Uint8Array.from(atob(data.audio_base64),ch=>ch.charCodeAt(0));
+    const buffer=await p.ctx.decodeAudioData(raw.buffer);
+    if(token!==epoch.current)return;
+    if(buffer.sampleRate!==RATE||buffer.numberOfChannels!==2||buffer.length!==count)
+      throw Error('The sound device did not preserve the film sample rate.');
+    appendPictures(cache.current,data.frames,first,frames,Math.max(0,Math.floor(current.current*FPS)-3));
+    const target=adaptiveSeconds(p.latency,(performance.now()-began)/1000);
+    p.latency=target.average;p.bufferSeconds=target.seconds;
+    p.nextSample+=count;
+    if(preload){p.initial.push(buffer);return;}
+    schedule(p,buffer);
+  };
   const schedule=(p,buffer)=>{
     if(p.at<p.ctx.currentTime+.025)
       throw Error('Playback could not maintain synchronization; resume when ready.');
@@ -149,16 +172,18 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
       const p={ctx,gain,abort:new AbortController(),
         frameRequests:new Map(),nodes:new Set(),
         nextSample:first,clockSample:first,
-        at:0,clockAt:0,timer:0,feeder:0,feeding:false,initial:[]};
+        at:0,clockAt:0,timer:0,feeder:0,feeding:false,initial:[],latency:null,bufferSeconds:1.5};
       run.current=p;
       const frame=Math.floor(first/2000);
       const block=Math.floor(frame/FRAME_BLOCK)*FRAME_BLOCK;
-      await Promise.all([loadFrames(p,block,id),
-        loadFrames(p,block+FRAME_BLOCK,id),
-        loadFrames(p,block+FRAME_BLOCK*2,id)]);
-      if(id!==epoch.current)return;
-      for(let i=0;i<3&&p.nextSample<info.audio_samples;i++)
-        await loadSound(p,id,true);
+      if(info.paired_windows===true){
+        for(let i=0;i<6&&p.nextSample<info.audio_samples&&id===epoch.current&&
+          (i<3||(p.nextSample-first)/RATE<p.bufferSeconds);i++)await loadPaired(p,id,true);
+      }else{
+        await Promise.all([loadFrames(p,block,id),loadFrames(p,block+FRAME_BLOCK,id),loadFrames(p,block+FRAME_BLOCK*2,id)]);
+        if(id!==epoch.current)return;
+        for(let i=0;i<3&&p.nextSample<info.audio_samples&&id===epoch.current;i++)await loadSound(p,id,true);
+      }
       if(id!==epoch.current)return;
       p.at=ctx.currentTime+.25;p.clockAt=p.at;
       for(const buffer of p.initial)schedule(p,buffer);
@@ -173,7 +198,7 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
         const wanted=Math.min(info.picture_frames-1,Math.floor(seconds*FPS));
         const ready=cache.current.get(wanted);
         if(ready)setPicture(ready);
-        else if(seconds<info.duration_seconds-.12){
+        else if(info.paired_windows===true||seconds<info.duration_seconds-.12){
           stop('Playback paused because a verified picture was not ready.');
           return;
         }
@@ -188,15 +213,20 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
         if(id!==epoch.current||run.current!==p||p.feeding)return;
         p.feeding=true;
         try{
-          while(p.nextSample<info.audio_samples &&
-                p.at-p.ctx.currentTime<1.25)
-            await loadSound(p,id);
-          const frame=Math.floor(current.current*FPS);
-          const start=Math.floor(frame/FRAME_BLOCK)*FRAME_BLOCK;
-          await Promise.all(
-            Array.from({length:4},(_,i)=>start+i*FRAME_BLOCK)
-              .filter(index=>index<info.picture_frames)
-              .map(index=>loadFrames(p,index,id)));
+          if(info.paired_windows===true){
+            // One in-flight paired request, adapt within a fixed time/byte budget.
+            // Never schedule sound before its matching pictures are admitted.
+            while(id===epoch.current&&p.nextSample<info.audio_samples&&p.at-p.ctx.currentTime<p.bufferSeconds)
+              await loadPaired(p,id);
+          }else{
+            while(id===epoch.current&&p.nextSample<info.audio_samples&&p.at-p.ctx.currentTime<1.25)
+              await loadSound(p,id);
+            if(id!==epoch.current)return;
+            const frame=Math.floor(current.current*FPS);
+            const start=Math.floor(frame/FRAME_BLOCK)*FRAME_BLOCK;
+            await Promise.all(Array.from({length:4},(_,i)=>start+i*FRAME_BLOCK)
+              .filter(index=>index<info.picture_frames).map(index=>loadFrames(p,index,id)));
+          }
         }catch(e){
           if(id===epoch.current&&e.name!=='AbortError'){
             setError(e.message);
@@ -217,8 +247,7 @@ export default function DirectorReelPlayback({sourceBase,title='Watch Finished F
     const seconds=Math.max(0,Math.min(info?.duration_seconds||0,
       Number(value)||0));
     current.current=seconds;setPosition(seconds);
-    const still=cache.current.get(Math.floor(seconds*FPS));
-    if(still)setPicture(still);
+    setPicture('');
   }
   useEffect(()=>{
     if(run.current)

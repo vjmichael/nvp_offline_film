@@ -45,8 +45,12 @@ on:
       - 'tools/nvp_perf03g_gui_smoke.py'
       - 'tools/nvp_perf03g_worker_smoke.py'
       - 'tools/nvp_perf03g_production_gui_smoke.py'
+      - 'tests/test_nvp_perf03g_r10_r3_gui_contract.py'
       - 'frontend/src/DirectorWorkingMovie*'
       - 'frontend/src/DirectorReelPlayback.jsx'
+      - 'frontend/src/DirectorReelPlayback.test.jsx'
+      - 'frontend/src/directorPlaybackBuffer.js'
+      - 'frontend/src/directorPlaybackBuffer.test.js'
       - 'backend/nvp_g07_feature_playback.py'
       - 'tests/test_nvp_perf03g_r9_playback.py'
       - 'frontend/src/DirectorFinishingRoom.jsx'
@@ -93,6 +97,7 @@ jobs:
           test -f tests/test_nvp_no_ffmpeg_contract.py
           python -c "import unittest,sys; n=unittest.TestLoader().discover('tests',pattern='test_nvp_no_ffmpeg_contract.py').countTestCases(); print('Original zero-FFmpeg negative cases:',n); sys.exit(0 if n else 2)"
           python -m unittest discover -s tests -p 'test_nvp_no_ffmpeg_contract.py' -v
+          python -c "import unittest,sys; s=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r10_r3_gui_contract.py'); r=unittest.TextTestRunner(verbosity=2).run(s); sys.exit(0 if r.wasSuccessful() and r.testsRun==2 and not r.skipped else 1)"
 
   native-frozen-source:
     needs: [zero-ffmpeg-policy]

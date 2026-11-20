@@ -240,10 +240,13 @@ def mount_section_routes(app, get_studio, live_films, film_access, cookie_name):
             raw,headers=sound(playback_access(project_id,request,s),project_id,revision,digest,job,start_sample,count)
             return Response(raw,media_type='audio/wav',headers={**headers,'Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff'})
         return respond(project_id,request,action)
+    def playback_paired(project_id:str,revision:Annotated[int,Path(ge=1,le=15000)],digest:Sha,job:Sha,request:Request,start_sample:int=Query(ge=0,le=518399999),count:int=Query(ge=1,le=24000)):
+        from backend.nvp_g07_feature_playback import paired
+        return respond(project_id,request,lambda s:paired(playback_access(project_id,request,s),project_id,revision,digest,job,start_sample,count))
     def inventory_page(project_id:str,request:Request,family:Literal['takes','recordings'],after:Id|None=None,limit:int=Query(default=32,ge=1,le=64)):
         from backend.nvp_g07_feature_playback import inventory
         return respond(project_id,request,lambda s:inventory(playback_access(project_id,request,s),project_id,family,after,limit))
-    for suffix,handler in [('timeline',playback_timeline),('frames',playback_frames),('sound',playback_sound)]:
+    for suffix,handler in [('timeline',playback_timeline),('frames',playback_frames),('sound',playback_sound),('paired',playback_paired)]:
         app.add_api_route('/api/projects/{project_id}/live/edit/sections/playback/{revision}/{digest}/{job}/'+suffix,handler,methods=['GET'],name='perf03g_'+handler.__name__)
     app.add_api_route('/api/projects/{project_id}/live/edit/sections/media-inventory',inventory_page,methods=['GET'],name='perf03g_media_inventory')
     for suffix,handler in [('/feature-step',feature_step),('/feature-stop',feature_stop),('/feature-status',feature_status),('/review-clip',review_clip),('/review-clips',clips),('/copy-review-clip',copy_clip),('/create-backup',backup),('/restore-copy',restore_copy),('/optimize-recording',optimize),('/optimize-edits',optimize_edits),('/optimize-scenes',optimize_scenes)]:

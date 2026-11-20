@@ -61,6 +61,9 @@ class LiveFilmStore:
         self._guard = threading.RLock()
         self._keys = {}
         self._leases = {}
+        # One bounded, ephemeral playback metadata projection; not a key grant.
+        self._playback_projection = None
+        self._inventory_projection = None
 
     def _folder(self, pid):
         if not isinstance(pid, str) or not ID.fullmatch(pid):
@@ -299,11 +302,15 @@ class LiveFilmStore:
             key=_key_open(passphrase,pid,self._read_key_info(folder))
             db,_=self._read_db(folder,pid,key)
             db.close()
+            self._playback_projection = None
+            self._inventory_projection = None
             self._keys[session_token]=(pid,key)
             return True
 
     def revoke(self,pid):
         with self._guard:
+            self._playback_projection = None
+            self._inventory_projection = None
             self._keys={k:v for k,v in self._keys.items() if v[0]!=pid}
             self._leases={k:v for k,v in self._leases.items() if v["pid"]!=pid}
 
@@ -379,6 +386,8 @@ class LiveFilmStore:
             db._nvp_payload_guard()
             self._session(pid,token)
             self._publish_head(folder,record)
+            self._playback_projection = None
+            self._inventory_projection = None
             return result
         finally:
             db.close()
