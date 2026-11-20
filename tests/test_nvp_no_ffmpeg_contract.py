@@ -1,5 +1,8 @@
 """DA-00 regression: native runtime must refuse FFmpeg family imports."""
 import ast
+import subprocess
+import sys
+import textwrap
 import tempfile
 from pathlib import Path
 import unittest
@@ -88,6 +91,64 @@ class ZeroFFmpegContractTests(unittest.TestCase):
         self.assertTrue(audit.BAN.search("av"))
         self.assertTrue(audit.BAN.search("av.codec"))
         self.assertTrue(audit.BAN.search("backend.scenes.av"))
+
+    def test_active_runtime_does_not_reach_retired_editorial_codecs(self):
+        # Merely importing PCM conform used to pull B12/B14 video producers
+        # into the active runtime. Keep the original historical implementations
+        # intact, but ensure no active entrypoint reaches them.
+        retired = {
+            "backend/nvp_b11_editorial.py",
+            "backend/nvp_b12_editorial_delivery.py",
+            "backend/nvp_b13_editorial_roundtrip.py",
+            "backend/nvp_b14_picture_conform.py",
+            "backend/nvp_color_mastering.py",
+            "backend/nvp_color_ocio.py",
+            "backend/nvp_presentation_pipeline.py",
+        }
+        reached = dict(audit.reached_runtime())
+        self.assertIn("backend/nvp_audio01_picture_follow.py", reached)
+        self.assertIn("backend/nvp_editorial_frame_map.py", reached)
+        self.assertFalse(retired.intersection(reached))
+        self.assertEqual([], audit.violations())
+
+    def test_actual_pcm_conform_with_retired_codec_imports_denied(self):
+        # Fresh process: do not let an earlier test's module cache mask a
+        # forbidden import. Exercise the original sample-exact WAV and
+        # immutable-source regressions rather than only a mock import graph.
+        code = textwrap.dedent("""
+            import importlib.abc
+            import sys
+            import unittest
+
+            retired = {
+                'backend.nvp_b11_editorial',
+                'backend.nvp_b12_editorial_delivery',
+                'backend.nvp_b13_editorial_roundtrip',
+                'backend.nvp_b14_picture_conform',
+                'backend.nvp_color_mastering',
+                'backend.nvp_color_ocio',
+                'backend.nvp_presentation_pipeline',
+            }
+            class RefuseLegacyCodec(importlib.abc.MetaPathFinder):
+                def find_spec(self, fullname, path=None, target=None):
+                    if (fullname in retired or fullname.split('.')[0] in
+                            {'ffmpeg', 'ffprobe', 'imageio_ffmpeg', 'av'}):
+                        raise AssertionError('Retired codec import: ' + fullname)
+
+            sys.meta_path.insert(0, RefuseLegacyCodec())
+            suite = unittest.defaultTestLoader.discover(
+                'tests', pattern='test_audio01_picture_follow.py')
+            assert suite.countTestCases() >= 5, 'Original PCM tests missing'
+            result = unittest.TextTestRunner().run(suite)
+            if not result.wasSuccessful() or result.skipped:
+                sys.exit(1)
+            assert not retired.intersection(sys.modules)
+            print('PCM_CONFORM_WITHOUT_LEGACY_CODECS_PASS')
+        """)
+        run = subprocess.run([sys.executable, "-c", code], cwd=audit.ROOT,
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn("PCM_CONFORM_WITHOUT_LEGACY_CODECS_PASS", run.stdout)
 
     def test_clean_native_import(self):
         tree = ast.parse("import wave\nimport pathlib\n")

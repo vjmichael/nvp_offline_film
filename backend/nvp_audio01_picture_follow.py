@@ -14,8 +14,7 @@ import os
 from pathlib import Path
 import wave
 
-from backend.nvp_b12_editorial_delivery import RATE as PICTURE_RATE
-from backend.nvp_b14_picture_conform import _source_rows
+from backend.nvp_editorial_frame_map import RATE as PICTURE_RATE, MAX_FRAMES, _source_rows
 from backend.nvp_film_index import _id
 
 RATE = 48000
@@ -23,7 +22,7 @@ CHANNELS = 2
 SAMPLE_WIDTH = 2
 SAMPLES_PER_FRAME = RATE // PICTURE_RATE
 FORMAT = "nvp.audio.edited_pcm48_stereo.v1"
-MAX_EDITS = 480
+MAX_EDITS = MAX_FRAMES
 
 if RATE % PICTURE_RATE or PICTURE_RATE != 24:
     raise RuntimeError("AUDIO-01A must have integer 48k-to-24fps alignment")

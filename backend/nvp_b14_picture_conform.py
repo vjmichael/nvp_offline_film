@@ -11,13 +11,13 @@ import json
 import os
 from pathlib import Path
 
-from backend.nvp_b12_editorial_delivery import verify_editorial_handoff, RATE
+from backend.nvp_b12_editorial_delivery import verify_editorial_handoff
+from backend.nvp_editorial_frame_map import RATE, MAX_FRAMES, _source_rows
 from backend.nvp_b13_editorial_roundtrip import verify_imported_edit, FORMAT as EDIT_FORMAT
 from backend.nvp_film_index import _id
 from backend.nvp_presentation_pipeline import _png_info
 
 FORMAT = "nvp.presentation.b14.sdr16_picture_conform.v1"
-MAX_FRAMES = 480
 
 
 def _sha(raw: bytes) -> str:
@@ -43,28 +43,6 @@ def _safe_directory(path: Path) -> None:
         raise RuntimeError("Conform destination must be absent")
     if not path.parent.is_dir() or path.parent.is_symlink():
         raise RuntimeError("Conform destination parent is unsafe")
-
-
-def _source_rows(edit: dict, original: dict):
-    mapping = edit["editorial_map"]
-    rows = mapping["frame_map"]
-    original_frames = original["media_frames"]
-    if (mapping["fps"] != RATE or not 1 <= len(rows) <= MAX_FRAMES or
-        mapping["frame_count"] != len(rows) or
-        len(original_frames) != original["frame_count"]):
-        raise RuntimeError("Unbounded or incomplete editorial source frame mapping")
-    for n, row in enumerate(rows, 1):
-        srcno = row["source_frame"]
-        if (type(srcno) is not int or not 1 <= srcno <= len(original_frames) or
-            row["edit_frame"] != n):
-            raise RuntimeError("Conform edit frames are not contiguous or bounded")
-        src = original_frames[srcno - 1]
-        if (src["frame"] != srcno or row["shot_id"] != src["shot_id"] or
-            row["original_png16_sha256"] != src["png16_sha256"] or
-            row["original_rgb48_sha256"] != src["rgb48_sha256"] or
-            row["original_float32_sha256"] != src["source_exr_sha256"]):
-            raise RuntimeError("Conform frame map disagrees with immutable FilmIndex media")
-        yield n, src
 
 
 def _frame_name(n: int) -> str:

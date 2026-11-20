@@ -25,10 +25,10 @@ from backend.nvp_color_mastering import (
     mastering_policy,grade_recipe,grade_pixels,view_to_rgb48)
 from backend.nvp_digital_capture import DigitalCapture
 from backend.nvp_film_index import _id
+from backend.nvp_editorial_frame_map import RATE
 from backend.nvp_presentation_pipeline import _png_info
 
 FORMAT="nvp.presentation.b12.editorial_delivery.v1"
-RATE=24
 MAX_FRAMES=120
 MAX_MEDIA_BYTES=2*1024**3
 OTIO_VERSION="0.18.1"
