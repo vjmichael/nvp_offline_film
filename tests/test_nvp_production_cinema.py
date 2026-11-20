@@ -28,6 +28,12 @@ from backend.nvp_wo3_native_codecs import ApprovedCodecBinary,digest_file
 from backend.nvp_wo3_j2k_audit import PROFILES
 
 
+# Reduced synthetic raster preserves the independently validated 2K Flat
+# aspect ratio. The test still mocks the codec, not XML or journal validation.
+FIXTURE_WIDTH, FIXTURE_HEIGHT = 37, 20
+FIXTURE_RASTER_BYTES = FIXTURE_WIDTH * FIXTURE_HEIGHT * 6
+
+
 class PictureReelJournalTest(unittest.TestCase):
     def setUp(self):
         fixture=WO3OriginalCinemaAuthoring(
@@ -40,17 +46,17 @@ class PictureReelJournalTest(unittest.TestCase):
         self.assertTrue(ctypes.windll.advapi32.EncryptFileW(str(fixture.index.studio.db_path)))
         self.journal=CinemaJournal(self.root/"production")
         self.profile="2K_FLAT_24"
-        self.profile_patch=patch.dict(PROFILES,{self.profile:(2,1,24)})
+        self.profile_patch=patch.dict(PROFILES,{self.profile:(FIXTURE_WIDTH,FIXTURE_HEIGHT,24)})
         self.profile_patch.start()
         self.addCleanup(self.profile_patch.stop)
         self.pictures=[]
         self.files=[]
         for n in (1,2,3):
-            pix=(n.to_bytes(2,"big")*3)*2
+            pix=(n.to_bytes(2,"big")*3)*(FIXTURE_WIDTH*FIXTURE_HEIGHT)
             image={"format":"nvp.wo4.xyz12_master_candidate.v1",
                    "original_take_sha256":fixture.sha,
                    "xyz12":pix,"xyz12_sha256":sha256(pix).hexdigest(),
-                   "profile":self.profile,"width":2,"height":1,
+                   "profile":self.profile,"width":FIXTURE_WIDTH,"height":FIXTURE_HEIGHT,
                    "source_modified":False,
                    "production_picture_accepted":False}
             self.pictures.append(image)
@@ -131,14 +137,14 @@ class PictureReelJournalTest(unittest.TestCase):
     def test_reordered_or_changed_source_refused(self):
         with self.assertRaises(PermissionError):
             self.submit(frame_sources=self.files[::-1])
-        self.files and Path(self.files[1]).write_bytes(bytes(12))
+        self.files and Path(self.files[1]).write_bytes(bytes(FIXTURE_RASTER_BYTES))
         with self.assertRaises(PermissionError):
             self.submit()
         self.assertEqual(self.journal.list_jobs(),[])
 
     def test_three_real_durable_checkpoints_with_mocked_codec_only(self):
         job_id=self.submit()["job_id"]
-        raw=structural_frame(width=2,height=1,lengths=[20]*3)
+        raw=structural_frame(width=FIXTURE_WIDTH,height=FIXTURE_HEIGHT,lengths=[20]*3)
         hash_value=sha256(raw).hexdigest()
         def worker(codec):
             return {"process_tree_custody_verified":True,"efs_verified":True,
@@ -227,7 +233,7 @@ class PictureReelJournalTest(unittest.TestCase):
         self.claim("PostLinkCrash")
         frame=self.journal.spool(job)/"frames"/"000000.j2c"
         frame.parent.mkdir(parents=True)
-        original=synthetic_header(width=2,height=1)
+        original=synthetic_header(width=FIXTURE_WIDTH,height=FIXTURE_HEIGHT)
         frame.write_bytes(original)
         self.reconcile()
         result=self.rebuild(job,lambda _:True)
@@ -310,7 +316,7 @@ class PictureReelJournalTest(unittest.TestCase):
         self.claim("KilledAfterPublish")
         frames=self.journal.spool(job)/"frames"
         frames.mkdir(parents=True)
-        (frames/"000000.j2c").write_bytes(synthetic_header(width=2,height=1))
+        (frames/"000000.j2c").write_bytes(synthetic_header(width=FIXTURE_WIDTH,height=FIXTURE_HEIGHT))
         result=self.reconcile()
         self.assertEqual(result["jobs"][0]["status"],"REVIEW_REQUIRED")
         self.assertTrue((frames/"000000.j2c").is_file())

@@ -194,6 +194,9 @@ class PersistentMultiReelFeatureTests(unittest.TestCase):
         self.assertEqual(self.journal.feature(job["feature_id"])["state"],
                          "REVIEW_REQUIRED")
         self.assertFalse(self.journal.feature(job["feature_id"])["filmindex_sha256"])
+        delivery_fixture.assert_rehashed_orphan_refused(self, receipt["destination"],
+            lambda approve:self.owned(self.journal,self.journal.approve_orphan_feature_adoption,
+                                     job["feature_id"],approve))
         denied=self.owned(self.journal,self.journal.approve_orphan_feature_adoption,
             job["feature_id"],lambda _:False)
         self.assertEqual(denied["status"],"DENIED")

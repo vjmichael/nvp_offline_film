@@ -318,7 +318,7 @@ class FeatureJournal(CinemaDeliveryJournal):
                 any(_linked_entry(folder/name) or not (folder/name).is_file() or
                     digest_file(folder/name)!=digest for name,digest in expected.items())):
             raise PermissionError("Multi-reel output SHA manifest differs")
-        audit=inspect_dcp_structure(folder)
+        audit=self._audit_new_feature_package(folder,manifest)
         if (audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
                 audit["cpl_uuid"]!=manifest["ids"]["cpl"] or
                 audit["reel_durations"]!=[r["frames"] for r in manifest["reels"]]):
@@ -381,6 +381,22 @@ class FeatureJournal(CinemaDeliveryJournal):
             if index is not None and index.read_revision(m["project_id"],
                 "WO3DCP_"+d["cpl_uuid"].replace("-",""),1)["document_sha256"]!=d["filmindex_sha256"]:
                 raise PermissionError("Indexed source reel FilmIndex identity changed")
+
+    @staticmethod
+    def _audit_new_feature_package(folder, manifest):
+        """New output and orphan adoption use the same strict grammar as
+        the writer; the approved order and ranges are independently bound.
+        """
+        from backend.nvp_dci_package import inspect_cinema_package
+        expected=[]
+        start=0
+        for part in manifest["reels"]:
+            expected.append({"reel_uuid":part["reel_uuid"],"start_frame":start,
+                "picture_uuid":part["picture"]["asset_uuid"],
+                "sound_uuid":part["sound"]["asset_uuid"],"frames":part["frames"]})
+            start+=part["frames"]
+        return inspect_cinema_package(folder, expected_profile=manifest["profile"],
+                                     expected_reels=expected)
 
     def _verify_feature_package(self,m,folder,audit):
         if audit["pkl_uuid"]!=m["ids"]["pkl"] or audit["reel_count"]!=len(m["reels"]):
@@ -656,7 +672,7 @@ class FeatureJournal(CinemaDeliveryJournal):
                 expected_tracks.add((kind,original["asset_uuid"]))
         if {p.name for p in folder.iterdir()}!=names:
             raise PermissionError("Orphan feature has extra or missing package assets")
-        report=inspect_dcp_structure(folder)
+        report=self._audit_new_feature_package(folder,manifest)
         if (report["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
                 report["cpl_uuid"]!=manifest["ids"]["cpl"] or
                 report["pkl_uuid"]!=manifest["ids"]["pkl"] or
@@ -674,7 +690,8 @@ class FeatureJournal(CinemaDeliveryJournal):
         if authorize(deepcopy(scope)) is not True:
             return {"status":"DENIED","feature_id":feature_id}
         self._verify_feature_sources(manifest)
-        if (inspect_dcp_structure(folder)["status"]!="STRUCTURE_AND_SHA_VERIFIED"
+        if (self._audit_new_feature_package(folder,manifest)["status"]!="STRUCTURE_AND_SHA_VERIFIED"
+                or {p.name for p in folder.iterdir()}!=names
                 or any(digest_file(folder/name)!=digest
                        for name,digest in files.items())):
             raise PermissionError("Feature changed during creator approval")

@@ -119,7 +119,7 @@ class FeaturePageTests(unittest.TestCase):
             'source_take_sha256':authority['source_take_sha256'],'mastering_decision_sha256':authority['mastering_decision_sha256'],
             'feature_assembly_sha256':manifest['assembly_sha256'],'file_sha256':files}
         audit={'status':'STRUCTURE_AND_SHA_VERIFIED','cpl_uuid':'fixed','reel_durations':[7200]*125}
-        with patch.object(self.j,'_verify_feature_sources'),patch.object(self.j,'_verify_feature_package'),patch.object(journal,'inspect_dcp_structure',return_value=audit):
+        with patch.object(self.j,'_verify_feature_sources'),patch.object(self.j,'_verify_feature_package'),patch.object(self.j,'_audit_new_feature_package',return_value=audit):
             bad={**receipt,'file_sha256':{**files,'CPL.xml':'0'*64}}
             with self.assertRaises(PermissionError):self.j.commit_feature('Owner',fid,bad)
             self.assertEqual(self.page(kind='output')['total'],0)

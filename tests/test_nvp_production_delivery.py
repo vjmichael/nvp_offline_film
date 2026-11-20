@@ -22,6 +22,40 @@ from backend.nvp_wo4_file_dcp import publish_file_backed_dcp
 from backend.nvp_wo3_native_codecs import digest_file
 
 
+def assert_rehashed_orphan_refused(test,folder,adopt):
+    """Test-only mutation of generated package XML, never original media."""
+    from test_nvp_wo3_dci_package import PackageProfile,q,NS_CPL
+    folder=Path(folder)
+    original={p.name:p.read_bytes() for p in folder.glob("*.xml")}
+    fixture=PackageProfile();fixture.root=folder
+    try:
+        fixture.alter("CPL.xml",lambda node:setattr(
+            next(node.iter(q(NS_CPL,"ScreenAspectRatio"))),"text","2 1"))
+        test.assertEqual(inspect_dcp_structure(folder)["status"],"STRUCTURE_AND_SHA_VERIFIED")
+        mutated={p.name:p.read_bytes() for p in folder.glob("*.xml")}
+        calls=[]
+        with test.assertRaises(ValueError):
+            adopt(lambda scope:calls.append(scope) or True)
+        test.assertEqual(calls,[],"Malformed package must never request consent")
+        test.assertEqual({p.name:p.read_bytes() for p in folder.glob("*.xml")},mutated)
+        # Reopen the valid orphan, then change it inside the consent callback.
+        # Approval cannot authorize different XML, even if its hashes agree.
+        for name,raw in original.items():
+            (folder/name).write_bytes(raw)
+        def change_during_review(scope):
+            calls.append(scope)
+            fixture.alter("CPL.xml",lambda node:setattr(
+                next(node.iter(q(NS_CPL,"ScreenAspectRatio"))),"text","2 1"))
+            return True
+        with test.assertRaises(ValueError):
+            adopt(change_during_review)
+        test.assertEqual(len(calls),1)
+        test.assertEqual({p.name:p.read_bytes() for p in folder.glob("*.xml")},mutated)
+    finally:
+        for name,raw in original.items():
+            (folder/name).write_bytes(raw)
+
+
 class DurableCinemaDeliveryTests(unittest.TestCase):
     def setUp(self):
         f=picture_fixture.PictureReelJournalTest(
@@ -63,7 +97,8 @@ class DurableCinemaDeliveryTests(unittest.TestCase):
     def finish_picture(self):
         job=self.f.submit()["job_id"]
         from test_nvp_wo3_dci_codestream import structural_frame
-        codestream=structural_frame(width=2,height=1,lengths=[20]*3)
+        codestream=structural_frame(width=picture_fixture.FIXTURE_WIDTH,
+                                     height=picture_fixture.FIXTURE_HEIGHT,lengths=[20]*3)
         digest=sha256(codestream).hexdigest()
         def mock_frame(codec,*,private_work,source_sha256,**kw):
             (Path(private_work)/"frame.j2c").write_bytes(codestream)
@@ -247,6 +282,8 @@ class DurableCinemaDeliveryTests(unittest.TestCase):
         self.assertEqual(result["jobs"][0]["phase"],"REVIEW_REQUIRED")
         self.assertTrue(Path(published["destination"]).is_dir())
         self.assertEqual(self.journal.status(job)["state"],"REVIEW_REQUIRED")
+        assert_rehashed_orphan_refused(self, published["destination"],
+            lambda approve:self.owned(self.journal.approve_orphan_dcp_adoption,job,approve))
         denied=self.owned(self.journal.approve_orphan_dcp_adoption,job,lambda _:False)
         self.assertEqual(denied["status"],"DENIED")
         self.assertEqual(self.journal.delivery(job)["phase"],"REVIEW_REQUIRED")

@@ -372,7 +372,7 @@ class CinemaDeliveryJournal(CinemaJournal):
                 receipt.get("file_sha256") is None or
                 _linked_entry(folder) or not folder.is_dir()):
             raise PermissionError("No trusted atomically published DCP receipt")
-        audit=inspect_dcp_structure(folder)
+        audit=self._audit_new_package(folder,reel,d)
         if (audit["status"]!="STRUCTURE_AND_SHA_VERIFIED" or
                 audit["cpl_uuid"]!=d["cpl_uuid"] or
                 audit["reel_durations"]!=[self.reel(job_id)["frame_count"]]):
@@ -408,6 +408,18 @@ class CinemaDeliveryJournal(CinemaJournal):
         root=Path(d["output_root"])
         _assert_export_root(root,tuple(plan["export_root_identity"]))
         return root
+
+    @staticmethod
+    def _audit_new_package(folder, reel, delivery):
+        """Bind the current strict profile to the exact approved reel before
+        a new publication checkpoint or fresh orphan adoption. Historical
+        already-committed structural receipts retain their original semantics.
+        """
+        from backend.nvp_dci_package import inspect_cinema_package
+        return inspect_cinema_package(folder, expected_profile=reel["profile"],
+            expected_reels=[{"reel_uuid":delivery["reel_uuid"],"start_frame":0,
+                "picture_uuid":reel["picture_uuid"],"sound_uuid":delivery["sound_uuid"],
+                "frames":reel["frame_count"]}])
 
     def _verify_package_identity(self,job_id,folder,audit):
         d=self.delivery(job_id)
@@ -735,7 +747,7 @@ class CinemaDeliveryJournal(CinemaJournal):
             raise PermissionError("Only a complete unmixed published DCP is eligible")
         # Inspect all original/derived media and reject any altered source.
         self._verify_all_production_sources(job_id)
-        audit=inspect_dcp_structure(folder)
+        audit=self._audit_new_package(folder,reel,d)
         expected_files={"picture.mxf","sound.mxf","CPL.xml","PKL.xml",
                         "ASSETMAP.xml","VOLINDEX.xml"}
         if ({p.name for p in folder.iterdir()}!=expected_files or
@@ -772,7 +784,7 @@ class CinemaDeliveryJournal(CinemaJournal):
             return {"status":"DENIED","job_id":job_id}
         # Consent is not a shortcut around source or output verification.
         self._verify_all_production_sources(job_id)
-        if (inspect_dcp_structure(folder)["status"]!="STRUCTURE_AND_SHA_VERIFIED"
+        if (self._audit_new_package(folder,reel,d)["status"]!="STRUCTURE_AND_SHA_VERIFIED"
                 or {p.name for p in folder.iterdir()}!=expected_files or
                 any(digest_file(folder/name)!=expected for name,expected
                     in file_hashes.items()) or

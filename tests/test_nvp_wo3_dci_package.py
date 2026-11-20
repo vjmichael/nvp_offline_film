@@ -66,6 +66,50 @@ class PackageProfile(unittest.TestCase):
         self.single();r=self.audit(expected_profile='2K_FLAT_24',require_minimum_track=True)
         self.assertEqual(r['total_frames'],24);self.assertTrue(r['nvp_unsigned_xml_profile_verified']);self.assertFalse(r['official_smpte_xsd_verified']);self.assertFalse(r['mxf_descriptor_crosscheck_verified']);self.assertFalse(r['production_dcp_accepted'])
         self.assertEqual(set(r['metadata_sha256']),{'PKL.xml','ASSETMAP.xml','VOLINDEX.xml','CPL.xml'})
+    def test_reduced_flat_fixture_and_new_single_reel_checkpoint(self):
+        from unittest.mock import patch
+        from backend.nvp_wo3_j2k_audit import PROFILES
+        from backend.nvp_dci_packets import inspect_cinema_packets
+        from test_nvp_wo3_dci_codestream import structural_frame
+        from backend.nvp_wo4_delivery_journal import CinemaDeliveryJournal
+        reel={"profile":"2K_FLAT_24","picture_uuid":self.ids["picture"],"frame_count":3}
+        delivery={"reel_uuid":self.ids["reel"],"sound_uuid":self.ids["sound"]}
+        with patch.dict(PROFILES,{"2K_FLAT_24":(2,1,24)}):
+            self.single(frames=3)
+            self.assertTrue(inspect_cinema_packets(structural_frame(lengths=[20]*3),"2K_FLAT_24")["packet_membership_verified"])
+            self.assertEqual(inspect_dcp_structure(self.root)["status"],"STRUCTURE_AND_SHA_VERIFIED")
+            with self.assertRaisesRegex(ValueError,"aspect ratio"):
+                CinemaDeliveryJournal._audit_new_package(self.root,reel,delivery)
+        with patch.dict(PROFILES,{"2K_FLAT_24":(37,20,24)}):
+            self.single(frames=3)
+            self.assertTrue(inspect_cinema_packets(structural_frame(lengths=[20]*3),"2K_FLAT_24")["packet_membership_verified"])
+            verified=CinemaDeliveryJournal._audit_new_package(self.root,reel,delivery)
+            self.assertEqual(verified["screen_aspect_ratio"],[37,20])
+            self.assertFalse(verified["all_tracks_minimum_one_second_verified"])
+            self.assertFalse(verified["production_dcp_accepted"])
+        self.assertEqual(CinemaDeliveryJournal._audit_new_package(self.root,reel,delivery)["screen_aspect_ratio"],[37,20])
+        self.alter('CPL.xml',lambda x:setattr(next(x.iter(q(NS_CPL,'ScreenAspectRatio'))),'text','2 1'))
+        self.assertEqual(inspect_dcp_structure(self.root)["status"],"STRUCTURE_AND_SHA_VERIFIED")
+        with self.assertRaises(ValueError):
+            CinemaDeliveryJournal._audit_new_package(self.root,reel,delivery)
+
+    def test_new_feature_checkpoint_rejects_rehashed_wrong_aspect_and_order(self):
+        from backend.nvp_wo4_feature_journal import FeatureJournal
+        expected=self.multiple()
+        manifest={"profile":"4K_SCOPE_24","reels":[{
+            "reel_uuid":row["reel_uuid"],"frames":row["frames"],
+            "picture":{"asset_uuid":row["picture_uuid"]},
+            "sound":{"asset_uuid":row["sound_uuid"]}} for row in expected]}
+        report=FeatureJournal._audit_new_feature_package(self.root,manifest)
+        self.assertEqual(report["reel_manifest"],expected)
+        self.assertFalse(report["production_dcp_accepted"])
+        with self.assertRaises(ValueError):
+            FeatureJournal._audit_new_feature_package(self.root,{**manifest,"reels":manifest["reels"][::-1]})
+        self.alter('CPL.xml',lambda x:setattr(next(x.iter(q(NS_CPL,'ScreenAspectRatio'))),'text','2 1'))
+        self.assertEqual(inspect_dcp_structure(self.root)["status"],"STRUCTURE_AND_SHA_VERIFIED")
+        with self.assertRaises(ValueError):
+            FeatureJournal._audit_new_feature_package(self.root,manifest)
+
     def test_original_in_memory_writer(self):
         files,ids=_compose_xml({'asset_uuid':self.ids['picture'],'frame_count':24,'profile':'2K_FLAT_24','bytes':self.media['picture.mxf']},{'asset_uuid':self.ids['sound'],'frame_count':24,'bytes':self.media['sound.mxf']},title='Test',issued=ISSUED)
         self.write(files);self.assertEqual(self.audit()['total_frames'],24)
