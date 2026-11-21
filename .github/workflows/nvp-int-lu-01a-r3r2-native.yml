@@ -49,11 +49,11 @@ jobs:
           git -C _lu_ipc_source rev-parse HEAD
           rustc --version
           cargo --version
-      - name: Generate FIRST-PASS dependency lock for independent review
+      - name: Verify committed cross-platform reviewed Cargo.lock and fetch pinned crates
         shell: bash
         working-directory: native/nvp_lu_ipc_client
         run: |
-          cargo generate-lockfile
+          test -s Cargo.lock || { echo 'DENIED: missing reviewed Cargo.lock'; exit 1; }
           cargo fetch --locked
       - name: Qualify NVP Rust/prost against pinned Lu immutable schema
         shell: bash
@@ -82,7 +82,7 @@ jobs:
         run: |
           python -m pip install 'protobuf>=5,<7'
           python -m unittest discover -s tests -p 'test_nvp_int_lu_01a_r*.py' -v
-      - name: Preserve first-pass Cargo.lock for independent review
+      - name: Preserve actual compiled Cargo.lock as acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:

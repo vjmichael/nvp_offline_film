@@ -8,9 +8,14 @@ fn main(){
     let lu=PathBuf::from(env::var_os("LU_WORKSPACE_PROTO")
         .expect("LU_WORKSPACE_PROTO must be independently checked-out Lu workspace.proto"));
     let bytes=fs::read(&lu).expect("Lu workspace.proto must exist as a real file");
+    // Git checkouts may present CRLF on Windows. Compute the canonical Git
+    // blob over LF text, not the OS worktree newline representation. The
+    // independent Lu checkout commit/blob check remains mandatory.
+    let source=String::from_utf8(bytes).expect("Lu schema is UTF-8 text");
+    let canonical=source.replace("\r\n", "\n");
     let mut hasher=Sha1::new();
-    hasher.update(format!("blob {}\0",bytes.len()).as_bytes());
-    hasher.update(&bytes);
+    hasher.update(format!("blob {}\0",canonical.len()).as_bytes());
+    hasher.update(canonical.as_bytes());
     let actual=format!("{:x}",hasher.finalize());
     assert_eq!(actual,LU_GIT_BLOB,"Lu Core Protobuf source changed; explicit compatibility review required");
     // /proto/lu/workspace/v0/workspace.proto -> original Lu /proto root.

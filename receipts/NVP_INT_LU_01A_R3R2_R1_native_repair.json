@@ -1,0 +1,22 @@
+{
+  "cargo_lock_bytes": 15171,
+  "cargo_lock_registry_packages": 65,
+  "cargo_lock_sha256": "6bf5cfc5c6e2403002bb020fa296e8bb677b0f3091d0989f3cb03da6e914bf73",
+  "cargo_lock_unknown_sources": 0,
+  "installed_lu_core_health_authenticated": false,
+  "linux_windows_first_pass_locks_identical": true,
+  "lu_core_unchanged": true,
+  "native_rust_success_claimed": false,
+  "original_linux_native_status": "FAILED_rust_E0716_4_temp_borrow_fixtures",
+  "original_native_run_url": "https://github.com/vjmichael/nvp_offline_film/actions/runs/44919663798",
+  "original_sha": "f59d91bc5007adc38d355ae50b3a51c6b874d3e5",
+  "original_windows_native_status": "FAILED_build_rs_CRLF_git_blob_false_mismatch",
+  "post_repair_debian_python_pass": 83,
+  "post_repair_debian_python_tests": 84,
+  "post_repair_native_status": "NOT_RUN_WAITING_ORIGINAL_46_WORKFLOWS_TERMINAL",
+  "post_repair_protoc_descriptor_pass": true,
+  "post_repair_windows_only_test_skip": 1,
+  "prod_ipc_enabled": false,
+  "protoc_descriptor_sha256": "efbb5fb8c835f04cabf3fe4dceb0437a403c54a075d4de04807993488d238b84",
+  "task": "NVP-INT-LU-01A-R3-R2-R1"
+}

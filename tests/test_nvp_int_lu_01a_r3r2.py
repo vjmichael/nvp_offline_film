@@ -191,3 +191,26 @@ class SensitiveEnrollmentRepresentation(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+class RustE0716ExactNativeFailureRegression(unittest.TestCase):
+    def test_join_futures_use_scoped_verified_enrollment(self):
+        source=(ROOT/'native/nvp_lu_ipc_client/src/lib.rs').read_text()
+        self.assertNotIn('exchange_health(&mut client,&key_and_package())',source)
+        self.assertEqual(source.count('let enrollment=key_and_package();'),4)
+        self.assertEqual(source.count('exchange_health(&mut client,&enrollment)'),4)
+
+class WindowsNativeProtobufCheckoutNormalization(unittest.TestCase):
+    def test_lu_git_blob_pin_handles_worktree_crlf_without_trusting_unpinned_schema(self):
+        source=(ROOT/'native/nvp_lu_ipc_client/build.rs').read_text()
+        self.assertIn('source.replace("\\r\\n", "\\n")',source)
+        self.assertIn('canonical.as_bytes()',source)
+        self.assertIn('LU_GIT_BLOB',source)
+        self.assertIn('assert_eq!(actual,LU_GIT_BLOB',source)
+        # Git blob accounting uses exact canonical byte count, not CRLF count.
+        sample=b'syntax = "proto3";\npackage lu.workspace.v0;\n'
+        crlf=sample.replace(b'\n',b'\r\n')
+        self.assertEqual(__import__('hashlib').sha1(
+            b'blob '+str(len(sample)).encode()+b'\0'+sample).hexdigest(),
+            __import__('hashlib').sha1(
+            b'blob '+str(len(crlf.replace(b"\r\n",b"\n"))).encode()+b'\0'+
+            crlf.replace(b'\r\n',b'\n')).hexdigest())

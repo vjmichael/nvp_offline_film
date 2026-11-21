@@ -277,9 +277,10 @@ mod independent_wire_tests {
     async fn source_only_health_roundtrip_with_matching_session_mac() {
         let (mut client,mut core)=tokio::io::duplex(8192);
         let key=[0x77;32];
+        let enrollment=key_and_package();
         let (server,observed)=tokio::join!(
             fixture_core(&mut core,&key,false,false),
-            exchange_health(&mut client,&key_and_package()),
+            exchange_health(&mut client,&enrollment),
         );
         server.unwrap();
         let report=observed.unwrap();
@@ -291,9 +292,10 @@ mod independent_wire_tests {
     async fn forged_welcome_does_not_enable_health() {
         let (mut client,mut core)=tokio::io::duplex(8192);
         let key=[0x77;32];
+        let enrollment=key_and_package();
         let (server,result)=tokio::join!(
             fixture_core(&mut core,&key,true,false),
-            exchange_health(&mut client,&key_and_package()),
+            exchange_health(&mut client,&enrollment),
         );
         server.unwrap();
         assert_eq!(result.unwrap_err(),Refusal::InvalidPeer);
@@ -302,9 +304,10 @@ mod independent_wire_tests {
     async fn forged_health_module_refused_after_valid_mac() {
         let (mut client,mut core)=tokio::io::duplex(8192);
         let key=[0x77;32];
+        let enrollment=key_and_package();
         let (server,result)=tokio::join!(
             fixture_core(&mut core,&key,false,true),
-            exchange_health(&mut client,&key_and_package()),
+            exchange_health(&mut client,&enrollment),
         );
         server.unwrap();
         assert_eq!(result.unwrap_err(),Refusal::InvalidHealth);
@@ -313,9 +316,10 @@ mod independent_wire_tests {
     async fn wrong_hmac_enrollment_refused() {
         let (mut client,mut core)=tokio::io::duplex(8192);
         let key=[0x44;32];
+        let enrollment=key_and_package();
         let (server,result)=tokio::join!(
             fixture_core(&mut core,&key,false,false),
-            exchange_health(&mut client,&key_and_package()),
+            exchange_health(&mut client,&enrollment),
         );
         assert_eq!(server.unwrap_err(),Refusal::InvalidPeer);
         assert!(result.is_err());

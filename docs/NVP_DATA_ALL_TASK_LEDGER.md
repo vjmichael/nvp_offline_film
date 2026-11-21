@@ -1,5 +1,15 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
+## 2026-11-21 — NVP-INT-LU-01A-R3-R2-R1 — Genuine native source repair (PREPARED; REQUALIFICATION OPEN)
+
+**Exact original NVP PR #161 source:** `f59d91bc5007adc38d355ae50b3a51c6b874d3e5`, [new native workflow #44919663798](https://github.com/vjmichael/nvp_offline_film/actions/runs/44919663798). Independently inspected original OS native logs: Ubuntu Rust/prost reported four **E0716 temporary-borrow** compiler errors in the NVP client fixture at `src/lib.rs:282/296/307/318`; Windows Rust build script **FAILED source Git blob check** because the exact Lu checkout uses CRLF worktree bytes. **Neither native job passed; Windows never reached the genuine pipe test.** Do not infer Lu Core incompatibility, installed Health or native success from these failures. Exact protected Lu proto Git object `4e01d921197fb1c58c99958479b1cede36e13c9a` itself is unchanged.
+
+**NVP-only locally prepared correction:** bind each fixture enrollment to a stable variable spanning `tokio::join!`; normalize CRLF→LF *only* when hashing Lu's canonical Git blob while keeping exact Lu commit/blob checks. Downloaded both original Windows and Ubuntu `Cargo.lock` artifacts, verified the **same** 15,171 bytes, SHA-256 `6bf5cfc5c6e2403002bb020fa296e8bb677b0f3091d0989f3cb03da6e914bf73`, 65 registry crates, checksums, no nonregistry source, and included that exact lock. Successor workflow uses `cargo fetch --locked`, no regeneration. Debian local Python **84 tests: 83 PASS, 1 Windows-only SKIP**, zero failures; native NVP C++ protoc descriptor PASS; Rust/prost post-fix compilation **NOT RUN**. [Full native failure and repair record](NVP_INT_LU_01A_R3R2_R1_NATIVE_REPAIR.md).
+
+**Publication guard:** original `f59d91bc5007adc38d355ae50b3a51c6b874d3e5` broad 46-run CI batch is still active. Keep the reviewed correction **unreferenced and off PR branch** until all its original runs are terminal; then one single non-forced fast-forward on existing branch, no new PR/branch or stacked CI, and inspect genuine same-SHA Windows/Ubuntu native compiler outcomes. Debian Rust native still must run on Debian separately. Lu Core stays untouched: existing issues [#245](https://github.com/vjmichael/Lu-AI-GUI/issues/245), [#246](https://github.com/vjmichael/Lu-AI-GUI/issues/246) and [#247](https://github.com/vjmichael/Lu-AI-GUI/issues/247) are upstream runtime dependencies. Production Health continues to refuse.
+
+---
+
 ## 2026-11-21 — NVP-INT-LU-01A-R3-R2 — NVP-only native qualification (FIRST-PASS; INSTALLED OPEN)
 
 **Scope and qualification:** NVP-owned client, schema, Windows observer/fixture, native Rust/prost acceptance workflow and no Lu Core changes. Existing PR #161 original `efb6ed67e5511879a9138315577842dce65f9151` CI cohort **45/45 PASS**, zero failed before single successor publication. Prior roadmapping/contract integration is part of this single reviewed descendant. Full [native qualification, scope, blockers and tests](NVP_INT_LU_01A_R3R2_NATIVE_QUALIFICATION.md).
