@@ -1,0 +1,92 @@
+name: NVP INT-LU-01F R2-R2-R1 Protected Provider Native Qualification
+
+# Source-only native qualification; no installer enrollment.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - nvp/mainline-convergence-20261113
+    paths:
+      - '.github/workflows/nvp-int-lu-01f-r2r2r1-native.yml'
+      - 'backend/nvp_lu_*.py'
+      - 'tests/test_nvp_int_lu_01f_r*.py'
+      - 'tests/nvp_lu_provider_fixture.py'
+      - 'scripts/nvp_lu_01f_r2r2_qualification.py'
+      - 'native/nvp_lu_ipc_client/**'
+      - 'contracts/nvp/film/v1/**'
+
+permissions:
+  contents: read
+concurrency:
+  group: nvp-int-lu-01f-native-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exact-source-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact NVP event source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout pinned immutable Lu source read-only
+        uses: actions/checkout@v4
+        with:
+          repository: vjmichael/Lu-AI-GUI
+          ref: 9f43d078aa5e979de0ff72ca4c19e8c5829572af
+          path: _lu_ipc_source
+          persist-credentials: false
+      - name: Report real compiler and source identities
+        shell: bash
+        run: |
+          git rev-parse HEAD
+          git -C _lu_ipc_source rev-parse HEAD
+          rustc --version
+          cargo --version
+      - name: Fetch exact reviewed Rust dependencies (no lock mutation)
+        shell: bash
+        working-directory: native/nvp_lu_ipc_client
+        run: cargo fetch --locked
+      - name: Setup native Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux protoc
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler
+      - name: Install Windows protoc
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install protoc -y --no-progress
+      - name: Native schema, locked Rust/prost and IPC lifecycle suite
+        shell: bash
+        run: |
+          python -m pip install 'protobuf>=5,<7'
+          python scripts/nvp_lu_01f_r2r2_qualification.py --native --lu-root _lu_ipc_source
+      - name: Separate-process original Windows/Linux native fixture
+        shell: bash
+        env:
+          LU_REPO: ${{ github.workspace }}/_lu_ipc_source
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            pwsh -NoProfile -File scripts/nvp_lu_native_exact_source.ps1 -LuRepo "$LU_REPO"
+          else
+            bash scripts/nvp_lu_native_exact_source.sh
+          fi
+      - name: Preserve reviewed source lock
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-int-lu-01f-lock-${{ matrix.os }}-${{ github.sha }}
+          path: native/nvp_lu_ipc_client/Cargo.lock
+          if-no-files-found: warn
+          retention-days: 7
+
+# Native fixture tests cannot prove protected signed NVP enrollment,
+# an installed SCM/CNG P-256 receipt, or real Lu Core-to-NVP routing.
