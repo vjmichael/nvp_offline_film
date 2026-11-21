@@ -55,6 +55,26 @@ jobs:
           cmd.exe /d /s /c $command
           if ($LASTEXITCODE -ne 0) { throw 'Real Windows LTX SCM/CNG source compile failed' }
           Get-FileHash .\nvp_post01f_windows_scm_ltx_broker.exe -Algorithm SHA256
+      - name: Compile native LTX creator CMS signoff and deny unattended admission
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'Native MSVC creator-signoff compiler unavailable' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $src='tools\nvp_post01f_windows_ltx_creator_signoff.cpp'
+          $command='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_post01f_windows_ltx_creator_signoff.exe "'+$src+'" /link crypt32.lib advapi32.lib user32.lib shell32.lib ole32.lib'
+          cmd.exe /d /s /c $command
+          if ($LASTEXITCODE -ne 0) { throw 'Native creator CMS signoff compile failed' }
+          $exe=(Resolve-Path '.\nvp_post01f_windows_ltx_creator_signoff.exe').Path
+          & $exe --accept
+          if ($LASTEXITCODE -ne 91) { throw 'Unattended native creator signoff was not denied' }
+          & $exe
+          if ($LASTEXITCODE -ne 91) { throw 'Creator signoff without protected HKLM source was not denied' }
+          Get-FileHash $exe -Algorithm SHA256
+          Write-Host 'NVP_POST01F_NATIVE_CREATOR_WITHOUT_TRUST_DENIED'
+
       - name: Prove direct CLI and unapproved SCM start refuse without creating model output
         shell: pwsh
         run: |

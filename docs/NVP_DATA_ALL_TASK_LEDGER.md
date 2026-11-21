@@ -1,6 +1,16 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
 
+## 2026-11-20 — POST-01F R5-R2-R3 native one-use LTX creator approval (SOURCE PREPARED; INSTALLED POSITIVE OPEN)
+
+**Current PR #161 exact source:** `c0541502fcf47a741f5b3714ad25c5d1bd23a443`, 40 of 45 original workflows passed at investigation; 5 still in progress, 0 failed. Exact-head W1-G/INT-02C, Gate 1, and actual Windows SCM/CNG compiled plus unapproved LocalSystem SCM denied **PASS**. No second CI batch or branch mutation during active original runs.
+
+**Candidate implementation:** new Windows-native one-use creator LTX picture-only CMS signoff with actual visible default-No dialog, independent HKLM pinned source/certificate, expiry, exact original SCM creator Scope signed message, EFS write-once bounded signature and refusal on no authorization. New source contract tests and genuine native MSVC compiler + unprovisioned/flagged-denial steps are prepared in the existing original SCM negative Windows workflow. No automatic approval, no original Take or PCM modification, no model-chosen input/signature path.
+
+**Release/installed obligations:** wait for 45 terminal original dispositions; one safe non-forced PR #161 successor only; run original unchanged-SHA W1-G and Windows creator/SCM negative acceptance; independently install source-approved nonexportable user creator CMS cert, admin HKLM one-use grant, EFS inbox/ACL sharing and CNG machine key, run genuine authorized SCM AppContainer/Job/WFP/EFS signed picture/nonce receipt; bind verified host-only transport and filmmaker authenticated AES-GCM/DPAPI pending picture preview, explicit approve/reject/reopen/restart; retain historical R1/R2 and physical Radeon R9700 model-generation gates. **No genuine native positive SCM signing, installed filmmaker playback or authentic LTX generation has been obtained.** See `docs/NVP_POST01F_R5R3_NATIVE_CREATOR_AND_INSTALLED_REVIEW.md`.
+
+---
+
 ## 2026-11-20 — POST-01F R5-R2-R2 Windows SCM/CNG MSVC repair (SOURCE CORRECTION PREPARED; INSTALLED GATES OPEN)
 
 **Source under qualification:** existing PR #161 `149f6ddd3627a5c4643e82ff02672731191d36fd`. Same-SHA W1-G/INT-02C #44864936603 and Gate 1 #44864936684 **PASS**; dedicated Windows SCM/CNG #44864941951 **FAIL**: 75 Python/source tests pass then actual MSVC C2039 at `STARTUPINFOEXW start` member assignment; native executable and unapproved-service denial skipped. Original CONV-12 90×8 Cycles acceptance was still running when repair was prepared. Do not stack CI.
