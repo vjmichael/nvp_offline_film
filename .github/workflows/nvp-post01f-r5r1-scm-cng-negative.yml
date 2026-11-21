@@ -1,0 +1,97 @@
+name: NVP POST01F R5R1 Windows SCM CNG Source and Unapproved-Start Denial
+
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_post01f_*'
+      - 'tests/test_nvp_post01f*'
+      - 'tools/nvp_post01f_windows_scm_ltx_broker.cpp'
+      - '.github/workflows/nvp-post01f-r5r1-scm-cng-negative.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-source-native-negative:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Record actual unchanged source checkout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $observed=(git rev-parse HEAD).Trim()
+          $expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          if ($observed -ne $expected) { throw ('Source SHA mismatch: '+$observed+' vs '+$expected) }
+          "NVP_POST01F_R5R1_EXACT_SOURCE_SHA=$observed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify actual Python protected picture/review source and negative contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install 'cryptography>=43,<49'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows cryptography dependency unavailable' }
+          python -m compileall -q backend tests
+          if ($LASTEXITCODE -ne 0) { throw 'Source Python compilation failed' }
+          python -m unittest discover -s tests -p 'test_nvp_post01f*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Original R3/R4/R5 + R5R1 source tests failed' }
+      - name: Compile real Windows SCM AppContainer WFP Job and CNG service
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'Windows SDK/MSVC compiler unavailable: no native acceptance' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $src='tools\nvp_post01f_windows_scm_ltx_broker.cpp'
+          $command='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_post01f_windows_scm_ltx_broker.exe "'+$src+'" /link userenv.lib fwpuclnt.lib advapi32.lib ws2_32.lib ole32.lib crypt32.lib ncrypt.lib bcrypt.lib user32.lib'
+          cmd.exe /d /s /c $command
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows LTX SCM/CNG source compile failed' }
+          Get-FileHash .\nvp_post01f_windows_scm_ltx_broker.exe -Algorithm SHA256
+      - name: Prove direct CLI and unapproved SCM start refuse without creating model output
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $name='NVP-POST01F-SCM-LTX-Picture'
+          $key='HKLM\SOFTWARE\NVP\POST01F\ApprovedLtxPicture'
+          $exe=(Resolve-Path '.\nvp_post01f_windows_scm_ltx_broker.exe').Path
+          & $exe
+          if ($LASTEXITCODE -ne 96) { throw 'Untrusted desktop direct launch was not denied' }
+          & $exe --service
+          if ($LASTEXITCODE -ne 96) { throw 'Direct non-SCM service invocation was not denied' }
+          & reg.exe query $key 2>&1 | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw 'Unexpected existing provisioned native LTX SCM approval on shared CI host' }
+          try {
+            & sc.exe create $name binPath= ('"'+$exe+'" --service') start= demand obj= LocalSystem
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to install actual Windows negative-gate SCM service' }
+            & sc.exe start $name | Out-Host
+            $done=$false
+            for($n=0;$n -lt 90;$n++) {
+              Start-Sleep -Milliseconds 350
+              $status=(& sc.exe queryex $name) -join [Environment]::NewLine
+              if ($status -match 'STATE\s*:\s*1\s+STOPPED') { $done=$true;break }
+            }
+            if (-not $done) { throw 'Unapproved actual SCM LTX service did not stop' }
+            if ($status -match 'WIN32_EXIT_CODE\s*:\s*0') {
+              throw 'No-grant SCM service reported success; release blocked'
+            }
+            Write-Host 'NVP_POST01F_REAL_WINDOWS_SCM_MISSING_GRANT_DENIED'
+          }
+          finally {
+            & sc.exe delete $name | Out-Host
+          }
+      - name: Upload source identity and negative native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-post01f-r5r1-scm-source-negative-only
+          path: |
+            nvp_post01f_windows_scm_ltx_broker.exe
+          retention-days: 7
