@@ -11,6 +11,9 @@
 #include <bcrypt.h>
 #include <ncrypt.h>
 #include <sddl.h>
+#include <shlobj.h> // actual machine ProgramData known-folder, never environment
+#pragma comment(lib,"shell32.lib")
+#pragma comment(lib,"ole32.lib")
 #include <array>
 #include <cstdint>
 #include <stdexcept>
@@ -144,13 +147,24 @@ inline void write_immutable_installed_receipt(const Original& original,
     const auto signature=sign_with_distinct_installed_key(canonical_body);
     std::vector<BYTE> bytes=canonical_body;
     bytes.insert(bytes.end(),signature.begin(),signature.end());
-    wchar_t program_data[32768]{};
-    const DWORD n=GetEnvironmentVariableW(L"ProgramData",program_data,32768);
-    require(n>0 && n<32768,"Installed ProgramData path unavailable");
-    const fs::path root=fs::path(program_data)/L"Lu"/L"IPC"/L"nvp-gpu-stops-v1";
-    // NVP cannot create a Lu-owned receipt store or select a different path.
-    require(fs::is_directory(root) && !fs::is_symlink(root),
-            "Installer-owned Lu GPU stop receipt directory absent");
+    PWSTR program_data=nullptr;
+    const HRESULT folder=SHGetKnownFolderPath(
+         FOLDERID_ProgramData,KF_FLAG_DEFAULT,nullptr,&program_data);
+    require(SUCCEEDED(folder) && program_data && *program_data,
+            "Installed ProgramData known-folder unavailable");
+    const fs::path base(program_data);
+    CoTaskMemFree(program_data);
+    fs::path root=base;
+    // NVP cannot create Lu's protected directory. Reject reparse-point
+    // redirection at every source-owned subdirectory, not just the leaf.
+    for(const wchar_t* part:{L"Lu",L"IPC",L"nvp-gpu-stops-v1"}) {
+        root /= part;
+        const DWORD attrs=GetFileAttributesW(root.c_str());
+        require(attrs!=INVALID_FILE_ATTRIBUTES &&
+                (attrs & FILE_ATTRIBUTE_DIRECTORY)!=0 &&
+                (attrs & FILE_ATTRIBUTE_REPARSE_POINT)==0,
+                "Installer-owned Lu GPU stop path absent/redirected");
+    }
     const fs::path file=root/(std::wstring(original.lease_ref.begin(),
                             original.lease_ref.end())+L".stop.v1");
     // Lu's independent reader requires a PROTECTED explicit DACL on the

@@ -82,6 +82,17 @@ class WindowsNvpGpuSupervisorBinding:
         self.coordinator=NvpGpuYieldCoordinator(self.journal,
             native_owner=native_owner,core_port=core_port)
 
+    def _require_original_scm_control(self):
+        """A collection of Python callbacks is not an installed SCM owner."""
+        from backend.nvp_lu_windows_scm_service_control import (
+            InstalledScmLtxServiceControl,
+        )
+        controller = getattr(self.owner, 'scm_ltx_control', None)
+        if (type(controller) is not InstalledScmLtxServiceControl or
+                controller.require_installed_service() is not True):
+            raise GpuYieldRefusal('Original Windows SCM owner is not installed/pinned')
+        return controller
+
     def run_protected_job(self, intent: YieldIntent, *, approved_native_run,
                           verify_exact_preallocated_worker_job):
         """Runs a single reviewed native NVP diffuser under original Lu lease.
@@ -98,6 +109,9 @@ class WindowsNvpGpuSupervisorBinding:
         if self.storage.guard(self.storage.root) is not True:
             raise GpuYieldRefusal('NVP supervisor/EFS custody changed')
         validate_installed_windows_luid(intent.device_ref)
+        # Source-level callbacks cannot create an installed Windows SCM.
+        # Reject before reservation or any Core model-unload request.
+        self._require_original_scm_control()
         # SCM owns a durable *original* job reservation before the Core
         # unload request. It must be the same job and creator-bound Take as
         # the later protected LTX worker; never generate it on demand after

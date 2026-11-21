@@ -12,12 +12,14 @@ on:
       - 'backend/nvp_lu_ltx_preallocation.py'
       - 'backend/nvp_lu_windows_gpu_binding.py'
       - 'backend/nvp_lu_scm_ltx_execution.py'
+      - 'backend/nvp_lu_windows_scm_service_control.py'
       - 'backend/nvp_post01f_ltx_native_handoff.py'
       - 'tools/nvp_int_lu_gpu_stop_issuer.hpp'
       - 'tools/nvp_int_lu_gpu_stop_negative.cpp'
       - 'tools/nvp_post01f_windows_scm_ltx_broker.cpp'
       - 'tests/test_nvp_int_lu_gpu_r2.py'
       - 'tests/test_nvp_int_lu_gpu_scm_owned_r1.py'
+      - 'tests/test_nvp_int_lu_gpu_installed_scm_control.py'
 permissions:
   contents: read
 concurrency:
@@ -77,6 +79,7 @@ jobs:
           python scripts/nvp_lu_01e_gpu_r1_source_qualification.py --lu-root _lu_gpu_source
           python -m unittest discover -s tests -p 'test_nvp_int_lu_gpu_r2.py' -v
           python -m unittest discover -s tests -p 'test_nvp_int_lu_gpu_scm_owned_r1.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_int_lu_gpu_installed_scm_control.py' -v
           python -m unittest discover -s tests -p 'test_nvp_int_lu_01e_gpu*.py' -v
       - name: Compile actual Windows native CNG-P256 issuer and deny direct admission
         if: runner.os == 'Windows'

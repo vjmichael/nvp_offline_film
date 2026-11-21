@@ -1,5 +1,16 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
+## 2026-11-21 — NVP-INT-LU-01E-GPU-01-R2-R1-R1 — Installed SCM control source (PREPARED; PHYSICAL OPEN)
+
+**Same task, one canonical branch/PR:** Qualified predecessor `d13f214a4014e6fcd0ca377b726dc446234396ec` already has focused native Windows/Ubuntu Rust/prost, GPU R2 original Job and independent Windows SCM/CNG negative **PASS**. The earlier Windows `protoc` Chocolatey 504 was recovered by retrying just the failed job on the **same SHA**, with no security waiver. **New prepared successor is NOT yet exact-source qualified.** See [installed SCM control source and physical evidence register](NVP_INT_LU_01E_GPU_01_R2_R1_R1_INSTALLED_SCM_OWNER.md).
+
+**NVP-side progress:** add a fail-closed Win32 SCM control adapter requiring an installer-pinned fixed service image, source-matched one-use creator/GPU-lease registry scope, original user-turn/Job/epoch and native service configuration; never create credentials, keys, SCM service or a second Windows Job. Call `StartService` / authorized `SERVICE_CONTROL_STOP` through the original fixed service; on source timeout keep the stop identity, but never infer GPU quiescence or Lu reload from `STOPPED`. Gate the Lu-connected NVP coordinator on a genuinely constructed installed controller rather than callback-only substitution. Fix native Lu GPU-stop receipt path to a real ProgramData KnownFolder and refuse junctions/reparse directories. Add focused source-negative tests on Windows/Ubuntu. Standalone NVP and exact pinned Lu Protobuf remain unchanged.
+
+**Gates remaining:** qualified Windows native results for this exact successor, independent protected installation/writer for SCM registry/service/picture vs distinct GPU-stop CNG signing keys, genuine Lu verifier enrollment, real AppContainer/SCM Job zero and driver GPU-context quiescence, Radeon R9700 GGUF unload→LTX→durable Core restore, signed negative cancellation/restart/revocation evidence, original PCM protection. **No physical positive acceptance** from a source test or CI run; no main merge or release admission. Do not stack unrelated CONV/WO CI to decide this task.
+
+---
+
+
 ## 2026-11-21 — NVP-INT-LU-01E-GPU-01-R2-R1-R1 — SCM original Job source seam (PREPARED; INSTALLED OPEN)
 
 **Current accepted predecessor:** PR #161 exact `895e5f17f176233e9df88ab675bba2fa3e08cc6c`; Windows/Ubuntu IPC Rust/prost and protected-provider checks PASS; Windows SCM/CNG source/unauthorized-start denial PASS. Exact last source-pin mismatch is fixed. **New source candidate not yet qualified**: Lu-connected LTX must use fixed installed SCM-held original Job instead of Python creating a second Job; native SCM STOP must terminate/reap the same group before P-256 GPU empty receipt. No first-party SCM owner installation, actual Core grant, Radeon VRAM or independent positive receipt is claimed. [Source seam and required physical acceptance](NVP_INT_LU_01E_GPU_01_R2_R1_R1_SCM_SOURCE_BINDING.md). Do not stack CI while the original PR cohort remains nonterminal. Same task, original PR/branch, standalone behavior and security policies preserved.
