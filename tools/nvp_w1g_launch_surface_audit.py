@@ -73,6 +73,15 @@ G03_ALLOWED_ACL_SITES=(
     "subprocess.run(args, capture_output=True, text=True, errors='replace', timeout=120, check=False)",
     "subprocess.run(['icacls', str(work), '/setintegritylevel', '(OI)(CI)L'], capture_output=True, text=True, timeout=30)",
 )
+# Two exact FFmpeg/ffprobe calls originate INSIDE the reviewed SCM-owned
+# AppContainer/Job worker; the independent desktop verifier uses the original
+# W1-G run_owned_subprocess instead. This is NOT a general direct-run grant.
+LTX_SCM_MEDIA_MODULE = "backend/nvp_post01f_ltx_broker.py"
+LTX_SCM_MEDIA_BLOB_SHA1 = "842f86f50f780a6b26deafcba28a15028b69bc13"
+LTX_SCM_MEDIA_SITES = (
+    'subprocess.run(cmd, cwd=str(path.parent), stdin=subprocess.DEVNULL, capture_output=True, shell=False, timeout=90, check=True)',
+    'subprocess.run(command, cwd=str(root), stdin=subprocess.DEVNULL, capture_output=True, shell=False, timeout=600, check=True)',
+)
 OPS=frozenset(("run","Popen","call","check_output","check_call","getoutput",
                "getstatusoutput"))
 ASYNCS=frozenset(("create_subprocess_exec","create_subprocess_shell"))
@@ -102,6 +111,10 @@ def audit_release_launch_surface(root:Path):
         source=file.read_text("utf8")
         raw=source.encode("utf8")
         hashes.append(key+":"+sha256(raw).hexdigest())
+        if key==LTX_SCM_MEDIA_MODULE:
+            blob=b"blob "+str(len(raw)).encode("ascii")+b"\0"+raw
+            if sha1(blob).hexdigest()!=LTX_SCM_MEDIA_BLOB_SHA1:
+                raise PermissionError("Unreviewed SCM-contained LTX media launcher source")
         if key==G03_HOST_ACL_MODULE:
             # Pin whole original source bytes, not merely an easily preserved
             # marker, before exempting any host-only ACL command.
@@ -110,6 +123,7 @@ def audit_release_launch_surface(root:Path):
                 raise PermissionError("Unreviewed original AppContainer ACL host source")
         tree=ast.parse(source,filename=str(file))
         g03_host_sites=[]
+        ltx_scm_sites=[]
         aliases={"subprocess":"subprocess","asyncio":"asyncio","os":"os"}
         from_calls={}
         for node in ast.walk(tree):
@@ -144,12 +158,20 @@ def audit_release_launch_surface(root:Path):
                 # original call ASTs must match this reviewed host ACL fixture.
                 g03_host_sites.append(ast.unparse(node))
                 continue
+            if key==LTX_SCM_MEDIA_MODULE and module=="subprocess" and action=="run":
+                # Actual SCM service owns the lowbox+non-breakaway Job and
+                # these two call sites each require the current token+Job.
+                # Exact AST plus exact source blob; no new command is licensed.
+                ltx_scm_sites.append(ast.unparse(node))
+                continue
             if module!="subprocess" or action not in ALLOWED.get(key,set()):
                 unregistered.append(key+":"+str(node.lineno)+":"+module+"."+action)
                 continue
             seen.setdefault(key,set()).add(action)
         if key==G03_HOST_ACL_MODULE and tuple(sorted(g03_host_sites))!=tuple(sorted(G03_ALLOWED_ACL_SITES)):
             raise PermissionError("Unreviewed original AppContainer ACL host launch sites")
+        if key==LTX_SCM_MEDIA_MODULE and tuple(sorted(ltx_scm_sites))!=tuple(sorted(LTX_SCM_MEDIA_SITES)):
+            raise PermissionError("Unreviewed SCM-contained LTX media launch site")
     # Fail if an allowed source disappeared, was renamed or lost its explicit
     # platform-level non-Windows boundary; otherwise new Popen would slip in.
     for key,operations in ALLOWED.items():

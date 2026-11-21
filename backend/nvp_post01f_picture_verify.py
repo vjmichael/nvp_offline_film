@@ -13,7 +13,8 @@ import re
 import subprocess
 
 from backend.nvp_post01f_ltx_native_handoff import MAX_PICTURE, digest_file, _sha
-from backend.nvp_post01f_ltx_broker import _probe_media
+from backend.nvp_w1g_owned_subprocess import run_owned_subprocess
+from backend.nvp_post01f_ltx_broker import MAX_PROBE
 
 FRAME_RE = re.compile(r"[0-9a-f]{32}\Z")
 MAX_FRAMEMD5 = 768 * 1024
@@ -29,7 +30,35 @@ def verify_picture_frames(path: Path, plan: dict, expected_sha256: str, *,
         if (not Path(executable).is_absolute() or Path(executable).is_symlink() or
             digest_file(Path(executable), 256 * 1024 * 1024) != _sha(expected)):
             raise PermissionError("Independent picture decoder executable is unpinned")
-    metadata = _probe_media(Path(ffprobe), source)
+    # This independent verifier runs in the protected desktop host, NOT the
+    # SCM-owned model AppContainer. Every ffprobe/ffmpeg process therefore
+    # uses W1-G's original Windows Job/release-fence subprocess broker.
+    command_probe = [str(ffprobe), '-v', 'error', '-count_frames', '-show_entries',
+                     'stream=nb_read_frames,index,codec_type,width,height,avg_frame_rate',
+                     '-of', 'json', str(source)]
+    checked = run_owned_subprocess(command_probe, cwd=str(source.parent),
+                                   stdin=subprocess.DEVNULL, capture_output=True,
+                                   timeout=90, check=True)
+    if not isinstance(checked.stdout, bytes) or len(checked.stdout) > MAX_PROBE:
+        raise PermissionError('Independent pinned native media probe unbounded')
+    import json
+    value = json.loads(checked.stdout)
+    streams = value.get('streams')
+    if type(streams) is not list or not streams:
+        raise PermissionError('Native media probe returned no streams')
+    videos = [v for v in streams if v.get('codec_type') == 'video']
+    audio = [v for v in streams if v.get('codec_type') == 'audio']
+    if len(videos) != 1 or len(videos) + len(audio) != len(streams):
+        raise PermissionError('Native picture has unreviewed streams')
+    try:
+        from fractions import Fraction
+        v = videos[0]
+        metadata = {'frames': int(v['nb_read_frames']),
+                    'fps': Fraction(v['avg_frame_rate']),
+                    'width': v['width'], 'height': v['height'],
+                    'audio_streams': len(audio)}
+    except (KeyError, ValueError, ZeroDivisionError) as exc:
+        raise PermissionError('Native picture probe geometry or FPS missing') from exc
     if (metadata["frames"] != plan["display_frames"] or metadata["fps"] != Fraction(24,1)
         or metadata["width"] != plan["width"] or metadata["height"] != plan["height"]
         or metadata["audio_streams"] != 0):
@@ -37,8 +66,8 @@ def verify_picture_frames(path: Path, plan: dict, expected_sha256: str, *,
     command = [str(ffmpeg), "-hide_banner", "-v", "error", "-nostdin", "-i", str(source),
                "-map", "0:v:0", "-an", "-sn", "-dn", "-fps_mode", "passthrough",
                "-f", "framemd5", "-"]
-    result = subprocess.run(command, cwd=str(source.parent), stdin=subprocess.DEVNULL,
-                            capture_output=True, timeout=180, shell=False, check=True)
+    result = run_owned_subprocess(command, cwd=str(source.parent), stdin=subprocess.DEVNULL,
+                            capture_output=True, timeout=180, check=True)
     if len(result.stdout) > MAX_FRAMEMD5:
         raise PermissionError("Excessive independent native frame readback")
     lines = [x.strip() for x in result.stdout.decode("ascii").splitlines()]

@@ -27,6 +27,7 @@ from backend.nvp_post01f_ltx_native_handoff import (
     _write_new,
 )
 from backend.nvp_post01f_ltx_native_command import build_layout_to_render_argv
+from backend.nvp_post01f_scm_lowbox_guard import require_current_scm_lowbox_job
 
 LOCK_FORMAT = "nvp.post01f.installed_ltx_runtime_lock.v1"
 LOCK_NAME = "nvp_ltx_runtime.lock.json"
@@ -154,6 +155,7 @@ def _probe_media(ffprobe: Path, path: Path) -> dict:
     cmd = [str(ffprobe), "-v", "error", "-count_frames", "-show_entries",
            "stream=nb_read_frames,index,codec_type,width,height,avg_frame_rate",
            "-of", "json", str(path)]
+    require_current_scm_lowbox_job()
     completed = subprocess.run(cmd, cwd=str(path.parent), stdin=subprocess.DEVNULL,
                                capture_output=True, shell=False, timeout=90, check=True)
     if len(completed.stdout) > MAX_PROBE:
@@ -197,6 +199,7 @@ def conform_picture_only(*, stage: Path, plan: dict, installed: dict) -> dict:
         "-protocol_whitelist", "file", "-i", str(source),
         "-map", "0:v:0", "-an", "-sn", "-dn", "-frames:v", str(plan["display_frames"]),
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-fps_mode", "passthrough", "-n", str(picture)]
+    require_current_scm_lowbox_job()
     subprocess.run(command, cwd=str(root), stdin=subprocess.DEVNULL, capture_output=True,
                    shell=False, timeout=600, check=True)
     # Original model mp4 may have generated audio. It must never persist after

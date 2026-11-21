@@ -111,8 +111,10 @@ class LockContract(unittest.TestCase):
 
     def test_full_installed_lock_verifies(self):
         got=read_pinned_install(self.exe,H(self.raw))
-        self.assertEqual(Path(got['python']),self.exe)
-        self.assertEqual(Path(got['lora']),Path(self.files['lora']['path']))
+        # Windows temporary folders may be spelled with 8.3 short aliases.
+        # Compare the actual opened file identity, never a path string.
+        self.assertTrue(Path(got['python']).samefile(self.exe))
+        self.assertTrue(Path(got['lora']).samefile(Path(self.files['lora']['path'])))
 
     def test_license_model_asset_drift_refuses(self):
         (self.root/'lora.bin').write_bytes(b'tamper')

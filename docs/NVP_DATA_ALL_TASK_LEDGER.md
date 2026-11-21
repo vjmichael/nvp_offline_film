@@ -1,6 +1,16 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
 
+## 2026-11-20 — POST-01F R5-R2-R1 source-locked CI regression reconciliation (REPAIR PREPARED; native gates OPEN)
+
+**Original exact PR #161 commit:** `fba82b38aed7d0068c8db84d8261fde1d9b3357e`; all 45 original workflows require terminal unchanged-SHA disposition. No automatic retry/CI stacking, new branch, new PR or mainline merge. Three observed failed runs: INT-02C/W1-G #44860163965 and Gate 1 #44860164917 rejected three unauthorized media launches in the newly added LTX adapter/independent verifier; dedicated Windows SCM/CNG #44860170995 had 69 passed/one failed test (Windows 8.3 temp path alias) and skipped C++ compilation. Legacy native SCM/Blender passes do **not** prove new LTX SCM signer.
+
+**Reviewed consolidated repair:** restore desktop independent picture FFprobe/FFmpeg through pre-existing W1-G protected `run_owned_subprocess` with original exact argument contract; independently deny two fixed LTX-worker media subprocesses unless native lowbox token + Windows Job are present; add exact broker Git blob and exact two call-site AST pins to the existing fail-closed W1-G launch audit; use `Path.samefile` in the Windows short/long path test. No blanket allowlist, removal of original tests or release-gate weakening. Candidate Python compile and 75 source/media tests pass locally using an explicitly **test-only Linux shim** for the absent original W1-G module; not native original test acceptance.
+
+**Required before R5-R2-R1 closure:** finish and reconcile all original 45-run conclusions; publish a single reviewed fast-forward SHA to existing PR #161 only when no source/CI conflict; rerun unchanged original W1-G Linux+Windows audits; obtain genuine MSVC CNG service compilation, unapproved-service denial and independent installed receipts. Later obtain one-use SCM-owned *positive* AppContainer/Job/WFP/EFS/DPAPI signing and encrypted filmmaker preview/review; real Radeon AI Pro R9700 LTX visual generation and sound conform separately. Preserve exact R1/R2 reconciliation and CONV-12/13/14 requirements. See `docs/NVP_POST01F_R5R2_SOURCE_AND_NATIVE_CI_RECONCILIATION.md` and issue #162.
+
+---
+
 ## 2026-11-20 — OWNER DIRECTION: NVP-POST-01 low-poly filming and LTX-2.5 presentation overhaul (ACTIVE; design documented, implementation OPEN)
 
 Authority: [issue #162](https://github.com/vjmichael/nvp_offline_film/issues/162) and [design specification revision 2](https://github.com/vjmichael/nvp_offline_film/issues/162#issuecomment-7036120677). The owner now authorizes this redesign, superseding the November 15 deferral of production/post-production work, but not the single-main, existing-branch/PR, original-source preservation, security, acceptance, or independent main-merge requirements. Use existing draft PR #161 / nvp/mainline-convergence-20261113; no new branch or PR, no overlapping CI batches. Preserve all earlier accepted functionality and evidence; reconcile replacements through explicit behavioral adjudication, not deletion or waived tests.
