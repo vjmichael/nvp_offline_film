@@ -1,0 +1,19 @@
+[package]
+name = "nvp-lu-ipc-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+# Standalone NVP-side consumer of Lu-owned draft .proto. No Lu runtime,
+# Lu native registry or Lu source is built into the NVP installer.
+[dependencies]
+prost = "0.14"
+sha2 = "0.10"
+getrandom = "0.2"
+tokio = { version = "1", features = ["io-util", "time", "net", "rt", "macros"] }
+
+[build-dependencies]
+prost-build = "0.14"
+protoc-bin-vendored = "3"
+sha1 = "0.10"

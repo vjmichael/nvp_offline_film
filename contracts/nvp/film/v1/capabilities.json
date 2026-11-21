@@ -1,0 +1,83 @@
+{
+  "module_id": "nvp.film",
+  "module_role": "MODULE_ROLE_WORKSPACE",
+  "lu_workspace_wire_major": 1,
+  "lu_workspace_wire_minor": 0,
+  "schema_status": "draft_unregistered_no_permissions",
+  "capabilities": [
+    {
+      "id": "nvp.film.project.read",
+      "input": "ProjectReadRequest",
+      "output": "ProjectReadResult",
+      "effect_classes": [
+        "READ_WORKSPACE"
+      ],
+      "version": 1
+    },
+    {
+      "id": "nvp.film.scene.read",
+      "input": "SceneReadRequest",
+      "output": "SceneReadResult",
+      "effect_classes": [
+        "READ_WORKSPACE"
+      ],
+      "version": 1
+    },
+    {
+      "id": "nvp.film.story.propose",
+      "input": "StoryProposalRequest",
+      "output": "StoryProposalResult",
+      "effect_classes": [
+        "WRITE_WORKSPACE"
+      ],
+      "version": 1
+    },
+    {
+      "id": "nvp.film.project.commit",
+      "input": "ProjectCommitRequest",
+      "output": "ProjectCommitResult",
+      "effect_classes": [
+        "WRITE_WORKSPACE"
+      ],
+      "version": 1
+    },
+    {
+      "id": "nvp.film.render.shot",
+      "input": "RenderShotRequest",
+      "output": "RenderShotResult",
+      "effect_classes": [
+        "EXECUTE",
+        "WRITE_WORKSPACE"
+      ],
+      "version": 1
+    },
+    {
+      "id": "nvp.film.picture.review.read",
+      "input": "PictureReviewReadRequest",
+      "output": "PictureReviewReadResult",
+      "effect_classes": [
+        "READ_WORKSPACE"
+      ],
+      "version": 1
+    },
+    {
+      "id": "nvp.film.picture.review.decide",
+      "input": "PictureReviewDecisionRequest",
+      "output": "PictureReviewDecisionResult",
+      "effect_classes": [
+        "WRITE_WORKSPACE"
+      ],
+      "version": 1
+    },
+    {
+      "id": "nvp.film.edit.export",
+      "input": "FilmExportRequest",
+      "output": "FilmExportResult",
+      "effect_classes": [
+        "EXECUTE",
+        "WRITE_WORKSPACE"
+      ],
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,444 @@
+import React,{useEffect,useRef,useState} from 'react';
+
+const FORMAT='nvp.wo5.finished_dcp_pcm24_picture_review.v1';
+const FPS=24, RATE=48000, SAMPLES=2000;
+const BUFFER=16, PREROLL=8, AHEAD=0.75;
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+export function requireAheadOfAudioClock(plannedStart,currentTime){
+  // WebAudio starts late nodes immediately. That would pair picture frame N
+  // with sound heard at N+1. Never silently accept an already-expired cue.
+  if(!Number.isFinite(plannedStart)||!Number.isFinite(currentTime)||
+     plannedStart<currentTime+0.005)
+    throw Error('Finished-film audio missed its exact presentation deadline');
+  return plannedStart;
+}
+export function requireContinuousPicture(lastPainted,nextFrame){
+  // rAF can be throttled when the window is hidden. An unseen skipped
+  // picture cannot be counted as a complete film review.
+  if(!Number.isInteger(lastPainted)||!Number.isInteger(nextFrame)||
+     nextFrame<lastPainted || nextFrame>lastPainted+1)
+    throw Error('Finished-film picture skipped a required presentation frame');
+  return nextFrame;
+}
+
+export function checkFinishedFrame(packet,expected){
+  if(!packet||packet.format!==FORMAT||
+     packet.status!=='DECODED_PUBLISHED_FINAL_FRAME'||
+     packet.frame_index!==expected||
+     packet.picture_24fps_film_time_tick!==expected*294000000||
+     packet.audio_start_sample!==expected*SAMPLES||
+     packet.audio_samples!==SAMPLES||
+     !packet.picture_and_sound_from_final_published_mxf||
+     packet.production_accepted!==false||
+     !Number.isInteger(packet.picture_width)||
+     !Number.isInteger(packet.picture_height)||
+     packet.picture_width<1||packet.picture_height<1||
+     packet.picture_width>1024||packet.picture_height>1024||
+     typeof packet.picture_png_base64!=='string'||
+     packet.picture_png_base64.length>4*1024*1024||
+     typeof packet.stereo_pcm16_base64!=='string'||
+     packet.stereo_pcm16_base64.length>16000||
+     !/^[A-Za-z0-9+/]+={0,2}$/.test(packet.picture_png_base64)||
+     !/^[A-Za-z0-9+/]+={0,2}$/.test(packet.stereo_pcm16_base64)){
+    throw Error('Finished DCP frame/audio receipt rejected; playback stopped.');
+  }
+  return packet;
+}
+
+export function checkFinishedWindow(batch,first){
+  if(!batch || batch.format!==FORMAT ||
+     batch.status!=='DECODED_PUBLISHED_FINAL_WINDOW' ||
+     batch.start_frame!==first ||
+     batch.no_reel_crossing!==true ||
+     batch.production_accepted!==false ||
+     !Number.isSafeInteger(batch.frame_count) ||
+     batch.frame_count<1 || batch.frame_count>4 ||
+     !Array.isArray(batch.frames) ||
+     batch.frames.length!==batch.frame_count)
+    throw Error('Final DCP batch omitted a complete published picture/sound window.');
+  for(let n=0;n<batch.frame_count;n++){
+    checkFinishedFrame(batch.frames[n],first+n);
+    if(batch.frames[n].reel_index!==batch.reel_index)
+      throw Error('Final DCP batch crossed an unapproved reel boundary.');
+  }
+  return batch.frames;
+}
+
+function sampleChannels(base64){
+  const binary=atob(base64);
+  if(binary.length!==SAMPLES*4)
+    throw Error('Native decoded final PCM16 audio window is incomplete');
+  const left=new Float32Array(SAMPLES),right=new Float32Array(SAMPLES);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+  const view=new DataView(bytes.buffer);
+  for(let i=0;i<SAMPLES;i++){
+    left[i]=view.getInt16(4*i,true)/32768;
+    right[i]=view.getInt16(4*i+2,true)/32768;
+  }
+  return [left,right];
+}
+async function decodedPicture(base64){
+  const img=new Image();
+  const src='data:image/png;base64,'+base64;
+  if(img.decode){img.src=src;await img.decode();}
+  else await new Promise((resolve,reject)=>{
+    img.onload=resolve;img.onerror=()=>reject(Error('Finished picture unavailable'));img.src=src;
+  });
+  return img;
+}
+
+export default function FinishedFilmPlaybackPanel({projectId,featureId,nativeBridge=null}){
+  const [native,setNative]=useState(nativeBridge);
+  const [capability,setCapability]=useState(null);
+  const [status,setStatus]=useState('NOT_STARTED');
+  const [error,setError]=useState('');
+  const [note,setNote]=useState('');
+  const [info,setInfo]=useState(null);
+  const [seek,setSeek]=useState('0');
+  const [position,setPosition]=useState(0);
+  const [playing,setPlaying]=useState(false);
+  const [starting,setStarting]=useState(false);
+  const startingRef=useRef(false);
+  const [presentationReceipt,setPresentationReceipt]=useState(null);
+  const canvas=useRef(null);
+  const ref=useRef({generation:0,active:false});
+
+  useEffect(()=>{
+    if(nativeBridge){setNative(nativeBridge);return;}
+    const discover=()=>{
+      const bridge=window.pywebview?.api;
+      if(bridge && ['wo5_film_capabilities','wo5_film_begin',
+                    'wo5_film_frame','wo5_film_stop'].every(
+                      key=>typeof bridge[key]==='function'))setNative(bridge);
+    };
+    discover();
+    window.addEventListener('pywebviewready',discover);
+    return ()=>window.removeEventListener('pywebviewready',discover);
+  },[nativeBridge]);
+
+  useEffect(()=>{
+    let live=true;
+    setCapability(null);
+    if(native&&projectId&&
+       typeof native.wo5_film_capabilities==='function'){
+      Promise.resolve(native.wo5_film_capabilities()).then(c=>{
+        if(live&&c?.format===FORMAT)setCapability(c);
+      }).catch(e=>{if(live)setError(e.message);});
+    }
+    return ()=>{live=false;};
+  },[native,projectId]);
+
+  const stop=async(silent=false)=>{
+    const r=ref.current;
+    r.generation++;
+    r.active=false;
+    // Fence stale native replies immediately, before any asynchronous cleanup.
+    ref.current={generation:r.generation,active:false};
+    if(r.animation!=null)cancelAnimationFrame(r.animation);
+    for(const node of r.scheduled||[]){
+      try{node.stop();}catch{}
+      try{node.disconnect();}catch{}
+    }
+    r.scheduled=[];
+    if(r.context){try{await r.context.close();}catch{}}
+    if(r.ticket&&r.native){
+      try{await r.native.wo5_film_stop(r.ticket);}catch(e){
+        if(!silent)setError('Playback stopped locally; native grant cleanup failed: '+e.message);
+      }
+    }
+    if(!silent){setPlaying(false);setStatus('STOPPED');}
+  };
+
+  useEffect(()=>()=>{void stop(true);},[featureId,projectId,native]);
+
+  async function begin(){
+    if(!native||!featureId||playing||startingRef.current)return;
+    setError('');setNote('');setPresentationReceipt(null);
+    let start=Number(seek);
+    if(!Number.isSafeInteger(start)||start<0||
+       (info&&start>=info.frame_count)){
+      setError('Select an exact finished-film frame inside the indexed feature.');return;
+    }
+    const Audio=window.AudioContext||window.webkitAudioContext;
+    if(!Audio){setError('A real WebView2 WebAudio device is required for synchronized film review.');return;}
+    // AudioContext must be created/resumed in the ORIGINAL creator click
+    // task, before awaiting native OS confirmation. Chromium can refuse
+    // an audio device resume attempted only after an async permission IPC.
+    // No film data is played before the exact native grant is approved.
+    let ctx=null,activated=null;
+    try{
+      ctx=new Audio({sampleRate:RATE});
+      activated=ctx.resume();
+      // Handle early activation rejection even while native consent is pending.
+      activated.catch(()=>{});
+    }catch(e){
+      if(ctx)try{await ctx.close();}catch{}
+      setError('WebView2 audio activation failed: '+e.message);return;
+    }
+    startingRef.current=true;
+    setStarting(true);
+    const stopping=stop(true);
+    const gen=ref.current.generation;
+    await stopping;
+    if(ref.current.generation!==gen){await ctx.close();startingRef.current=false;setStarting(false);return;}
+    setStatus('APPROVING_NATIVE_READ');
+    let session=null;
+    try{
+      session=await native.wo5_film_begin(projectId,featureId);
+      if(session?.status==='DENIED'){
+        await ctx.close();
+        if(ref.current.generation===gen)setStatus('DENIED');return;
+      }
+      if(ref.current.generation!==gen){
+        await ctx.close();
+        if(session?.session_id)try{
+          await native.wo5_film_stop(session.session_id);
+        }catch{}
+        return;
+      }
+      if(!session||session.format!==FORMAT||
+         session.status!=='FINISHED_DCP_READONLY_READY'||
+         session.native_picture_and_sound_from_published_mxf!==true||
+         session.production_accepted!==false||
+         session.fps!==FPS||session.sound_rate!==RATE||
+         session.sound_samples_per_frame!==SAMPLES||
+         !Number.isInteger(session.frame_count)||
+         session.frame_count<1||!session.session_id)
+        throw Error('Native completed-film session receipt is invalid');
+      if(start>=session.frame_count)throw Error('Seek beyond finished film duration');
+      await activated;
+      if(ref.current.generation!==gen)
+        throw Error('Finished-film playback stopped before audio activation');
+      if(ctx.state!=='running')
+        throw Error('Native WebView2 WebAudio device did not enter running state');
+      // Observe actual WebAudio graph samples during playback, in addition
+      // to verifying native PCM receipts and scheduled source windows.
+      const analyser=ctx.createAnalyser();
+      analyser.fftSize=2048;
+      analyser.smoothingTimeConstant=0;
+      analyser.connect(ctx.destination);
+      const audioProbe=new Float32Array(analyser.fftSize);
+      const c={
+        generation:gen,active:true,native,
+        ticket:session.session_id,context:ctx,
+        first:start,requested:start,loaded:new Map(),scheduled:[],
+        started:false,anchor:0,nextSchedule:start,
+        displayed:start-1,animation:null,lastFrame:session.frame_count-1,
+        painted:0,soundQueued:0,paintedFirst:null,paintedLast:null,
+        analyser,audioProbe,nonSilentAudioCallbacks:0,
+        maximumPictureAudioOffsetMs:0,
+      };
+      ref.current=c;
+      setInfo(session);setPlaying(true);
+      setPosition(start);setStatus('BUFFERING_NATIVE_FINISHED_ESSENCE');
+      const remain=()=>ref.current===c && c.active && c.generation===gen;
+      function schedule(){
+        if(!remain())return;
+        if(!c.started){
+          const preroll=Math.min(PREROLL,session.frame_count-c.first);
+          if(c.loaded.size<preroll)return;
+          c.started=true;
+          c.anchor=ctx.currentTime+0.17;
+          setStatus('PLAYING_FINAL_MXF_AUDIO_CLOCK');
+        }
+        while(c.loaded.has(c.nextSchedule) &&
+              c.anchor+(c.nextSchedule-c.first)/FPS<
+                ctx.currentTime+AHEAD){
+          const item=c.loaded.get(c.nextSchedule);
+          if(item.scheduled)break;
+          const clip=ctx.createBuffer(2,SAMPLES,RATE);
+          clip.getChannelData(0).set(item.audio[0]);
+          clip.getChannelData(1).set(item.audio[1]);
+          const node=ctx.createBufferSource();
+          node.buffer=clip;
+          node.connect(c.analyser);
+          node.onended=()=>{
+            const n=c.scheduled.indexOf(node);
+            if(n>=0)c.scheduled.splice(n,1);
+            try{node.disconnect();}catch{}
+          };
+          node.start(requireAheadOfAudioClock(
+            c.anchor+(c.nextSchedule-c.first)/FPS,ctx.currentTime));
+          c.scheduled.push(node);
+          c.soundQueued++;
+          item.scheduled=true;
+          c.nextSchedule++;
+        }
+      }
+      function tick(){
+        if(!remain())return;
+        try{schedule();}catch(e){
+          setError(e.message);
+          setStatus('FAILED_AUDIO_CLOCK_NOT_REVIEWED');
+          void stop(true);setPlaying(false);return;
+        }
+        if(c.started){
+          c.analyser.getFloatTimeDomainData(c.audioProbe);
+          if(c.audioProbe.some(value=>Math.abs(value)>0.00002))
+            c.nonSilentAudioCallbacks++;
+          const elapsed=ctx.currentTime-c.anchor;
+          if(elapsed>=0){
+            const frame=c.first+Math.floor(elapsed*FPS);
+            if(frame>c.lastFrame){
+              if(c.displayed!==c.lastFrame || c.nextSchedule!==c.lastFrame+1){
+                setError('Final film ended with missing presented picture or audio.');
+                setStatus('FAILED_INCOMPLETE_FILM_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
+              if(c.painted!==c.lastFrame-c.first+1 ||
+                 c.soundQueued!==c.lastFrame-c.first+1){
+                setError('Final film missing displayed canvas frames or queued audio blocks.');
+                setStatus('FAILED_INCOMPLETE_FILM_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
+              setPresentationReceipt({
+                format:'nvp.wo5.screen_web_audio_clock_receipt.v1',
+                first:c.first,last:c.lastFrame,
+                canvasFramesDrawn:c.painted,
+                masteredPcmWindowsQueued:c.soundQueued,
+                webAudioNonSilentRenderCallbacks:c.nonSilentAudioCallbacks,
+                maxPictureAudioOffsetMs:c.maximumPictureAudioOffsetMs,
+                audioContextElapsedSeconds:Math.max(0,ctx.currentTime-c.anchor),
+                continuousCanvasTimeline:true,
+                audibleSpeakersIndependentlyVerified:false,
+                humanDirectorReviewVerified:false,
+                originalFilmAccepted:false,
+              });
+              setStatus('FINISHED_PLAYBACK_REACHED_END_NOT_CREATIVE_APPROVAL');
+              setNote('Decoded final picture/audio reached the last presentation frame. This does not certify that a person watched and heard it.');
+              void stop(true);
+              setPlaying(false);
+              return;
+            }
+            const packet=c.loaded.get(frame);
+            if(!packet||!packet.scheduled){
+              setError('Playback underrun: final DCP picture and/or mastered sound was not ready at the audio clock. No frames skipped; seek back and restart.');
+              setStatus('FAILED_UNDERRUN_NOT_REVIEWED');
+              void stop(true);
+              setPlaying(false);
+              return;
+            }
+            if(frame!==c.displayed){
+              try{requireContinuousPicture(c.displayed,frame);}
+              catch(e){
+                setError(e.message);
+                setStatus('FAILED_SKIPPED_PICTURE_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
+              const target=canvas.current;
+              const paint=target?.getContext('2d');
+              if(!target||!paint){
+                setError('No real WebView canvas available for final film frames.');
+                setStatus('FAILED_NO_CANVAS_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
+              if(target.width!==packet.width)target.width=packet.width;
+              if(target.height!==packet.height)target.height=packet.height;
+              try{paint.drawImage(packet.image,0,0,target.width,target.height);}
+              catch(e){
+                setError('Published final picture could not be painted: '+e.message);
+                setStatus('FAILED_NO_CANVAS_NOT_REVIEWED');
+                void stop(true);setPlaying(false);return;
+              }
+              c.painted++;
+              c.maximumPictureAudioOffsetMs=Math.max(
+                c.maximumPictureAudioOffsetMs,
+                Math.abs(elapsed-(frame-c.first)/FPS)*1000);
+              c.paintedFirst??=frame;
+              c.paintedLast=frame;
+              c.displayed=frame;
+              setPosition(frame);
+              // No full-film frames retained: only a short real-time window.
+              for(const n of c.loaded.keys()){
+                if(n<frame-1)c.loaded.delete(n);
+              }
+            }
+          }
+        }
+        c.animation=requestAnimationFrame(tick);
+      }
+      async function pump(){
+        while(remain()&&c.requested<=c.lastFrame){
+          if(c.loaded.size>=BUFFER){
+            await sleep(12);continue;
+          }
+          const n=c.requested;
+          // The native worker can unwrap <=4 final picture and PCM frames
+          // per bounded invocation. It clips at reel boundaries itself.
+          // The original one-frame native path remains real MXF decoding,
+          // never simulated browser video, if the optional batch API is old.
+          const frames=typeof native.wo5_film_window==='function'
+            ? checkFinishedWindow(
+                await native.wo5_film_window(c.ticket,n,
+                  Math.min(4,BUFFER-c.loaded.size)),n)
+            : [checkFinishedFrame(
+                await native.wo5_film_frame(c.ticket,n),n)];
+          for(const frame of frames){
+            if(!remain())return;
+            const image=await decodedPicture(frame.picture_png_base64);
+            if(image.naturalWidth!==frame.picture_width||image.naturalHeight!==frame.picture_height)
+              throw Error('Finished picture dimensions differ from its receipt');
+            const audio=sampleChannels(frame.stereo_pcm16_base64);
+            if(!remain())return;
+            c.loaded.set(frame.frame_index,{
+              image,audio,scheduled:false,width:frame.picture_width,
+              height:frame.picture_height});
+            c.requested++;
+            schedule();
+          }
+        }
+      }
+      c.animation=requestAnimationFrame(tick);
+      void pump().catch(e=>{
+        if(remain()){
+          setError('Native finished film decode stopped: '+e.message);
+          setStatus('FAILED_NATIVE_DECODE_NOT_REVIEWED');
+          void stop(true);setPlaying(false);
+        }
+      });
+    }catch(e){
+      if(ctx){try{await ctx.close();}catch{}}
+      if(session?.session_id){
+        try{await native.wo5_film_stop(session.session_id);}catch{}
+      }
+      if(ref.current.generation===gen){setStatus('UNAVAILABLE');setError(e.message);setPlaying(false);}
+    }finally{startingRef.current=false;setStarting(false);}
+  }
+
+  return <section className="card" aria-label="Finished film picture and sound review">
+    <h3>Watch your finished film</h3>
+    <p className="fineprint">Watch the finished picture and sound together. Your original recordings and exported movie remain unchanged.</p>
+    {error&&<p role="alert">{error}</p>}
+    {note&&<p role="status">{note}</p>}
+    {!capability?.native_finished_mxf_decode_configured&&
+      <p role="status">Finished-film viewing is not yet available on this installation.</p>}
+    <p aria-label="Finished film playback state">{playing?"Playing":status==="APPROVING_NATIVE_READ"?"Waiting for permission":status.startsWith("FAILED")?"Playback interrupted":status==="DENIED"?"Permission declined":"Ready"}</p>
+    {presentationReceipt&&<output aria-label="Native finished film presentation receipt"
+      data-nvp-film-av-receipt={JSON.stringify(presentationReceipt)}>
+      Playback reached the end of this presentation. Confirm separately what you watched and heard.
+    </output>}
+    <canvas ref={canvas} width={512} height={270} role="img"
+      aria-label="Decoded finished DCP picture at its audio-clock Film Time"
+      style={{width:'100%',height:'auto',background:'#090b12',aspectRatio:'16/9'}}/>
+    <p className="fineprint">Output frame: {position} ·
+      {info ? (position/24).toFixed(3)+' / '+(info.frame_count/24).toFixed(3)+' seconds'
+        : 'Waiting for a verified native film'}
+      · 48kHz stereo monitoring downmix (not calibrated cinema surround)</p>
+    <label>Seek to exact 24fps finished-film frame
+      <input aria-label="Finished film frame seek"
+        type="number" min={0} step={1}
+        max={Math.max(0,(info?.frame_count||1)-1)}
+        disabled={playing||starting} value={seek} onChange={e=>setSeek(e.target.value)}/>
+    </label>
+    <div className="actions">
+      <button disabled={!native||playing||starting||!featureId||
+        !capability?.native_finished_mxf_decode_configured}
+        onClick={begin}>Play Finished Film</button>
+      <button disabled={!playing&&!starting} className="secondary"
+        onClick={()=>void stop()}>Stop</button>
+    </div>
+    <p className="fineprint">If picture or sound falls behind, playback stops rather than skipping footage. This is a screen and stereo preview, not a theater screening.</p>
+  </section>;
+}

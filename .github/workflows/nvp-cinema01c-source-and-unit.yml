@@ -1,0 +1,46 @@
+name: NVP CINEMA-01C source snapshot and duration acceptance
+
+on:
+  push:
+    branches:
+      - nvp/cinema01c-duration-lineage-replay-20261103
+  pull_request:
+    branches:
+      - nvp/cinema01b-jpeg2000-mxf-evidence-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-duration-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Save exact source for independent local FilmIndex replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip -qr nvp_cinema01c_source.zip backend tools tests requirements-foundation.txt
+          sha256sum nvp_cinema01c_source.zip | tee nvp_cinema01c_source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvp-cinema01c-exact-source
+          path: |
+            nvp_cinema01c_source.zip
+            nvp_cinema01c_source.sha256
+          retention-days: 7
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-foundation.txt httpx trimesh numpy
+      - name: Compile modules and run duration regression suite
+        run: |
+          python -m compileall -q backend tests tools
+          python -m unittest discover -s tests -p 'test_cinema_duration.py' -v
+          python -m unittest discover -s tests -p 'test_cinema_essence.py' -v
+          python -m unittest discover -s tests -p 'test_cinema_dcp.py' -v

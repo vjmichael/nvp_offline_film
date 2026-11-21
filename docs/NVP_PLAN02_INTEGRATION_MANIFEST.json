@@ -1,0 +1,260 @@
+{
+  "format": "nvp.plan02.canonical_data_first_integration.v1",
+  "inspected_at_utc": "2026-11-10",
+  "canonical": {
+    "repository": "vjmichael/nvp_offline_film",
+    "branch": "nvp/data-av01-native-scene-playback-20261106",
+    "inspected_source_sha256": "bf4cd892d5a2c7f1268af1e594ed828b52ecea8a",
+    "pr": 74,
+    "draft": true,
+    "kind": "integration_baseline_not_accepted_release"
+  },
+  "contract": {
+    "film_time_ticks_per_second": 7056000000,
+    "authoritative_objects": [
+      "FilmIndex immutable Digital Take",
+      "OpenUSD Film World",
+      "original ActorID/performance",
+      "integer Film Time events",
+      "SHA-addressed recorded PCM source"
+    ],
+    "derivative_only": [
+      "sampled picture frames",
+      "preview PNG/AVI",
+      "final 2D presentation",
+      "camera render caches"
+    ],
+    "ffmpeg_in_any_active_path": false,
+    "model_grants_native_authority": false,
+    "creator_approval_required_for_mutations": true,
+    "worker_custody_required_for_retry": true
+  },
+  "observed": {
+    "data_av01": {
+      "run_id": 42742932991,
+      "source_sha256": "bf4cd892d5a2c7f1268af1e594ed828b52ecea8a",
+      "jobs_passed": 7,
+      "jobs_failed": 0,
+      "status": "PASS_TESTED_SCOPE_ONLY",
+      "physical_creator_hardware_acceptance": false
+    },
+    "slate08b": {
+      "run_id": 42742933208,
+      "source_sha256": "bf4cd892d5a2c7f1268af1e594ed828b52ecea8a",
+      "native_matrix_passed": 4,
+      "react_job_status": "FAILED",
+      "status": "REPAIR_ON_CANONICAL_SOURCE"
+    },
+    "legacy_01t": {
+      "run_id": 42748959937,
+      "source_sha256": "f7b07ed46abe857f4e2dd23ba0c79a5053f67bfd",
+      "status": "FAILED_DIFFERENT_SOURCE",
+      "issues": [
+        "durable queue authorization test mismatch",
+        "Blender worker exited 70",
+        "FFmpeg/ffprobe final conform violates canonical policy"
+      ]
+    },
+    "camfx05": {
+      "run_id": 42747063991,
+      "source_sha256": "7b4c36839daa3cb801399ec3f63ce3c101dc16f6",
+      "status": "PASS_ISOLATED_NATIVE_RENDER_ONLY"
+    },
+    "camfx04": {
+      "run_id": 42748202318,
+      "source_sha256": "7ed65308db8f5d59c3fe57e32fc73ce1eab20758",
+      "status": "PASS_ISOLATED_GGUF_SMOKE_ONLY"
+    }
+  },
+  "sources": [
+    {
+      "id": "PR74",
+      "pr": 74,
+      "head": "bf4cd892d5a2c7f1268af1e594ed828b52ecea8a",
+      "decision": "KEEP_CANONICAL",
+      "group": "A",
+      "modules": [
+        "backend/nvp_exact_time_shots.py",
+        "backend/nvp_data_first_filming.py",
+        "backend/nvp_data_av_scene.py",
+        "backend/nvp_data_av_source.py",
+        "backend/nvp_data_av_desktop.py",
+        "backend/nvp_final_2d_native.py",
+        "tools/nvp_no_ffmpeg_contract.py"
+      ]
+    },
+    {
+      "id": "DA05B",
+      "pr": 75,
+      "head": "bacb5b16dc475862a2221aacbec5273f7c46491a",
+      "decision": "SELECTIVE_PORT",
+      "group": "B",
+      "modules": [
+        "native output no-clobber",
+        "PNG/PCM hash and integrity"
+      ]
+    },
+    {
+      "id": "DA0506",
+      "pr": 76,
+      "head": "df4cb514ea9f32633eaa2362656eedd478c8682b",
+      "decision": "SELECTIVE_PORT",
+      "group": "B",
+      "modules": [
+        "live original capture",
+        "spatial source sound",
+        "bounded native playback",
+        "non-destructive color",
+        "non-FFmpeg derivative export"
+      ]
+    },
+    {
+      "id": "DA02E",
+      "pr": 83,
+      "head": "8632bbcf58225af909ee0f07ee0c6cf0026492e4",
+      "decision": "SELECTIVE_PORT",
+      "group": "B",
+      "modules": [
+        "independent native audio ADC clocks",
+        "source time mapping"
+      ]
+    },
+    {
+      "id": "SLATE08B",
+      "pr": 67,
+      "head": "bf4cd892d5a2c7f1268af1e594ed828b52ecea8a",
+      "decision": "REPAIR_PRESENT_CANONICAL_PATH",
+      "group": "A",
+      "modules": [
+        "native camera ticket",
+        "React stale/cancel bridge"
+      ],
+      "note": "head records canonical tested SHA, not PR #67's independent head"
+    },
+    {
+      "id": "CAMFX05",
+      "pr": null,
+      "head": "7b4c36839daa3cb801399ec3f63ce3c101dc16f6",
+      "decision": "ADAPT_EXACT_TIME",
+      "group": "C",
+      "modules": [
+        "typed camera rails",
+        "OpenUSD camera layers",
+        "independent Cycles visual smoke"
+      ]
+    },
+    {
+      "id": "CAMFX04",
+      "pr": null,
+      "head": "7ed65308db8f5d59c3fe57e32fc73ce1eab20758",
+      "decision": "ADAPT_UNTRUSTED_MODEL",
+      "group": "C",
+      "modules": [
+        "genuine GGUF source-grounded candidate",
+        "unapproved review"
+      ]
+    },
+    {
+      "id": "WO6_07F",
+      "pr": 104,
+      "head": "638d5e8f6be787d75ccbfdd50ed7ea73007cbf2a",
+      "decision": "SELECTIVE_PORT",
+      "group": "D",
+      "modules": [
+        "native OpenUSD CPU raster",
+        "audio-led picture windows"
+      ]
+    },
+    {
+      "id": "FILM01S_T",
+      "pr": 142,
+      "head": "f7b07ed46abe857f4e2dd23ba0c79a5053f67bfd",
+      "decision": "EXTRACT_MECHANISMS_REWRITE_LEGACY",
+      "group": "D",
+      "modules": [
+        "SQLite batch queue",
+        "native protected render receipts",
+        "resource admission"
+      ],
+      "reject": [
+        "FFmpeg final mux/conform",
+        "frame-index native source authority",
+        "unverified worker custody"
+      ]
+    },
+    {
+      "id": "FILM02M",
+      "pr": 148,
+      "head": "6215f53b5a975d46674886bb9e2e50074b45ac32",
+      "decision": "SELECTIVE_PORT",
+      "group": "E",
+      "modules": [
+        "reusable USD geometry and asset revisions",
+        "native authored source layers",
+        "reviewed scene proposals"
+      ],
+      "reject": [
+        "blind merge of descendant 01T code",
+        "unverified external USD payloads"
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "A",
+      "title": "Canonical source and camera regression",
+      "requires": [],
+      "acceptance": "Same-head original-source contract, SLATE-08B React fixes, no FFmpeg"
+    },
+    {
+      "id": "B",
+      "title": "Native original capture and synchronized data A/V",
+      "requires": [
+        "A"
+      ],
+      "acceptance": "Time/SHA-verified original device capture, source-immutable picture/sound and restart"
+    },
+    {
+      "id": "C",
+      "title": "Typed camera rails and untrusted model review",
+      "requires": [
+        "A",
+        "B"
+      ],
+      "acceptance": "Approved exact-time camera edit with genuine local-model advice and zero automatic grants"
+    },
+    {
+      "id": "D",
+      "title": "Derivative renderer and durable source queue",
+      "requires": [
+        "B",
+        "C"
+      ],
+      "acceptance": "Native source/time selection, independent renderer/custody/receipt validation"
+    },
+    {
+      "id": "E",
+      "title": "Native 2D delivery and original USD world building",
+      "requires": [
+        "D"
+      ],
+      "acceptance": "Full original 30s derivative without FFmpeg, immutable source, independent media audits"
+    },
+    {
+      "id": "F",
+      "title": "Installed, physical approval, sustained acceptance and CI closeout",
+      "requires": [
+        "E"
+      ],
+      "acceptance": "One exact-head grouped native gate, separate physical-human and film-quality gates"
+    }
+  ],
+  "forbidden_actions": [
+    "WHOLE_STACK_MERGE",
+    "PROMOTE_ISOLATED_PASS",
+    "FFMPEG_ACTIVE_DELIVERY",
+    "FRAME_INDEX_AS_TAKE_AUTHORITY",
+    "REPLAY_NATIVE_APPROVAL"
+  ],
+  "status": "PLAN02_EVIDENCE_ROUTE_RECORDED_PORTS_UNEXECUTED"
+}

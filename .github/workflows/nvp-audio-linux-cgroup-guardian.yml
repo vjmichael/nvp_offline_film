@@ -1,0 +1,24 @@
+name: NVP AUDIO strict delegated Linux guardian acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  delegated-cgroup-host-crash:
+    name: Actual delegated cgroup v2 guardian + detached descendant
+    runs-on: [self-hosted, linux, nvp-cgroup-v2]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require real kernel delegation, never skip
+        env:
+          NVP_REQUIRE_DELEGATED_CGROUP: '1'
+        run: |
+          python -m unittest discover -s tests -p test_audio_linux_strict_cgroup.py -v
+          python - <<'PY'
+          from backend.nvp_worker_linux_cgroup import current_delegated_parent
+          print("Actual delegated kernel cgroup scope:", current_delegated_parent())
+          PY

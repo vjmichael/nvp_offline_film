@@ -1,0 +1,26 @@
+.director-sound-stage{margin:22px 0;padding:18px;background:#272e38;border:1px solid #655b6b;border-radius:13px}
+.director-sound-header{display:flex;align-items:flex-start;justify-content:space-between;gap:17px;flex-wrap:wrap}
+.director-sound-header h3{font-size:19px;margin:0 0 9px;color:#f3dac3}
+.director-sound-header p{margin:0 0 13px;max-width:630px;line-height:1.6}
+.director-sound-header span{border-radius:18px;border:1px solid #8c725c;padding:7px 12px;color:#f2cfb0;font-size:12px}
+.director-sound-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.director-sound-panel{background:#202833;border:1px solid #595561;border-radius:10px;padding:14px;min-width:0}
+.director-sound-panel h4{font-size:16px;color:#f2d2b1;margin:0 0 13px}
+.director-sound-stage label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#e6d9cb;margin:12px 0}
+.director-sound-stage input[type=range]{width:100%;accent-color:#ddb084}
+.director-sound-stage select,.director-sound-stage textarea{background:#171e2b;border:1px solid #68616a;border-radius:8px;max-width:100%;padding:8px;box-sizing:border-box;color:#f1e6dc;font:inherit}
+.director-sound-panel small{color:#d9b99a;font-size:11px;font-variant-numeric:tabular-nums}
+.director-sound-stage .director-sound-weather{display:flex;flex-direction:row;align-items:center;gap:10px;line-height:1.5}
+.director-sound-weather input{accent-color:#e5b389;width:18px;height:18px}
+.director-sound-approval{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-top:16px;padding-top:16px;border-top:1px solid #5e5868}
+.director-sound-approval p{max-width:590px;line-height:1.55}
+.director-sound-approval strong{font-size:16px}
+.director-sound-history{margin-top:16px;padding:12px;border-radius:8px;border:1px solid #58545f}
+.director-sound-history summary{cursor:pointer;color:#f2c9a4;font-weight:700}
+.director-sound-history>div{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #545061;padding:10px 0}
+.director-sound-error,.director-sound-notice{font-size:13px;line-height:1.55;padding:12px;border:1px solid #aa7279;background:#443438;border-radius:9px;margin:12px 0}
+.director-sound-notice{background:#284238;border-color:#729883}
+.director-sound-stage :is(input,select,textarea,button,summary):focus-visible{outline:3px solid #edc89b;outline-offset:2px}
+@media(max-width:850px){.director-sound-layout{grid-template-columns:1fr}}
+@media(max-width:600px){.director-sound-stage{padding:10px}.director-sound-panel{padding:10px}}
+@media(prefers-reduced-motion:reduce){.director-sound-stage *{transition:none!important;animation:none!important}}

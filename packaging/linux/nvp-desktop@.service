@@ -1,0 +1,19 @@
+[Unit]
+Description=NVP Film Studio managed desktop (%i)
+After=systemd-user-sessions.service
+
+[Service]
+Type=exec
+User=%i
+WorkingDirectory=~
+ExecStartPre=+/usr/bin/python3 -I -B /opt/nvp/service-support/tools/nvp_linux_desktop_recovery_hook.py start %n
+ExecStart=/opt/nvp/NVP --linux-managed-desktop
+ExecStopPost=+/usr/bin/python3 -I -B /opt/nvp/service-support/tools/nvp_linux_desktop_recovery_hook.py stop %n
+Delegate=yes
+DelegateSubgroup=nvp.host
+KillMode=control-group
+SendSIGKILL=yes
+TimeoutStopSec=15s
+Restart=no
+UMask=0077
+NoNewPrivileges=yes

@@ -1,0 +1,123 @@
+name: NVP CONV-12 Real Windows Protected 90x8 Cycles 720 Pixels
+
+# Independent real-pixel native Windows acceptance. No Linux, public fixture
+# sandbox bypass, synthetic PNGs or acceptance of partly rendered movie.
+on:
+  pull_request:
+    paths:
+      - 'tests/test_nvp_conv12_real_private_720_windows.py'
+      - 'backend/nvp_usd_film01q_selected_view_host.py'
+      - 'backend/nvp_usd_film01q_protected_source.py'
+      - 'backend/nvp_blender_worker.py'
+      - 'tools/nvp_usd_film01q_blender_selected_views.py'
+      - '.github/workflows/nvp-conv12-windows-real-protected-720.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-conv12-real-private-720-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  genuine-private-720:
+    name: Genuine Windows EFS AppContainer 90x8 Cycles and cancel/recover
+    runs-on: windows-2025
+    timeout-minutes: 345
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      NVP_CONV12_REAL_PROTECTED_720: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify original frozen SHA rather than PR merge ref
+        shell: pwsh
+        run: |
+          $expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw 'CONV12 real native source checkout is not frozen PR head' }
+          Write-Host "CONV12_REAL_720_EXACT_SOURCE_HEAD=$actual"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual original OpenUSD and native Windows Job dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install -r requirements-foundation.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Original film foundation unavailable' }
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned native OpenUSD unavailable' }
+          python -m pip install 'Pillow>=10,<13' pywin32
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows picture and Job verifier unavailable' }
+          python -c "from pxr import Usd; import PIL,win32job,win32process; print('CONV12_REAL_NATIVE_LIBRARIES_PASS')"
+          if ($LASTEXITCODE -ne 0) { throw 'Native packages cannot be imported' }
+      - name: Install real SHA-pinned Blender in OS Program Files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          choco install blender --no-progress -y --limit-output
+          if ($LASTEXITCODE -ne 0) { throw 'Genuine Blender not installed' }
+          $bins=Get-ChildItem 'C:\Program Files\Blender Foundation' -Filter blender.exe -File -Recurse -ErrorAction SilentlyContinue
+          $bin=$bins | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $bin) { throw 'No installed Blender under native Program Files' }
+          $digest=(Get-FileHash $bin.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -notmatch '^[a-f0-9]{64}$') { throw 'Native Blender lacks actual SHA256' }
+          & $bin.FullName -b --version
+          if ($LASTEXITCODE -ne 0) { throw 'Native Blender version unavailable before source staging' }
+          "NVP_CONV12_PINNED_BLENDER=$($bin.FullName)" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_CONV12_EVIDENCE_PATH=$(Join-Path $env:RUNNER_TEMP 'conv12-native-720-verified.json')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "CONV12_REAL_PINNED_BLENDER_SHA256=$digest"
+      - name: Prove actual Windows EFS directory and inherited file encryption
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          @'
+          import tempfile
+          from pathlib import Path
+          from backend.nvp_w1g_encrypted_source import require_efs_stage,verify_efs_inputs
+          with tempfile.TemporaryDirectory(prefix="nvp-conv12-efs-") as dirname:
+              root=Path(dirname)
+              require_efs_stage(root)
+              (root/"source.usda").write_bytes(b"#usda 1.0\n")
+              verify_efs_inputs(root,names=("source.usda",))
+              print("CONV12_GENUINE_WINDOWS_EFS_AND_INHERITED_FILE_PASS",flush=True)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows EFS unavailable; protected film must fail closed' }
+      - name: Execute real OS-owned cancellation and ALL 90x8 selected Cycles chunks
+        shell: pwsh
+        timeout-minutes: 320
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m tools.nvp_perf_acceptance cycles
+          if ($LASTEXITCODE -ne 0) { throw 'Native OS/EFS/cancel/reopen/720 Cycles acceptance FAILED' }
+          if (-not (Test-Path $env:NVP_CONV12_EVIDENCE_PATH)) { throw '720 selected native images not independently verified' }
+          $proof=Get-Content $env:NVP_CONV12_EVIDENCE_PATH -Raw | ConvertFrom-Json
+          if ($proof.full_720_real_native_selected_pngs_verified -ne $true -or
+              $proof.native_exact_eight_frame_chunks -ne 90 -or
+              $proof.source_cache_efs_verified -ne $true -or
+              $proof.each_native_chunk_efs_verified -ne $true -or
+              $proof.native_windows_unresolved_process_journals -ne 0 -or
+              $proof.actual_human_director_approval -ne $false -or
+              @($proof.per_chunk_native_receipts).Count -ne 90) {
+            throw 'Source verification evidence is incomplete or overclaims native/human acceptance'
+          }
+          Write-Host "CONV12_NATIVE_720_EVIDENCE_SHA256=$((Get-FileHash $env:NVP_CONV12_EVIDENCE_PATH -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - name: Require unchanged original accepted SHA
+        shell: pwsh
+        run: |
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.event.pull_request.head.sha || github.sha }}') {
+            throw 'Original SHA changed during native renderer acceptance'
+          }
+          Write-Host "CONV12_REAL_720_ACCEPTED_SOURCE_SHA=$actual"
+      - name: Upload digest-only original public-fixture evidence (NO source USD or PNGs)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-conv12-windows-real-private-720-audit-digests
+          path: ${{ runner.temp }}/conv12-native-720-verified.json
+          retention-days: 14
+          if-no-files-found: error

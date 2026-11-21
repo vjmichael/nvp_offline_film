@@ -1,0 +1,134 @@
+name: NVP GRADE-UI-01 real FilmIndex grading workspace acceptance
+
+on:
+  push:
+    branches:
+      - nvp/grade-ui01-workspace-preview-20261103
+  pull_request:
+    branches:
+      - nvp/color01b2-prores-dnxhr-graded-master-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-grade-contract:
+    name: Linux grade edit/preview APIs and mastering regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install grading/fastapi acceptance prerequisites
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          python -m pip install 'opencolorio==2.5.2' 'numpy==2.3.4'
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Verify grade edit and API tests plus legacy source/mastering
+        run: |
+          python -m compileall -q backend tools tests
+          python -m unittest discover -s tests -p 'test_grade_workspace.py' -v
+          python -m unittest discover -s tests -p 'test_color_mastering.py' -v
+          python -m unittest discover -s tests -p 'test_color_ocio.py' -v
+          python -m unittest discover -s tests -p 'test_color_exr.py' -v
+      - name: Preserve exact source for independent replay
+        if: always()
+        run: |
+          zip -qr nvp_grade_ui01_sources.zip backend tests tools requirements-foundation.txt
+          sha256sum nvp_grade_ui01_sources.zip > nvp_grade_ui01_source.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-grade-ui01-exact-source
+          path: |
+            nvp_grade_ui01_sources.zip
+            nvp_grade_ui01_source.sha256
+          retention-days: 7
+
+  windows-grade-contract:
+    name: Windows versioned grade and API refusal tests
+    runs-on: windows-2025
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned OCIO and project API requirements
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          python -m pip install 'opencolorio==2.5.2' 'numpy==2.3.4'
+      - name: Compile and run grade and ACES contracts
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH='.'
+          python -m compileall -q backend tests tools
+          if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
+          python -m unittest discover -s tests -p 'test_grade_workspace.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'Grade workspace tests failed' }
+          python -m unittest discover -s tests -p 'test_color_ocio.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'OCIO compatibility failed' }
+
+  react-grade-ui:
+    name: Real React grading panel and guide production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install and build NVP grading workstation frontend
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui
+
+  native-filmin-index-preview:
+    name: Genuine frozen Cycles EXR -> OCIO before/after -> two draft revisions -> independent restart
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real Blender, FFmpeg and pinned OCIO prerequisites
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          python -m pip install 'opencolorio==2.5.2' 'numpy==2.3.4'
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0 ffmpeg
+      - name: Download and SHA-verify actual Blender binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p /tmp/nvp-blender
+          tar -xJf "$archive" -C /tmp/nvp-blender --strip-components=1
+          echo "/tmp/nvp-blender" >> "$GITHUB_PATH"
+      - name: Native real source, before/after PNG, versioned grade, tamper and restart acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_grade_ui01_fixture --out acceptance_artifacts/grade_ui01
+      - name: Preserve native before and after images, FilmIndex and validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-grade-ui01-real-blender-preview-evidence
+          path: acceptance_artifacts/grade_ui01/
+          retention-days: 7
+          if-no-files-found: warn

@@ -1,0 +1,56 @@
+name: NVP STACK-02C3B3 verified CPU estimator and non-destructive model recovery
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b3-estimated-model-recovery-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c3b2-owned-native-lifecycle-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-estimate-recovery:
+    name: Linux B3 strict memory estimate and restart non-eviction
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned official Python SDK
+        run: python -m pip install -r requirements-model-ownership-optional.txt
+      - name: Compile B3 estimate and recovery modules
+        run: python -m compileall -q backend tests/test_model_estimate_recovery.py tools/nvp_stack02c3b3_local_model_acceptance.py
+      - name: Run new strict estimate and provider observation contracts
+        run: python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
+      - name: Preserve B2/B1 regression contracts
+        run: |
+          python -m unittest discover -s tests -p test_owned_native_operations.py -v
+          python -m unittest discover -s tests -p test_resource_scheduler.py -v
+          python -m unittest discover -s tests -p test_resource_governor.py -v
+
+  windows-estimate-recovery:
+    name: Windows B3 strict memory estimate and restart non-eviction
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned official Python SDK
+        run: python -m pip install -r requirements-model-ownership-optional.txt
+      - name: Compile B3 estimate and recovery modules
+        run: python -m compileall -q backend tests/test_model_estimate_recovery.py tools/nvp_stack02c3b3_local_model_acceptance.py
+      - name: Run new strict estimate and provider observation contracts
+        run: python -m unittest discover -s tests -p test_model_estimate_recovery.py -v
+      - name: Preserve B2/B1 regression contracts
+        run: |
+          python -m unittest discover -s tests -p test_owned_native_operations.py -v
+          python -m unittest discover -s tests -p test_resource_scheduler.py -v
+          python -m unittest discover -s tests -p test_resource_governor.py -v

@@ -1,0 +1,44 @@
+# NVP POST-01F-R4 — Installed native LTX broker and signed picture-admission candidate
+
+Date: 2026-11-20 / 2026-11-21 UTC. Destination: existing `nvp/mainline-convergence-20261113` draft PR #161 **only**. Candidate prepared against original inspected head `62267e4a67f07dd6927f07f4b9342fbeaa845231`. **Do not create a branch/PR, change main, start overlapping CI or treat this local work as installed acceptance.** The original R1 and R2 exact-byte archives were not available here. This is source contract reconciliation, not a byte-for-byte merge.
+
+## Delivered source candidate
+
+- `backend/nvp_post01f_ltx_native_handoff.py` — R3 protected host with additional installed runtime-lock pre/post drift check; **mandatory AppContainer return type + original Windows Job release-fence cleanup** and exact model/picture-source authorization; requires an independent signed SCM witness and host model/GPU evidence, then independently decodes picture before issuing `PICTURE_VERIFIED_UNAPPROVED`. Cancelling/stale/foreign outputs fail closed.
+- `backend/nvp_post01f_ltx_native_command.py` — exact documented LTX-2.5 two-stage Layout-to-Render IC-LoRA invocation with **seed pin**, 24 fps, 121 model frames for a five-second/120-frame presentation, derived low-poly layout and approved first-frame still. Raw source and original 48 kHz PCM are never sent to the generation command.
+- `backend/nvp_post01f_ltx_broker.py` — **source implementation**, not an installed executable. An installed reviewed Windows one-directory broker may invoke this fixed `--nvp-ltx-job` entrypoint. It verifies an installed manifest adjacent to the pinned executable and every listed model/checkpoint/LoRA/Gemma/package/codec file; validates exact per-job EFS source and conditioning SHA. It imports the installed `ltx_pipelines.ic_lora.main` in-process under offline settings (not a shell command); an installed approved FFmpeg/ffprobe external media boundary **re-encodes exactly 120 video frames**, removes native generated audio, verifies a sole 24-fps video stream and writes one `picture.mp4`/`result.json` quarantine pair. No publication or creator approval.
+- `backend/nvp_post01f_native_custody.py` — separate real Windows `AppContainerJobProcess` verifier. Existing `nvp_w1g_kernel_custody.verified_native_worker_exit` intentionally accepts only a generic `WindowsJobProcess`, so this module **does not weaken it**. It audits original wrapper/Job/process release-fence and requires `close()` to prove descendant cleanup, ACL recovery and AppContainer profile rollback. **Physical Windows kernel execution was not available for this test.**
+- `backend/nvp_post01f_scm_picture_result.py` — exact Ed25519 signed SCM envelope, bound to original job/project/plan/bootstrap/model-stack/picture SHA, PID and AppContainer SID digest. Mandatory WFP/no-egress, EFS, kernel/SCM provenance, and durable host nonce-consumption gate. The signing key is exclusively owned by the genuine Windows SCM signer, **not** by the worker. Host adapter expects bytes from the reviewed SCM channel and verifies it before quarantine. **SCM service signer, service certificate/key provisioning and native Windows channel are not implemented here.**
+- `backend/nvp_post01f_picture_verify.py` — host-only independent pinned-FFmpeg/ffprobe full-frame `framemd5` readback. It verifies every frame's PTS at 24fps, 120 decoded frames, exact dimensions and zero audio streams, with picture hash recheck. This is a separate host-side decode from the broker's own conform pass.
+
+## Installed runtime lock
+
+`nvp_ltx_runtime.lock.json` belongs next to the reviewed installed broker and is SHA-256-pinned **by the NVP trusted host** as `model_stack_sha256`. Its format is `nvp.post01f.installed_ltx_runtime_lock.v1` and requires exactly:
+
+- `format`, 40-hex reviewed upstream `upstream_commit`, and `install_root` (approved immutable installation directory).
+- `files` with `python` (same reviewed installed broker executable), `checkpoint`, `spatial_upsampler`, `lora`, `ffmpeg`, `ffprobe`, each as `{path:absolute, sha256:hex64}`. No arbitrary process arguments; all paths under installed root.
+- `directories` with `gemma_root` and `ltx_package`, each `{path:absolute, files:{relative_path: sha256}}` with every installed file listed; extra, altered, missing or linked files refused. Installer must produce the **approved real hash/ABI/license lock**. The installed package must be importable in the broker's app sandbox with `ltx_pipelines.ic_lora.__file__` actually under the pinned `ltx_package` directory.
+
+No weights, CUDA/ROCm driver, pip runtime or lock were provisioned here. Binary SHA checks are intentionally streamed and potentially slow for real 22B checkpoints. An installed one-dir build and actual AMD PyTorch dependencies must be qualified; no uncontained/online fallback. `ltx-pipelines` may need temporary caches, GPU kernel compiler artifacts and EFS/AppContainer ACLs that this source contract correctly denies until reviewed rather than bypassed.
+
+## Source tests run in this environment
+
+Run: `python -m unittest discover -s tests -p 'test_nvp_post01f*.py'` from candidate root. **34 passed; Python compileall passed.** Also verified that a source conditioning guide with 121 derived frames at exactly 24fps is admitted while a 120-frame guide or wrong-size art-directed PNG is refused before model loading. Among the tests, an actually encoded and decoded local 121-frame test clip containing generated test-tone AAC audio was conformed to **120 exact 24-fps frames with zero audio streams**, then independently decoded frame-by-frame with `framemd5` and exact PTS verification. This test uses synthetic test-pattern media and the test environment's FFmpeg binaries; it is **not** LTX, AppContainer, Windows SCM, real EFS, R9700, or physical NVP source evidence. Signature and AppContainer-wrapper positive unit tests use synthetic Ed25519 private key and mocked kernel classes respectively; no production signing key or OS evidence was fabricated.
+
+## Mandatory blockers before task closure
+
+1. **Exact R1/R2 archival integration**: recover and review earlier source ZIPs rather than assuming their internal code/ABI matches this reconstruction. Preserve all prior work/acceptance and exact original source hashes.
+2. **Real Windows installed source acceptance**: build a reviewed `--nvp-ltx-job` executable in a pinned, license-reviewed immutable one-dir package; connect actual pinned native AMD PyTorch/ltx-pipelines; prove AppContainer GPU access, SCM ownership, WFP, EFS, release-fence, cancellation/race/guardian death, restart and installed negative cases. Test genuine 5-second original 48k dialogue and two-camera source unchanged.
+3. **Real SCM result signer/service and key custody**: implement and qualify SCM-owned signing private key, noninteractive output witness, PID/SID/plan/picture binding, independently verified source, durable single-use nonce, WFP/no-egress and verified service authorization. A Python boolean, synthetic Ed25519 signature or test fixture is not native SCM proof.
+4. **Encrypted picture publication and filmmaker review**: existing G03 vault has immutable *original* asset semantics; do **not** silently put a derived LTX picture there as an original or perform a new SQLite schema migration. Approve a separate authenticated derivative presentation store and review/retry/reject UI, then test encrypted publication/reopen/crash recovery. Until then `PICTURE_VERIFIED_UNAPPROVED` is **quarantine-only**, not publishable or creator-approved.
+5. **Physical R9700 generation**: independently verify loaded models, real AMD tensors/kernel execution, measured memory/VRAM/wall-time, actual LTX-generated picture frames, 121->120 conform, source/PCM equality, identity/camera/wardrobe continuity across views. Show real preview frames only after authentic generation. The current environment did not generate any LTX image or picture.
+6. **Final source lock / CI**: publish a reviewed batch to the existing PR #161 only, then obtain same-SHA original Windows/Linux native source-gate receipts without overlapping queued CI. A passing predecessor SHA is not R4 acceptance. Keep `CONV-12/13`, `POST-01D/F/G`, owner approval and main merge OPEN.
+
+## Primary source interface
+
+- https://docs.ltx.io/open-source-model/vfx-post-production/layout-to-render/
+- https://github.com/Lightricks/LTX-2/blob/daa6b16fc7f0f1628f2c9e36a303e3312b333cc6/packages/ltx-pipelines/src/ltx_pipelines/ic_lora.py
+
+## Engineering conclusion
+
+R4 now has a **non-mocked media-conform/independent readback demonstration** and tested signed-admission contract, but **not an installed compiled executable, SCM service signer, authenticated encrypted publication, source-locked Windows CI or GPU inference**. It should be accepted as a local source candidate only, not as completed NVP LTX integration.

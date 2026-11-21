@@ -1,0 +1,35 @@
+# PERF-03B — Hierarchical original editorial, compact reel, bounded audio and journal foundation
+
+Scope: host-only original P1-D/E and P1-F/P2 source paths, with existing typed FilmIndex dependencies and separate worker approvals. No user-interface exposure, codec, installer, native process ownership or release change. No completed extended-duration film claim.
+
+## Editorial hierarchy and source integrity
+
+Legacy v1 leaf edits retain their existing 48-cut, per-cut actor, event-page and 128 typed-dependency safety bounds; no change to existing stored hashes. Replace the old 3h leaf duration cap with the exact OpenUSD integer time-code representability bound (2^53-1 ticks). A new v2 hierarchical source edit references at most 64 separately approved child edits per node, at most 3 internal levels, with explicit offsets, child depth, revision ID and SHA-256. It is a composable immutable tree/DAG of existing edits, not a second content database. Reusing one immutable source leaf is allowed with independently approved parent placement; direct repeated references have one typed dependency edge. New root publication needs the distinct exact document-hash creator action, validates direct children before and after confirmation, then guards their exact revisions inside the original FilmIndex write transaction. No auto approval. Direct-child page and leaf-cut page exposes bounded entries. Root read verifies direct immutable references and descriptor; requested picture/audio traverses only overlapping child windows and independently validates actual leaf original Takes and dialogue via unchanged native reader. Descendant validation is lazy by design, not evidence that every unvisited source is currently renderable. Tree depth/fanout are finite initial engineering choices, not film runtime limits. Existing unrelated SlateSequenceAssembly/DigitalSlateBranches and frontend workflows are not migrated by this change.
+
+## Reel address and sound
+
+Compact v2 plan is determined by exact duration, 24fps, 48k sample clock and ten-second finite reel size; no stored full reel array for productions beyond legacy three-hour storage format. Short/legacy v1 plans retain their full original canonical list (bounded to 1,080 reels). Read validates v1/v2 format, typed edge, frozen source edit SHA, derived clock counts, descriptor and all non-authorized output flags. Arithmetic reel lookup + page of at most 64 entries. Pure reel_layout now returns lazy indexed iterable rather than list; existing repository consumers migrated. P1F durable multishot admission, source coverage register, reviewed queue and native receipt reopening use arithmetic reel address and original verified source. Existing 240-frame one-use batch, per-frame original worker authority and exact native receipt checks preserved. Sequential SQLite scans use cursors, not fetchall; history still fully checked (no exclusion of corrupt historical frames). Existing PCM16 stereo audio_window retains source validation and original actor decisions. iter_audio_windows traverses one finite reel with <=4,096 samples (16,384 raw stereo PCM16 bytes) per window, exact global cursor, cancellation and plan re-open before yield. No large single RIFF file, file writer, automatic rendering, duration claim, or native audio worker cap change.
+
+## Production journal
+
+Existing encrypted Windows ProductionJournal still validates entire canonical immutable manifest against every SQL source row; compare streamed cursor via zip_longest so missing/extra or altered rows outside requested page fail. New status_page does read-only WAL snapshot, keyset position + LIMIT <=64 and SQL total/verified counts. Optional expected_project_id checked inside same snapshot before manifest/position query; trusted ProductionMonitor uses it for catalog and inspect_page, redacts paths and retains existing original inspect format and scope checks. No new approval, storage authority, cancellation/restart or worker-state mutation. Full legacy manifest JSON is still parsed (3 MiB/12,000 row admission cap), and existing status and other restart loops still have legacy list interfaces. This is a bounded page/read foundation, not full production-journal manifest migration. Future v2 must use durable paged immutable source receipts while preserving original guarded claims and recovery. 
+
+## Local evidence
+
+Exact changed/new 13 Python files compiled and Git blob matched. Recovered archived source dependency base; original edited files matched current Git source before modification. Nine portable PERF03B tests: real SQLite/FilmIndex hierarchy and reopen with simulated Take/PCM leaves, mocked audio iterator, real journal query/guard with in-memory SQLite fixture (not EFS); 10 existing PERF03A tests, 6 temporal ledger tests, 9 zero-FFmpeg tests and active policy; total 34 distinct local tests passed. Local native pxr/Windows EFS/COM/AppContainer unavailable. Added real-source eight-hour hierarchical actor-audio boundary/read/reopen test to existing native P1DE suite; added native EFS status-page and protected project-monitor tests to existing WO4 suites; these were compiled but not executed locally. Updated former 3h refusal assertion to check 8h success and representable clock ceiling refusal; existing partial-frame refusal preserved. No fake native acceptance.
+
+## Actual local synthetic reel benchmark
+
+Seven trials, median duration for constructing all rows or a final page of 64. One tracemalloc observation per mode; Linux CPU Python 3.13.5. Only pure arithmetic/index data, not full plan open, protected media, GPU or end-to-end rendering. Full-expansion control uses same new iterator materialized as list, not historic executable.
+
+| Duration | Reels | Frames | Samples/ch | Full expand ns | Page ns | Full alloc B | Page alloc B |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 30 min | 180 | 43200 | 86400000 | 55012 | 20270 | 74248 | 24104 |
+| 1 h | 360 | 86400 | 172800000 | 186435 | 19849 | 156744 | 26184 |
+| 3 h | 1080 | 259200 | 518400000 | 344298 | 19739 | 496584 | 26184 |
+| 6 h | 2160 | 518400 | 1036800000 | 816425 | 20840 | 1006344 | 26184 |
+| 8 h | 2880 | 691200 | 1382400000 | 995068 | 24907 | 1351332 | 26696 |
+| 12 h | 4320 | 1036800 | 2073600000 | 1683124 | 22083 | 2042532 | 26696 |
+| 24 h | 8640 | 2073600 | 4147200000 | 3006237 | 22043 | 4116132 | 26696 |
+
+Remaining: hierarchical Slate/continuity graph and native user-facing integration; journal v2 bounded durable paged publication/claim/recovery and legacy migration; avoid repeatedly revalidating entire historical receipt coverage at every batch when a safe authenticated incremental proof exists; actual long-duration PCM master segmentation and source-approved worker reservation/window renewal, DCP/reel format compatibility, RF64 only if supported, output custody, sustained physical GPU and native performance/cancel/crash acceptance. No arbitrary duration caps introduced by this task; representability, fanout/depth, original per-leaf and finite work bounds are explicit. See master ledger for acceptance state.

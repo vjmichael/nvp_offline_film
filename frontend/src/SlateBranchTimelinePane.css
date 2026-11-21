@@ -1,0 +1,100 @@
+.nvp-slate-pane{background:#20222e;color:#ececf2;border:1px solid #3e404d;border-radius:14px;padding:18px;min-width:700px;font:13px/1.4 system-ui,sans-serif}
+.nvp-slate-pane button,.nvp-slate-placeholder button{font:inherit;cursor:pointer;color:#e9e9ef;border:1px solid #515363;border-radius:7px;padding:6px 10px;background:#303343}
+.nvp-slate-pane button:disabled{opacity:.38;cursor:not-allowed}
+.nvp-slate-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.nvp-slate-heading strong{font-size:17px}.nvp-slate-heading p,.nvp-slate-info{font-size:12px;color:#afb3c2;margin:7px 0 14px}
+.nvp-slate-toolbar{display:flex;justify-content:space-between;align-items:end;gap:16px;margin:14px 0;color:#afb3c2}
+.nvp-slate-toolbar label{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.nvp-slate-toolbar select{background:#242633;color:#f3eee9;border:1px solid #555766;padding:8px;border-radius:6px}
+.nvp-slate-gridhead,.nvp-slate-entry{display:grid;grid-template-columns:220px minmax(80px,1fr) 360px;gap:13px;align-items:center;min-width:0}
+.nvp-slate-gridhead{color:#aeb2c0;font-size:11px;padding:8px 0;border-bottom:1px solid #474858}
+.nvp-slate-scroll{position:relative;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.nvp-slate-vertical-dashes{position:absolute;top:0;bottom:0;left:245px;border-left:2px dashed #646875;opacity:.85;pointer-events:none}
+.nvp-slate-entry{position:relative;border-bottom:1px solid #373b4b}
+.nvp-slate-entry.inspected{outline:1px solid #ebba72;outline-offset:-2px;background:#37313b}
+.nvp-slate-name{text-align:left;border:0!important;background:transparent!important;padding:7px 4px!important;display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.nvp-slate-name strong{font-size:12px}.nvp-slate-name small{font-size:11px;color:#aeb2bf}
+.nvp-slate-track{position:relative;height:40px;display:flex;align-items:center}
+.nvp-slate-line{display:block;height:5px;flex:1;border-radius:10px}
+.nvp-slate-line.green,.nvp-slate-swatch.green{background:#13a64e}
+.nvp-slate-line.gray,.nvp-slate-swatch.gray{background:#989eaa}
+.nvp-slate-dash-marker{position:absolute;left:0;top:8px;width:10px;height:25px;border-left:2px dashed #9296a4}
+.nvp-slate-track span{position:absolute;right:8px;top:0;background:#5a4735;color:#fff0d4;padding:2px 5px;border-radius:4px;font-size:10px}
+.nvp-slate-actions{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap}
+.nvp-slate-actions button{padding:6px!important;font-size:10px!important}
+.nvp-slate-actions button:nth-child(2){background:#1f5f3f;border-color:#338c57}
+.nvp-slate-legend{display:flex;gap:16px;flex-wrap:wrap;color:#aeb1c0;font-size:11px;padding:12px 0;border-bottom:1px solid #484a58}
+.nvp-slate-legend span{display:flex;align-items:center;gap:6px}
+.nvp-slate-swatch{display:inline-block;width:18px;height:5px;border-radius:4px}
+.nvp-slate-swatch.focus{background:#f1be77}.nvp-slate-swatch.dashed{border-top:2px dashed #9ca3af}
+.nvp-slate-pane h3{font-size:13px;margin:12px 0}
+.nvp-slate-segments{display:flex;gap:8px;overflow-x:auto;padding:6px 0 14px}
+.nvp-slate-segments button{white-space:nowrap;text-align:left;display:flex;flex-direction:column;gap:2px;background:#1f523d;border-color:#298f56}
+.nvp-slate-segments button.target{outline:2px solid #f1be77}
+.nvp-slate-segments small{font-size:10px;color:#d1d5dd}
+.nvp-slate-placeholder{background:#292a35;color:#e2e5ed;border:1px solid #545667;border-radius:10px;padding:16px;display:flex;gap:12px;align-items:center}
+@media(max-width:850px){.nvp-slate-gridhead,.nvp-slate-entry{grid-template-columns:160px minmax(50px,1fr) 300px;gap:7px}.nvp-slate-pane{min-width:640px}.nvp-slate-vertical-dashes{left:174px}}
+
+/* Selected source subranges from the active edit are green; unselected
+   portions of that SAME Take remain gray. Never paint a whole source line
+   green merely because its branch appears once in a mixed cut. */
+.nvp-slate-range{position:absolute;top:17.5px;height:5px;border-radius:6px;pointer-events:none}
+.nvp-slate-range.green{background:#13a64e}
+
+/* Film data assembly cards, NOT pre-rendered image-frame strips. Every card
+   exposes pinned digital-slate identity, exact source/destination ranges and
+   evidence-separated metadata for humans and AI-assisted proposal review. */
+.nvp-slate-segments{align-items:stretch;gap:10px;scrollbar-width:thin}
+.nvp-slate-assembly-card{
+  flex:0 0 230px!important;max-width:265px;white-space:normal!important;
+  text-align:left;display:flex;flex-direction:column;gap:5px;
+  border:1px solid #3f7052!important;background:#263d36!important;
+  border-radius:11px!important;padding:12px!important;
+  font-size:11px!important;line-height:1.25!important;
+}
+.nvp-slate-assembly-card strong{font-size:13px;color:#ecf8ee}
+.nvp-slate-assembly-card.target{outline:2px solid #edbb79;outline-offset:1px}
+.nvp-slate-card-label{font-size:10px;letter-spacing:.08em;font-weight:700;color:#92d2a5}
+.nvp-slate-card-sub,.nvp-slate-card-time,.nvp-slate-card-id{font-size:10px;color:#c3d0c6}
+.nvp-slate-card-tags{color:#f2e0ad;font-weight:600}
+.nvp-slate-card-warning{color:#f4cc8e}
+.nvp-slate-card-ai{border-top:1px solid #577260;padding-top:6px;color:#c5d6e7}
+.nvp-slate-card-notes,.nvp-slate-card-ai{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;
+  overflow-wrap:anywhere;
+}
+.nvp-slate-more{margin:10px 0 0;background:#293c3d!important}
+
+/* Only a source reference is copied/cut/pasted in an uncommitted draft.
+   The separate green active source intervals never change until approval. */
+.nvp-slate-draft-tools{display:flex;gap:7px;flex-wrap:wrap;align-items:center;
+  padding:11px 0;border-top:1px solid #454b59}
+.nvp-slate-draft-tools button{font-size:11px!important}
+.nvp-slate-draft-tools .nvp-slate-commit{
+  margin-left:auto;background:#23593e;border-color:#419366;font-weight:700}
+
+.nvp-slate-proxy-preview{
+  display:flex;flex-direction:column;gap:9px;align-items:flex-start;
+  border:1px solid #4b5863;background:#242a33;border-radius:9px;
+  padding:12px;margin:12px 0;color:#e4ecf0}
+.nvp-slate-proxy-preview strong{font-size:13px}
+.nvp-slate-proxy-preview p,.nvp-slate-proxy-preview small{
+  color:#b5c7d0;font-size:11px;margin:0}
+.nvp-slate-proxy-preview img{
+  display:block;max-width:100%;max-height:360px;aspect-ratio:16/9;
+  object-fit:contain;border-radius:6px;background:#111722}
+
+/* A higher-fidelity native USD preview remains a derivative, never an
+   approved finished frame. Camera source selection is explicit. */
+.nvp-slate-camera-choice{display:flex;flex-direction:column;gap:3px;
+  font-size:11px;color:#bbc9cf}
+.nvp-slate-camera-choice select{background:#272d36;color:#e8efef;
+  border:1px solid #5d6a76;border-radius:6px;padding:7px}
+.nvp-slate-draft-tools .nvp-slate-render-geometry{
+  border-color:#5f88a3;background:#274151;color:#ecf4fd}
+.nvp-slate-fidelity-notice{font-size:11px;color:#f5cb85!important;
+  border-left:3px solid #d2a85b;padding-left:9px}
+
+.nvp-slate-pose-time{display:flex;flex-direction:column;gap:5px;
+  min-width:220px;color:#c9e5f2;font-size:11px}
+.nvp-slate-pose-time input{min-width:180px;accent-color:#80bfec}

@@ -1,0 +1,128 @@
+name: NVP STACK-02C3 resource safety governor and truthful progress UI
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3-resource-governor-progress-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c2-linux-cgroup-guardian-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-governor:
+    name: Linux RAM/VRAM admission and durable worker progress/queue regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP backend test dependencies
+        run: python -m pip install -r requirements-foundation.txt httpx trimesh
+      - name: Compile safety runtime and run worker/resource contracts
+        run: |
+          python -m compileall -q backend tests tools
+          python -m unittest discover -s tests -p 'test_resource_governor.py' -v
+          python -m unittest discover -s tests -p 'test_blender_resource_admission.py' -v
+          python -m unittest discover -s tests -p 'test_blender_worker.py' -v
+          python -m unittest discover -s tests -p 'test_worker_host_lease.py' -v
+          python -m unittest discover -s tests -p 'test_worker_containment.py' -v
+      - name: Preserve source for review and replay
+        if: always()
+        run: |
+          zip -qr nvp_stack02c3_source.zip backend tests frontend/src/ResourceActivityPanel.jsx frontend/src/ResourceActivityPanel.css
+          sha256sum nvp_stack02c3_source.zip > nvp_stack02c3_source.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-stack02c3-source-and-contracts
+          path: |
+            nvp_stack02c3_source.zip
+            nvp_stack02c3_source.sha256
+          retention-days: 7
+
+  windows-governor:
+    name: Windows GlobalMemoryStatusEx/DXGI and Job Object regression
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install standard backend and Windows native bindings
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          if ($LASTEXITCODE -ne 0) { throw 'Backend dependencies failed' }
+          python -m pip install 'pywin32==311'
+          if ($LASTEXITCODE -ne 0) { throw 'Windows kernel bindings failed' }
+      - name: Run OS memory telemetry and existing native worker contracts
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH='.'
+          python -m compileall -q backend tests tools
+          if ($LASTEXITCODE -ne 0) { throw 'Compile failed' }
+          python -m unittest discover -s tests -p test_resource_governor.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Resource guard regression' }
+          python -m unittest discover -s tests -p test_blender_resource_admission.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Blender governor regression' }
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Durable worker regression' }
+          python -m unittest discover -s tests -p test_worker_host_lease.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Host lock regression' }
+          python -m unittest discover -s tests -p test_worker_containment.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'OS Job Objects regression' }
+
+  production-ui:
+    name: React task meter interaction tests and production Vite bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install existing frontend dependencies (repository has no lockfile yet)
+        run: npm install --no-audit --no-fund
+      - name: Test live resource task panel
+        run: npx vitest run src/ResourceActivityPanel.test.jsx
+      - name: Build integrated NVP desktop web UI
+        run: npm run build
+
+  linux-real-guarded-blender:
+    name: Real Blender 4.x CPU queue, memory admission, task phases and source hash audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP test runtime and actual distribution Blender
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+      - name: Execute real governed Blender without a GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          xvfb-run -a python -m tools.nvp_stack02c3_guarded_blender_fixture \
+            --out acceptance_artifacts/stack02c3_guarded_blender
+      - name: Preserve actual native Blender resource-guard evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c3-real-resource-guarded-blender
+          path: acceptance_artifacts/stack02c3_guarded_blender/
+          retention-days: 7
+          if-no-files-found: warn

@@ -1,0 +1,107 @@
+name: NVP B12 actual OpenTimelineIO / portable editorial ProRes handoff
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b12-editorial-interchange-delivery-20261104
+  pull_request:
+    branches:
+      - nvp/stack02c3b11-sdr-editorial-handoff-20261104
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-b12-editorial-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-interchange-contract:
+    name: Windows native OTIO image-sequence time math, creator grant and resource denial
+    runs-on: windows-2025
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install official OpenTimelineIO and NVP film inputs
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Compile all B12 native production and film-index code
+        run: python -m compileall -q backend/nvp_b12_editorial_delivery.py backend/nvp_b12_native_delivery.py tools/nvp_b12_delivery_worker.py tests/test_b12_editorial_delivery.py tools/nvp_stack02c3b12_real_delivery.py
+      - name: Prove standard 24fps cut interchange, safety and frozen-source lineage
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_b12_editorial_delivery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B12 official OTIO or native editorial permission test failed' }
+          python -m unittest discover -s tests -p test_b11_native_editorial.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B11 original source regression failed' }
+          python -m unittest discover -s tests -p test_film_index.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'FilmIndex lineage regression failed' }
+
+  linux-interchange-contract:
+    name: Linux native OTIO image-sequence time math, creator grant and resource denial
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install official OpenTimelineIO and NVP film inputs
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Compile B12 interchange and run native contracts
+        run: |
+          python -m compileall -q backend/nvp_b12_editorial_delivery.py backend/nvp_b12_native_delivery.py tools/nvp_b12_delivery_worker.py tests/test_b12_editorial_delivery.py tools/nvp_stack02c3b12_real_delivery.py
+          python -m unittest discover -s tests -p test_b12_editorial_delivery.py -v
+          python -m unittest discover -s tests -p test_b11_native_editorial.py -v
+          python -m unittest discover -s tests -p test_film_index.py -v
+
+  real-120-otio-prores:
+    name: Real Blender 120 Float32 frames to ACES2 SDR16, native OpenTimelineIO and independently decoded ProRes HQ
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual Blender, FFmpeg/FFprobe and X virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender ffmpeg xvfb xauth
+      - name: Install exact official OTIO, OCIO and OpenEXR film packages
+        run: python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Execute original frozen take through full ProRes technical delivery
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b12_real_delivery \
+            --out acceptance_artifacts/nvp_stack02c3b12_native_delivery
+      - name: Retain real original 120-frame film, portable OTIO package, source hash and independently audited MOV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-b12-real-native-otio-media-prores
+          path: acceptance_artifacts/nvp_stack02c3b12_native_delivery/
+          retention-days: 7
+          if-no-files-found: warn
+
+  react-regression:
+    name: NVP React film and host permission regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build and test NVP React without exposing native handoff permission
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui

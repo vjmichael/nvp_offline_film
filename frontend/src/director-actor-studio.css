@@ -1,0 +1,42 @@
+/* G09-B actual filmmaking direction; no rig metadata in the interface. */
+.director-actor-room{margin:20px 0;border:1px solid #615767;background:#282e3b;border-radius:13px;padding:18px;min-width:0}
+.director-actor-heading{display:flex;align-items:start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.director-actor-heading h3{font-size:20px;margin:0 0 8px}
+.director-actor-heading p{max-width:625px;line-height:1.6;margin:0 0 12px}
+.director-actor-approval-status{font-size:12px;border:1px solid #917960;padding:8px 12px;border-radius:20px;color:#f4d5b8}
+.director-actor-room label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#e9d9ca;margin:11px 0}
+.director-actor-room input:not([type=range]):not([type=color]),.director-actor-room select,.director-actor-room textarea{box-sizing:border-box;max-width:100%;min-width:0;border:1px solid #625b66;background:#1a202d;border-radius:8px;padding:9px;color:#f4e9dd;font:inherit}
+.director-actor-room select{width:100%}
+.director-actor-room input[type=range]{width:100%;accent-color:#e1aa7c}
+.director-actor-room input[type=color]{width:56px;height:38px;padding:3px;border:1px solid #7f7881;border-radius:7px;background:#1a2230}
+.director-actor-room button{margin:6px 0}
+.director-actor-room :is(button,input,select,textarea,summary):focus-visible{outline:3px solid #e8c495;outline-offset:2px}
+.director-actor-choose{max-width:360px;font-weight:700}
+.director-actor-preview{margin:15px 0;padding:10px;border:1px solid #555a64;border-radius:11px;background:#161f2d}
+.director-actor-preview>img{width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;display:block;border-radius:6px}
+.director-actor-no-preview{min-height:220px;display:grid;place-content:center;text-align:center;color:#e2cbc0}
+.director-actor-preview-controls{display:flex;align-items:center;gap:10px}
+.director-actor-preview-controls label{flex:1}
+.director-actor-preview small{font-variant-numeric:tabular-nums;color:#e9bb92}
+.director-actor-preview p{margin:8px 0 1px;line-height:1.5}
+.director-actor-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.director-actor-panel{border:1px solid #52525f;background:#222935;border-radius:11px;padding:15px;min-width:0}
+.director-actor-panel h4,.director-actor-voice h4{font-size:17px;margin:0 0 12px;color:#f0cfae}
+.director-actor-panel label small{color:#d7bda4}
+.director-actor-colors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px}
+.director-actor-color{min-width:0}
+.director-actor-voice{border:1px solid #645b65;border-radius:11px;background:#292c37;margin:16px 0;padding:17px}
+.director-actor-voice p{line-height:1.55;max-width:700px}
+.director-actor-voice>audio{width:100%;margin:10px 0;display:block}
+.director-actor-review-buttons{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
+.director-actor-approve{border-top:1px solid #695969;margin-top:15px;padding-top:18px;display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}
+.director-actor-approve p{max-width:580px;line-height:1.55}
+.director-actor-approve strong{font-size:16px}
+.director-actor-history{border:1px solid #5a5260;border-radius:9px;margin:17px 0 0;padding:13px;background:#222833}
+.director-actor-history summary{cursor:pointer;color:#eed0ae;font-size:14px;font-weight:700}
+.director-actor-history>div{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:9px;border-top:1px solid #514d59;font-size:12px}
+.director-actor-error,.director-actor-notice{font-size:13px;line-height:1.55;border:1px solid #b77878;background:#473339;border-radius:9px;padding:12px;margin:12px 0}
+.director-actor-notice{background:#2c4036;border-color:#779b85}
+@media(max-width:900px){.director-actor-layout{grid-template-columns:1fr}}
+@media(max-width:560px){.director-actor-room{padding:10px}.director-actor-panel,.director-actor-voice{padding:10px}.director-actor-colors{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.director-actor-room *{animation:none!important;transition:none!important}}

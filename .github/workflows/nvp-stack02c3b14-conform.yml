@@ -1,0 +1,150 @@
+name: NVP B14 source-bound picture conform unit gate
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+  pull_request:
+    branches:
+      - nvp/stack02c3b13-otio-reimport-revisions-20261104
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-conform-contract:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP foundation and official OTIO
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Install native Windows Job Object binding
+        run: python -m pip install "pywin32>=306"
+      - name: Require native FFmpeg for Windows media acceptance
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            "$env:ChocolateyInstall\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          }
+          ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { throw 'Windows B14 FFmpeg executable unavailable' }
+          ffprobe -version
+          if ($LASTEXITCODE -ne 0) { throw 'Windows B14 FFprobe executable unavailable' }
+      - name: Verify B14 exact edit map and output safety
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw 'FFmpeg missing in test step' }
+          if (-not (Get-Command ffprobe -ErrorAction SilentlyContinue)) { throw 'FFprobe missing in test step' }
+          python -m compileall -q backend/nvp_b14_picture_conform.py backend/nvp_b14_native_conform.py tools/nvp_b14_conform_worker.py backend/nvp_b14_edited_movie.py tools/nvp_stack02c3b14_real_conform.py backend/nvp_audio01_picture_follow.py backend/nvp_audio01b_dialogue_edit.py backend/nvp_audio01c_multistem.py backend/nvp_audio01d_chunked_recovery.py backend/nvp_audio01e_wav_publication.py backend/nvp_audio01e2_orphan_recovery.py backend/nvp_audio01e3_native_journal.py backend/nvp_audio01e3_native_host.py backend/nvp_audio_native_staging_lock.py backend/nvp_audio_checkpoint_stage_recovery.py backend/nvp_audio01f_picture_sound.py tools/nvp_audio_native_worker.py tests/test_audio_native_staging_lock.py tests/test_audio_windows_job_object_descendants.py tests/test_audio_checkpoint_stage_recovery.py tests/test_audio_admission_crash_gap.py tests/test_audio_admission_outbox.py tests/test_audio_journal_only_recovery.py tests/test_audio01f_picture_sound.py tests/test_audio_linux_strict_cgroup.py tests/test_audio_native_os_termination.py tests/test_audio01_picture_follow.py tests/test_audio01b_dialogue_edit.py tests/test_audio01c_multistem.py tests/test_audio01d_chunked_recovery.py tests/test_audio01e_wav_publication.py tests/test_audio01e2_orphan_recovery.py tests/test_audio01e3_native_journal.py tests/test_b14_picture_conform.py
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: compileall' }
+          python -m unittest discover -s tests -p test_b14_picture_conform.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_b14_picture_conform.py' }
+          python -m unittest discover -s tests -p test_resource_supervisor.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_resource_supervisor.py' }
+          python -m unittest discover -s tests -p test_crew_roles.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_crew_roles.py' }
+          python -m unittest discover -s tests -p test_nvp_ai_refs.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows AI reference contract failed' }
+          python -m unittest discover -s tests -p test_audio01_picture_follow.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01_picture_follow.py' }
+          python -m unittest discover -s tests -p test_audio01b_dialogue_edit.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01b_dialogue_edit.py' }
+          python -m unittest discover -s tests -p test_audio01c_multistem.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01c_multistem.py' }
+          python -m unittest discover -s tests -p test_audio01d_chunked_recovery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01d_chunked_recovery.py' }
+          python -m unittest discover -s tests -p test_audio01e_wav_publication.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01e_wav_publication.py' }
+          python -m unittest discover -s tests -p test_audio01e2_orphan_recovery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01e2_orphan_recovery.py' }
+          python -m unittest discover -s tests -p test_audio01e3_native_journal.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01e3_native_journal.py' }
+          python -m unittest discover -s tests -p test_audio_native_staging_lock.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio_native_staging_lock.py' }
+          python -m unittest discover -s tests -p test_audio_checkpoint_stage_recovery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio_checkpoint_stage_recovery.py' }
+          python -m unittest discover -s tests -p test_audio_admission_crash_gap.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio_admission_crash_gap.py' }
+          python -m unittest discover -s tests -p test_audio_admission_outbox.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio_admission_outbox.py' }
+          python -m unittest discover -s tests -p test_audio_journal_only_recovery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio_journal_only_recovery.py' }
+          python -m unittest discover -s tests -p test_audio01f_picture_sound.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01f_picture_sound.py' }
+          python -m unittest discover -s tests -p test_audio01g_mux_recovery.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio01g_mux_recovery.py' }
+          python -m unittest discover -s tests -p test_audio02_finishing.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio02_finishing.py' }
+          python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio_native_os_termination.py' }
+          python -m unittest discover -s tests -p test_audio_windows_job_object_descendants.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows contract command failed: test_audio_windows_job_object_descendants.py' }
+          if ($LASTEXITCODE -ne 0) { throw 'B14 Windows contract failed' }
+  linux-conform-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP foundation and official OTIO
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Verify B14 exact edit map and output safety
+        run: |
+          python -m compileall -q backend/nvp_b14_picture_conform.py backend/nvp_b14_native_conform.py tools/nvp_b14_conform_worker.py backend/nvp_b14_edited_movie.py tools/nvp_stack02c3b14_real_conform.py backend/nvp_audio01_picture_follow.py backend/nvp_audio01b_dialogue_edit.py backend/nvp_audio01c_multistem.py backend/nvp_audio01d_chunked_recovery.py backend/nvp_audio01e_wav_publication.py backend/nvp_audio01e2_orphan_recovery.py backend/nvp_audio01e3_native_journal.py backend/nvp_audio01e3_native_host.py backend/nvp_audio_native_staging_lock.py backend/nvp_audio_checkpoint_stage_recovery.py backend/nvp_audio01f_picture_sound.py tools/nvp_audio_native_worker.py tests/test_audio_native_staging_lock.py tests/test_audio_windows_job_object_descendants.py tests/test_audio_checkpoint_stage_recovery.py tests/test_audio_admission_crash_gap.py tests/test_audio_admission_outbox.py tests/test_audio_journal_only_recovery.py tests/test_audio01f_picture_sound.py tests/test_audio_linux_strict_cgroup.py tests/test_audio_native_os_termination.py tests/test_audio01_picture_follow.py tests/test_audio01b_dialogue_edit.py tests/test_audio01c_multistem.py tests/test_audio01d_chunked_recovery.py tests/test_audio01e_wav_publication.py tests/test_audio01e2_orphan_recovery.py tests/test_audio01e3_native_journal.py tests/test_b14_picture_conform.py
+          python -m unittest discover -s tests -p test_b14_picture_conform.py -v
+          python -m unittest discover -s tests -p test_resource_supervisor.py -v
+          python -m unittest discover -s tests -p test_crew_roles.py -v
+          python -m unittest discover -s tests -p test_nvp_ai_refs.py -v
+          python -m unittest discover -s tests -p test_audio01_picture_follow.py -v
+          python -m unittest discover -s tests -p test_audio01b_dialogue_edit.py -v
+          python -m unittest discover -s tests -p test_audio01c_multistem.py -v
+          python -m unittest discover -s tests -p test_audio01d_chunked_recovery.py -v
+          python -m unittest discover -s tests -p test_audio01e_wav_publication.py -v
+          python -m unittest discover -s tests -p test_audio01e2_orphan_recovery.py -v
+          python -m unittest discover -s tests -p test_audio01e3_native_journal.py -v
+          python -m unittest discover -s tests -p test_audio_native_staging_lock.py -v
+          python -m unittest discover -s tests -p test_audio_checkpoint_stage_recovery.py -v
+          python -m unittest discover -s tests -p test_audio_admission_crash_gap.py -v
+          python -m unittest discover -s tests -p test_audio_admission_outbox.py -v
+          python -m unittest discover -s tests -p test_audio_journal_only_recovery.py -v
+          python -m unittest discover -s tests -p test_audio01f_picture_sound.py -v
+          python -m unittest discover -s tests -p test_audio01g_mux_recovery.py -v
+          python -m unittest discover -s tests -p test_audio02_finishing.py -v
+          python -m unittest discover -s tests -p test_audio_native_os_termination.py -v
+          python -m unittest discover -s tests -p test_audio_linux_strict_cgroup.py -v
+
+  real-blender-edited-picture-conform:
+    name: Real Blender source to two native conformed edits and audited edited ProRes MOV
+    runs-on: ubuntu-24.04
+    timeout-minutes: 125
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install genuine Blender FFmpeg and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender ffmpeg xvfb xauth
+      - name: Install official OTIO, OCIO and OpenEXR dependencies
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx
+          python -m pip install opentimelineio==0.18.1 opencolorio==2.5.2 OpenEXR==3.3.4 numpy==2.2.6
+      - name: Real immutable film, edited revisions, SDR16 picture conform, restart and exact frame SHA proof
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b14_real_conform --out acceptance_artifacts/nvp_b14_real_conform
+      - name: Preserve actual edited image sequence and acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-b14-real-edited-sdr16-picture-conform
+          path: acceptance_artifacts/nvp_b14_real_conform/
+          retention-days: 7
+          if-no-files-found: warn
