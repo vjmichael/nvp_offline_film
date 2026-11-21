@@ -9,7 +9,9 @@
 #include "nvp_int_lu_gpu_stop_issuer.hpp" // native SCM Job ACTIVE_ZERO + separate CNG key
 #include <bcrypt.h>
 #include <ncrypt.h>
+#include <shlobj.h> // fixed OS-known ProgramData/ProgramFiles, not SCM environment
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <iomanip>
 #include <cstring>
@@ -21,6 +23,7 @@
 #include <vector>
 #pragma comment(lib,"bcrypt.lib")
 #pragma comment(lib,"ncrypt.lib")
+#pragma comment(lib,"shell32.lib")
 
 namespace {
 constexpr wchar_t SERVICE[]=L"NVP-POST01F-SCM-LTX-Picture";
@@ -29,19 +32,23 @@ constexpr wchar_t KEY_NAME[]=L"NVP-POST01F-LTX-SCM-PICTURE-P256-v2";
 constexpr char FORMAT[]="nvp.post01f.scm_cng_p256_picture_result.v2";
 SERVICE_STATUS_HANDLE g_handle=nullptr;
 SERVICE_STATUS g_status{};
+std::atomic<bool> g_stop_requested{false}; // Owned SCM cancel; never an all-clear proof.
 
 void must(bool condition,const char* description) {if(!condition)throw std::runtime_error(description);}
+std::wstring known_folder(REFKNOWNFOLDERID id) {
+    PWSTR raw=nullptr;
+    const HRESULT hr=SHGetKnownFolderPath(id,KF_FLAG_DEFAULT,nullptr,&raw);
+    must(SUCCEEDED(hr) && raw && *raw,
+         "Original Windows machine known folder unavailable");
+    const std::wstring result(raw);
+    CoTaskMemFree(raw);
+    return result;
+}
 std::wstring installed_root() {
-    wchar_t buf[MAX_PATH]{};
-    DWORD size=GetEnvironmentVariableW(L"ProgramFiles",buf,MAX_PATH);
-    must(size && size<MAX_PATH,"ProgramFiles not resolved by SCM");
-    return std::wstring(buf)+L"\\NVP\\LTX";
+    return known_folder(FOLDERID_ProgramFiles)+L"\\NVP\\LTX";
 }
 std::wstring protected_root() {
-    wchar_t buf[MAX_PATH]{};
-    DWORD size=GetEnvironmentVariableW(L"ProgramData",buf,MAX_PATH);
-    must(size && size<MAX_PATH,"ProgramData not resolved by SCM");
-    return std::wstring(buf)+L"\\NVP\\POST01F";
+    return known_folder(FOLDERID_ProgramData)+L"\\NVP\\POST01F";
 }
 std::string to_ascii(const std::wstring& wide) {
     must(!wide.empty() && wide.size()<=512,"Unbounded native approval field");
@@ -370,6 +377,8 @@ int run_once() {
     start.StartupInfo.lpDesktop=const_cast<LPWSTR>(private_desktop.qualified.c_str());
     // Exact installed executable, exact plan. No user-provided executable,
     // prompt, shell, extra args or arbitrary Python module.
+    must(!g_stop_requested.load(std::memory_order_acquire),
+         "SCM creator cancelled original GPU job before worker launch");
     const std::wstring cmd=quoted(exe.wstring())+L" --nvp-ltx-job "+
                  quoted((stage/L"plan.json").wstring());
     std::vector<wchar_t> args(cmd.begin(),cmd.end());args.push_back(0);
@@ -390,9 +399,18 @@ int run_once() {
     const std::string sid_hash=hex(hash_bytes(
        reinterpret_cast<const BYTE*>(h.sid),GetLengthSid(h.sid)).data(),32);
     must(ResumeThread(h.thread)!=DWORD(-1),"SCM cannot resume owned LTX child");
-    DWORD waited=WaitForSingleObject(h.process,3600000);
+    // A user-authorized stop is observed only by the SCM custodian. STOP
+    // does NOT imply Job empty, GPU quiescent or permission for Lu to reload.
+    // Poll under the one-hour installed timeout so cancellation can terminate
+    // exactly this original SCM Job and still issue a genuine empty-Job proof.
+    DWORD waited=WAIT_TIMEOUT;
+    for(int i=0;i<18000 && !g_stop_requested.load(std::memory_order_acquire);++i) {
+        waited=WaitForSingleObject(h.process,200);
+        if(waited==WAIT_OBJECT_0 || waited==WAIT_FAILED)break;
+    }
     DWORD exit_code=1;
-    const bool worker_succeeded=waited==WAIT_OBJECT_0 &&
+    const bool worker_succeeded=!g_stop_requested.load(std::memory_order_acquire) &&
+        waited==WAIT_OBJECT_0 &&
         GetExitCodeProcess(h.process,&exit_code)!=FALSE && exit_code==0;
     // Kill ALL helper descendants and wait for empty Job before publication;
     // WFP and AppContainer protections remain in force. Even failure/timeout
@@ -455,15 +473,24 @@ void report(DWORD status,DWORD error=0){
     if(!g_handle)return;
     g_status.dwServiceType=SERVICE_WIN32_OWN_PROCESS;
     g_status.dwCurrentState=status;
-    g_status.dwControlsAccepted=0;
+    g_status.dwControlsAccepted=(status==SERVICE_RUNNING)?SERVICE_ACCEPT_STOP:0;
     g_status.dwWin32ExitCode=error;
-    g_status.dwWaitHint=(status==SERVICE_START_PENDING)?3600000:0;
+    g_status.dwWaitHint=(status==SERVICE_START_PENDING)?3600000:
+        ((status==SERVICE_STOP_PENDING)?30000:0);
     SetServiceStatus(g_handle,&g_status);
 }
-void WINAPI control(DWORD) { /* No model/worker can issue service control. */ }
+void WINAPI control(DWORD command) {
+    // SCM ACLs, not model/UI-supplied flags, authorize this operation.
+    // The service worker thread performs the actual terminate/reap/sign.
+    if(command==SERVICE_CONTROL_STOP) {
+        g_stop_requested.store(true,std::memory_order_release);
+        report(SERVICE_STOP_PENDING);
+    }
+}
 void WINAPI service_main(DWORD,LPWSTR*) {
     g_handle=RegisterServiceCtrlHandlerW(SERVICE,control);
     if(!g_handle)return;
+    g_stop_requested.store(false,std::memory_order_release);
     report(SERVICE_START_PENDING);
     // Tell SCM this is a legitimately running long-lived (bounded) job;
     // leaving START_PENDING for a 60-minute model inference is invalid.

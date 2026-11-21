@@ -1,5 +1,12 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
+## 2026-11-21 — NVP-INT-LU-01E-GPU-01-R2-R1-R1 — SCM original Job source seam (PREPARED; INSTALLED OPEN)
+
+**Current accepted predecessor:** PR #161 exact `895e5f17f176233e9df88ab675bba2fa3e08cc6c`; Windows/Ubuntu IPC Rust/prost and protected-provider checks PASS; Windows SCM/CNG source/unauthorized-start denial PASS. Exact last source-pin mismatch is fixed. **New source candidate not yet qualified**: Lu-connected LTX must use fixed installed SCM-held original Job instead of Python creating a second Job; native SCM STOP must terminate/reap the same group before P-256 GPU empty receipt. No first-party SCM owner installation, actual Core grant, Radeon VRAM or independent positive receipt is claimed. [Source seam and required physical acceptance](NVP_INT_LU_01E_GPU_01_R2_R1_R1_SCM_SOURCE_BINDING.md). Do not stack CI while the original PR cohort remains nonterminal. Same task, original PR/branch, standalone behavior and security policies preserved.
+
+---
+
+
 ## 2026-11-21 — NVP-INT-LU-01A-R3-R2-R1 — Genuine native source repair (PREPARED; REQUALIFICATION OPEN)
 
 **Exact original NVP PR #161 source:** `f59d91bc5007adc38d355ae50b3a51c6b874d3e5`, [new native workflow #44919663798](https://github.com/vjmichael/nvp_offline_film/actions/runs/44919663798). Independently inspected original OS native logs: Ubuntu Rust/prost reported four **E0716 temporary-borrow** compiler errors in the NVP client fixture at `src/lib.rs:282/296/307/318`; Windows Rust build script **FAILED source Git blob check** because the exact Lu checkout uses CRLF worktree bytes. **Neither native job passed; Windows never reached the genuine pipe test.** Do not infer Lu Core incompatibility, installed Health or native success from these failures. Exact protected Lu proto Git object `4e01d921197fb1c58c99958479b1cede36e13c9a` itself is unchanged.

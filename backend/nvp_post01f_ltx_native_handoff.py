@@ -193,6 +193,7 @@ class ProtectedLtxHandoff:
             raise PermissionError("Reviewed code, bootstrap and private runtime must be separate")
         self._lock = threading.RLock()
         self._active = {}
+        self._scm_active = {}  # Installed SCM stop controller; never a Python worker.
         self._cancelled = set()
 
     def cancel(self, job_id: str) -> bool:
@@ -200,11 +201,16 @@ class ProtectedLtxHandoff:
             raise ValueError("Invalid job identity")
         with self._lock:
             proc = self._active.get(job_id)
-            if proc is None:
+            scm_cancel = self._scm_active.get(job_id)
+            if proc is None and scm_cancel is None:
                 return False
             self._cancelled.add(job_id)
-            proc.terminate_tree()
-            return True
+        if scm_cancel is not None:
+            # The installed native owner sends authorized SERVICE_CONTROL_STOP.
+            # It must never report GPU quiescence on a mere STOP acknowledgment.
+            return scm_cancel(job_id) is True
+        proc.terminate_tree()
+        return True
 
     def reconcile(self) -> list[str]:
         """Never infer successful results from a stale job journal or PID."""
@@ -227,10 +233,19 @@ class ProtectedLtxHandoff:
             conditioning: bytes, max_memory_mb: int = 24576,
             timeout_s: int = 3600,
             preallocated_job_id: str | None = None,
-            verify_installed_reservation=None) -> dict:
+            verify_installed_reservation=None,
+            scm_owned_launch=None, scm_owned_cancel=None) -> dict:
         # Only a provisioned physical Windows host may perform protected LTX.
         if os.name != "nt":
             raise PermissionError("Native LTX requires the installed Windows AppContainer/EFS host")
+        scm_mode = preallocated_job_id is not None
+        if scm_mode:
+            from backend.nvp_lu_scm_ltx_execution import require_installed_scm_stage
+            require_installed_scm_stage(self.runtime_root,
+                max_memory_mb=max_memory_mb, timeout_s=timeout_s,
+                scm_owned_launch=scm_owned_launch, scm_owned_cancel=scm_owned_cancel)
+        elif scm_owned_launch is not None or scm_owned_cancel is not None:
+            raise PermissionError("Standalone LTX cannot borrow an SCM execution identity")
         plan = validate_intent(intent)
         if plan["model_stack_sha256"] != self.model_stack_sha256:
             raise PermissionError("Requested model stack differs from installed license-checked lock")
@@ -284,7 +299,6 @@ class ProtectedLtxHandoff:
         state = {"format":JOURNAL, "job_id":job_id, "state":"PREPARING", "publishable":False}
         try:
             from backend.nvp_w1g_encrypted_source import require_efs_stage, verify_efs_inputs
-            from backend.nvp_worker_containment import launch_contained
             require_efs_stage(root)
             _journal(root / "journal.json", state)
             for name, blob in inputs.items():
@@ -293,56 +307,85 @@ class ProtectedLtxHandoff:
             verify_efs_inputs(root, (*sorted(inputs), "plan.json", "journal.json"))
             state["state"] = "STAGED"
             _journal(root / "journal.json", state)
-            with (root / "stdout.log").open("xb") as stdout, (root / "stderr.log").open("xb") as stderr, open(os.devnull,"rb") as stdin:
-                proc = launch_contained([str(self.bootstrap.resolve()), "--nvp-ltx-job", str((root / "plan.json").resolve())],
-                    cwd=str(root), stdin=stdin, stdout=stdout, stderr=stderr,
-                    memory_mb=max_memory_mb, windows_appcontainer_required=True,
-                    appcontainer_code_roots=self.code_roots)
-                if getattr(proc, "sandbox_identity", None) != "windows-appcontainer-with-zero-network-capabilities":
-                    raise PermissionError("Launcher did not produce genuine protected AppContainer")
-                with self._lock:
-                    self._active[job_id] = proc
+            if scm_mode:
+                # The original SCM service is the ONLY process creator for
+                # Lu-borrowed VRAM. No Python launch_contained/second Job exists.
+                _write_new(root / "stdout.log", b"")
+                _write_new(root / "stderr.log", b"")
                 state["state"] = "RUNNING"
                 _journal(root / "journal.json", state)
-                try:
-                    rc = proc.wait(timeout=timeout_s)
-                except subprocess.TimeoutExpired:
-                    with self._lock:
-                        self._cancelled.add(job_id)
-                        proc.terminate_tree()
-                    raise TimeoutError("LTX native worker exceeded approved deadline")
+                native_scope = {
+                    "job_id":job_id, "project_id":plan["project_id"],
+                    "plan_sha256":plan_sha,
+                    "bootstrap_sha256":self.bootstrap_sha256,
+                    "model_stack_sha256":self.model_stack_sha256,
+                    "layout_sha256":scope["input_sha256"]["layout.mp4"],
+                    "look_sha256":scope["input_sha256"]["look.png"],
+                    "conditioning_sha256":scope["input_sha256"]["conditioning.json"],
+                    "take_sha256":plan["take_sha256"],
+                    "camera_id":plan["camera_id"],
+                }
+                with self._lock:
+                    self._scm_active[job_id] = scm_owned_cancel
+                kernel = scm_owned_launch(dict(native_scope))
+                from backend.nvp_lu_scm_ltx_execution import verify_original_scm_kernel_result
+                kernel = verify_original_scm_kernel_result(kernel, job_id=job_id,
+                    project_id=plan["project_id"], plan_sha256=plan_sha)
                 with self._lock:
                     if job_id in self._cancelled:
-                        raise InterruptedError("Creator cancelled LTX after launch")
-                    if rc != 0:
-                        raise RuntimeError("Protected LTX worker failed")
-                    # Verify the real AppContainer wrapper/Job/release-fence,
-                    # not W1-G's generic WindowsJobProcess-only verifier.
-                    from backend.nvp_post01f_native_custody import verified_ltx_appcontainer_exit
-                    kernel = verified_ltx_appcontainer_exit(proc)
-                    model_witness = self.model_verify({**scope, "worker_pid":kernel["worker_pid"]}, root)
-                    if digest_file(self.bootstrap.parent / LOCK_NAME, MAX_LOCK) != self.model_stack_sha256:
-                        raise PermissionError("Reviewed model/runtime lock drifted during execution")
-                    if digest_file(self.bootstrap, 64*1024*1024) != self.bootstrap_sha256:
-                        raise PermissionError("Installed LTX broker mutated during execution")
-                    verify_efs_inputs(root, (*sorted(inputs), "plan.json", "journal.json", "picture.mp4", "result.json"))
-                    if any(digest_file(root/name, MAX_LAYOUT if name=="layout.mp4" else MAX_LOOK if name=="look.png" else MAX_CONDITIONING) != scope["input_sha256"][name] for name in inputs):
-                        raise PermissionError("Worker mutated source conditioning")
-                    if digest_file(root / "plan.json", MAX_PLAN) != plan_sha:
-                        raise PermissionError("Worker changed authorized IPC plan")
-                    if self.take_verify(dict(source_scope)) is not True:
-                        raise PermissionError("Original immutable Take changed during protected generation")
-                    pic_digest = digest_file(root / "picture.mp4", MAX_PICTURE)
-                    # os_verify must verify the exact independently signed SCM
-                    # envelope, including this actual picture hash and kernel PID.
-                    os_witness = self.os_verify({**scope, "picture_sha256":pic_digest}, dict(kernel))
-                    out = admit_picture(root, job_id=job_id, project_id=plan["project_id"],
-                         plan_sha256=plan_sha, model_stack_sha256=self.model_stack_sha256,
-                         picture_verifier=self.picture_verify, os_witness=os_witness, model_witness=model_witness)
-                    state["state"] = out["state"]
-                    state["picture_sha256"] = out["picture_sha256"]
+                        raise InterruptedError("Creator cancelled original SCM LTX job")
+            else:
+                from backend.nvp_worker_containment import launch_contained
+                with (root / "stdout.log").open("xb") as stdout, (root / "stderr.log").open("xb") as stderr, open(os.devnull,"rb") as stdin:
+                    proc = launch_contained([str(self.bootstrap.resolve()), "--nvp-ltx-job", str((root / "plan.json").resolve())],
+                        cwd=str(root), stdin=stdin, stdout=stdout, stderr=stderr,
+                        memory_mb=max_memory_mb, windows_appcontainer_required=True,
+                        appcontainer_code_roots=self.code_roots)
+                    if getattr(proc, "sandbox_identity", None) != "windows-appcontainer-with-zero-network-capabilities":
+                        raise PermissionError("Launcher did not produce genuine protected AppContainer")
+                    with self._lock:
+                        self._active[job_id] = proc
+                    state["state"] = "RUNNING"
                     _journal(root / "journal.json", state)
-                    return out
+                    try:
+                        rc = proc.wait(timeout=timeout_s)
+                    except subprocess.TimeoutExpired:
+                        with self._lock:
+                            self._cancelled.add(job_id)
+                            proc.terminate_tree()
+                        raise TimeoutError("LTX native worker exceeded approved deadline")
+                    with self._lock:
+                        if job_id in self._cancelled:
+                            raise InterruptedError("Creator cancelled LTX after launch")
+                        if rc != 0:
+                            raise RuntimeError("Protected LTX worker failed")
+                        # Verify the real AppContainer wrapper/Job/release-fence,
+                        # not W1-G's generic WindowsJobProcess-only verifier.
+                        from backend.nvp_post01f_native_custody import verified_ltx_appcontainer_exit
+                        kernel = verified_ltx_appcontainer_exit(proc)
+            model_witness = self.model_verify({**scope, "worker_pid":kernel["worker_pid"]}, root)
+            if digest_file(self.bootstrap.parent / LOCK_NAME, MAX_LOCK) != self.model_stack_sha256:
+                raise PermissionError("Reviewed model/runtime lock drifted during execution")
+            if digest_file(self.bootstrap, 64*1024*1024) != self.bootstrap_sha256:
+                raise PermissionError("Installed LTX broker mutated during execution")
+            verify_efs_inputs(root, (*sorted(inputs), "plan.json", "journal.json", "picture.mp4", "result.json"))
+            if any(digest_file(root/name, MAX_LAYOUT if name=="layout.mp4" else MAX_LOOK if name=="look.png" else MAX_CONDITIONING) != scope["input_sha256"][name] for name in inputs):
+                raise PermissionError("Worker mutated source conditioning")
+            if digest_file(root / "plan.json", MAX_PLAN) != plan_sha:
+                raise PermissionError("Worker changed authorized IPC plan")
+            if self.take_verify(dict(source_scope)) is not True:
+                raise PermissionError("Original immutable Take changed during protected generation")
+            pic_digest = digest_file(root / "picture.mp4", MAX_PICTURE)
+            # os_verify must verify the exact independently signed SCM
+            # envelope, including this actual picture hash and kernel PID.
+            os_witness = self.os_verify({**scope, "picture_sha256":pic_digest}, dict(kernel))
+            out = admit_picture(root, job_id=job_id, project_id=plan["project_id"],
+                 plan_sha256=plan_sha, model_stack_sha256=self.model_stack_sha256,
+                 picture_verifier=self.picture_verify, os_witness=os_witness, model_witness=model_witness)
+            state["state"] = out["state"]
+            state["picture_sha256"] = out["picture_sha256"]
+            _journal(root / "journal.json", state)
+            return out
         except BaseException:
             state["state"] = "FAILED_UNVERIFIED"
             if (root / "journal.json").is_file():
@@ -351,6 +394,7 @@ class ProtectedLtxHandoff:
         finally:
             with self._lock:
                 self._active.pop(job_id, None)
+                self._scm_active.pop(job_id, None)
                 self._cancelled.discard(job_id)
             if proc is not None and getattr(proc, "_worker", None) is not None:
                 if proc.poll() is None:

@@ -54,6 +54,7 @@ class WindowsNvpGpuSupervisorBinding:
         'verify_no_protected_gpu_worker_launched',
         'reserve_original_ltx_job',
         'verify_original_ltx_job_reservation',
+        'run_original_scm_ltx_job', 'cancel_original_scm_ltx_job',
         'observe_native_gpu_quiescence',
         'verify_core_durable_release_ack',
     ))
@@ -123,9 +124,11 @@ class WindowsNvpGpuSupervisorBinding:
                                     verify_exact_preallocated_worker_job):
         """Bind Lu's granted GPU lease to the ORIGINAL POST-01F LTX job ID.
 
-        No direct Lua/LLM model process control and no positive receipt from
-        a Python callback. The independently installed SCM reservation and
-        worker-stop signer must still be physically qualified on Windows.
+        The original installed SCM service launches and drains the worker.
+        The Python AppContainer launch_contained route is forbidden for Lu
+        GPU leases, or it would create a second unrelated kernel Job.
+        No native positive claim exists until independent Windows installation,
+        SCM owner reservation, signed receipt and driver attestation.
         """
         from backend.nvp_post01f_ltx_native_handoff import ProtectedLtxHandoff
         if type(handoff) is not ProtectedLtxHandoff:
@@ -134,7 +137,9 @@ class WindowsNvpGpuSupervisorBinding:
             return handoff.run(intent=source_intent,layout=layout,look=look,
                 conditioning=conditioning,
                 preallocated_job_id=intent.native_job_ref,
-                verify_installed_reservation=self.owner.verify_original_ltx_job_reservation)
+                verify_installed_reservation=self.owner.verify_original_ltx_job_reservation,
+                scm_owned_launch=lambda scope:self.owner.run_original_scm_ltx_job(intent,scope),
+                scm_owned_cancel=lambda job:self.owner.cancel_original_scm_ltx_job(intent,job))
         return self.run_protected_job(intent,approved_native_run=invoke,
             verify_exact_preallocated_worker_job=verify_exact_preallocated_worker_job)
 
