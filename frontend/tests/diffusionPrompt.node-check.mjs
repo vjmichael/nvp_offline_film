@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {buildDiffusionPrompt,NO_BACKGROUND_MUSIC_LINE} from '../src/diffusionPrompt.js';
+const base='A rainy city with cinematic photography.';
+assert.equal(buildDiffusionPrompt(base,true),base+'\n'+NO_BACKGROUND_MUSIC_LINE);
+assert.equal(buildDiffusionPrompt(base,false),base);
+assert.equal(buildDiffusionPrompt(base+'\n'+NO_BACKGROUND_MUSIC_LINE,true),base+'\n'+NO_BACKGROUND_MUSIC_LINE);
+for(const val of [undefined,1,0,'true',null])assert.throws(()=>buildDiffusionPrompt(base,val));
+assert.throws(()=>buildDiffusionPrompt('a'.repeat(490),true));
+assert.throws(()=>buildDiffusionPrompt('bad\r\nline',true));
+console.log('NVP_DIFFUSION_MUSIC_PROMPT_UI_PASS');

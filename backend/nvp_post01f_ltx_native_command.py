@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from backend.nvp_post01f_ltx_native_handoff import WIRE, validate_intent
+from backend.nvp_diffusion_music_prompt import compose_diffusion_prompt
 
 
 def build_layout_to_render_argv(plan: dict, *, job_root: Path,
@@ -44,13 +45,15 @@ def build_layout_to_render_argv(plan: dict, *, job_root: Path,
     if guide.is_symlink() or not guide.is_file() or guide.stat().st_size > 16*1024:
         raise PermissionError("Bounded native conditioning missing")
     data = json.loads(guide.read_text("utf-8"))
-    if not isinstance(data,dict) or set(data)!={"positive_prompt","take_sha256","camera_id"} or (
+    standard_fields = {"positive_prompt", "take_sha256", "camera_id"}
+    if (not isinstance(data,dict) or set(data) not in (standard_fields, standard_fields|{"no_background_music"}) or
         data["take_sha256"] != intent["take_sha256"] or
         data["camera_id"] != intent["camera_id"] or
         type(data["positive_prompt"]) is not str or
-        not 8 <= len(data["positive_prompt"]) <= 500 or
-        "\x00" in data["positive_prompt"]):
+        type(data.get("no_background_music",False)) is not bool):
         raise ValueError("Frozen Take/shot prompt does not match structured conditioning")
+    final_prompt = compose_diffusion_prompt(data["positive_prompt"],
+                        no_background_music=data.get("no_background_music",False))
     return [resolved["python"],"-m","ltx_pipelines.ic_lora",
         "--distilled-checkpoint-path",resolved["checkpoint"],
         "--spatial-upsampler-path",resolved["spatial_upsampler"],
@@ -59,7 +62,7 @@ def build_layout_to_render_argv(plan: dict, *, job_root: Path,
         "--video-conditioning",str((root/"layout.mp4").resolve(strict=True)),"1.0",
         "--stage-2-ic-lora",
         "--image",str((root/"look.png").resolve(strict=True)),"-1","1.0",
-        "--prompt",data["positive_prompt"],"--seed",str(intent["seed"]),
+        "--prompt",final_prompt,"--seed",str(intent["seed"]),
         "--height",str(intent["height"]),"--width",str(intent["width"]),
         "--num-frames",str(intent["model_frames"]),
         "--frame-rate","24",
