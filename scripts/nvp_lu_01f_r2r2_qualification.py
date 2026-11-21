@@ -17,8 +17,8 @@ import sys
 import tempfile
 from google.protobuf import descriptor_pb2
 
-LU_SHA='9f43d078aa5e979de0ff72ca4c19e8c5829572af'
-LU_PROTO_BLOB='4e01d921197fb1c58c99958479b1cede36e13c9a'
+LU_SHA='60afe6908a6abe3408bb952869d85b43781313ca'
+LU_PROTO_BLOB='747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1'
 NVP_PROTO_BLOB='5734d04bb08795240cde1508053cd9449847d3eb'
 LU_PROTO_PATH='src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto'
 NVP_PROTO_PATH='contracts/nvp/film/v1/nvp_film_v1.proto'

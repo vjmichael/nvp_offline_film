@@ -3,8 +3,8 @@
 # installer, Core implementation, credential broker, or production Health proof.
 set -euo pipefail
 : "${LU_REPO:?set LU_REPO to a complete independently reviewed Lu repository checkout}"
-expected=9f43d078aa5e979de0ff72ca4c19e8c5829572af
-expected_proto=4e01d921197fb1c58c99958479b1cede36e13c9a
+expected=60afe6908a6abe3408bb952869d85b43781313ca
+expected_proto=747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1
 relative=src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 crate="$root/native/nvp_lu_ipc_client"

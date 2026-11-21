@@ -3,7 +3,7 @@
 //! Exact Git blob is pinned; if Lu changes protocol, review and repin first.
 use sha1::{Digest,Sha1};
 use std::{env,fs,path::PathBuf};
-const LU_GIT_BLOB:&str="4e01d921197fb1c58c99958479b1cede36e13c9a";
+const LU_GIT_BLOB:&str="747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1";
 fn main(){
     let lu=PathBuf::from(env::var_os("LU_WORKSPACE_PROTO")
         .expect("LU_WORKSPACE_PROTO must be independently checked-out Lu workspace.proto"));

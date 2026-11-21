@@ -1,8 +1,8 @@
 # NVP-owned Windows MSVC Rust/prost acceptance against exact upstream source.
 param([Parameter(Mandatory=$true)][string]$LuRepo)
 $ErrorActionPreference='Stop'
-$expected='9f43d078aa5e979de0ff72ca4c19e8c5829572af'
-$expectedProto='4e01d921197fb1c58c99958479b1cede36e13c9a'
+$expected='60afe6908a6abe3408bb952869d85b43781313ca'
+$expectedProto='747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1'
 $relative='src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto'
 if (-not [System.Environment]::OSVersion.Platform.Equals([System.PlatformID]::Win32NT)) {
     throw 'BLOCKED: this admission script must run on actual Windows'

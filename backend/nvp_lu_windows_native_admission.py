@@ -40,6 +40,7 @@ class WindowsProtectedIPCJournalOwner:
         self._original_root = _protected_path(self.root, directory=True)
         self._original_db = _protected_path(production_journal.db_path)
         self._ipc_db = self.root / 'nvp-lu-operations.sqlite3'
+        self._gpu_db = self.root / 'nvp-lu-gpu-yields.sqlite3'
 
     def guard(self, requested: Path) -> bool:
         """No silent sidecar replacement, encrypted-dir downgrade or lost owner.
@@ -53,14 +54,15 @@ class WindowsProtectedIPCJournalOwner:
         if (self._protected_path(self.root, directory=True) != self._original_root or
                 self._protected_path(self._production.db_path) != self._original_db):
             raise JournalRefusal('Protected NVP production owner/storage identity changed')
-        for p in (self._ipc_db, *(Path(str(self._ipc_db) + s)
-                                    for s in ('-wal', '-shm', '-journal'))):
-            try:
-                p.lstat()
-            except FileNotFoundError:
-                continue
-            if self._protected_path(p) != (p.stat().st_dev, p.stat().st_ino):
-                raise JournalRefusal('Protected IPC database/sidecar replaced')
+        for db_path in (self._ipc_db, self._gpu_db):
+            for p in (db_path, *(Path(str(db_path) + s)
+                                 for s in ('-wal', '-shm', '-journal'))):
+                try:
+                    p.lstat()
+                except FileNotFoundError:
+                    continue
+                if self._protected_path(p) != (p.stat().st_dev, p.stat().st_ino):
+                    raise JournalRefusal('Protected IPC/GPU database or sidecar replaced')
         return True
 
     def open_journal(self) -> IPCOperationJournal:
@@ -70,6 +72,22 @@ class WindowsProtectedIPCJournalOwner:
         if self.guard(self.root) is not True:
             raise JournalRefusal('IPC SQLite failed native owner/EFS postflight')
         return journal
+
+    def open_gpu_yield_journal(self):
+        """Use the SAME independently EFS-verified production owner."""
+        from backend.nvp_lu_gpu_yield import GpuYieldJournal
+        if self.guard(self.root) is not True:
+            raise JournalRefusal('Protected GPU yield journal storage not admitted')
+        journal = GpuYieldJournal(self.root, storage_guard=self.guard)
+        if self.guard(self.root) is not True:
+            raise JournalRefusal('GPU yield SQLite failed native owner/EFS postflight')
+        return journal
+
+
+def open_installed_windows_gpu_yield_journal(production_journal, production_supervisor):
+    """Must not create a second unprotected owner or trust another path."""
+    return WindowsProtectedIPCJournalOwner(
+        production_journal, production_supervisor).open_gpu_yield_journal()
 
 
 def open_installed_windows_ipc_journal(production_journal, production_supervisor):

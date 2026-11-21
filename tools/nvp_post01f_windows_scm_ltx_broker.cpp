@@ -6,6 +6,7 @@
 #include "nvp_p1f_windows_private_kernel_probe.cpp"  // tested kernel helpers
 #include "nvp_p1f_windows_private_desktop.hpp"
 #include "nvp_post01f_windows_creator_signature.hpp"
+#include "nvp_int_lu_gpu_stop_issuer.hpp" // native SCM Job ACTIVE_ZERO + separate CNG key
 #include <bcrypt.h>
 #include <ncrypt.h>
 #include <algorithm>
@@ -169,6 +170,10 @@ std::wstring reg_string(HKEY key,const wchar_t* name) {
 }
 struct Approval {
     std::string ticket,job,project,plan,stack,bootstrap,layout,look,conditioning,nonce,expires;
+    // Optional Lu-connected resource job, sealed by the original machine
+    // custodian, NEVER supplied as model/UI arguments or a worker reply.
+    std::string gpu_ref,gpu_device,gpu_job,gpu_workspace,gpu_conversation,
+                gpu_turn,gpu_task,gpu_epoch,gpu_session;
 };
 Approval consume() {
     HKEY registry=nullptr;
@@ -186,6 +191,28 @@ Approval consume() {
         for(const auto* digest:{&a.plan,&a.stack,&a.bootstrap,&a.layout,
                                  &a.look,&a.conditioning})
             must(exact(*digest,"[a-f0-9]{64}"),"SCM source/model pin invalid");
+        DWORD gpu_type=0,gpu_len=0;
+        const LONG gpu_presence=RegQueryValueExW(registry,L"GpuLeaseRef",nullptr,
+                         &gpu_type,nullptr,&gpu_len);
+        must(gpu_presence==ERROR_FILE_NOT_FOUND||gpu_presence==ERROR_SUCCESS,
+             "Protected Lu GPU lease registry state invalid");
+        if(gpu_presence==ERROR_SUCCESS) {
+            // A partially populated GPU binding cannot be silently treated
+            // as an ordinary non-Lu job and bypass the signed stop receipt.
+            a.gpu_ref=read(L"GpuLeaseRef");
+            a.gpu_device=read(L"GpuDeviceRef");
+            a.gpu_job=read(L"GpuOriginalJobRef");
+            a.gpu_workspace=read(L"GpuWorkspaceRef");
+            a.gpu_conversation=read(L"GpuConversationRef");
+            a.gpu_turn=read(L"GpuUserTurnRef");
+            a.gpu_task=read(L"GpuTaskRef");
+            a.gpu_epoch=read(L"GpuCoreEpochRef");
+            a.gpu_session=read(L"GpuNvpSessionRef");
+            must(a.gpu_job==a.job &&
+                 exact(a.gpu_device,"dxgi:luid_0x[0-9a-fA-F]{8}_0x[0-9a-fA-F]{8}_phys_0") &&
+                 exact(a.gpu_ref,"gpu-[A-Za-z0-9-]{1,124}"),
+                 "Lu GPU lease not tied to original admitted native LTX job/device");
+        }
         std::string previous;
         try {previous=read(L"ConsumedId");}catch(const std::exception&){}
         must(previous!=a.ticket,"SCM one-use ticket replay");
@@ -364,22 +391,34 @@ int run_once() {
        reinterpret_cast<const BYTE*>(h.sid),GetLengthSid(h.sid)).data(),32);
     must(ResumeThread(h.thread)!=DWORD(-1),"SCM cannot resume owned LTX child");
     DWORD waited=WaitForSingleObject(h.process,3600000);
-    if(waited!=WAIT_OBJECT_0) {
-        TerminateJobObject(h.job,13);
-        throw std::runtime_error("Native LTX model timed out/cancelled; no positive SCM receipt");
-    }
     DWORD exit_code=1;
-    must(GetExitCodeProcess(h.process,&exit_code)&&exit_code==0,
-         "Native LTX broker failed or loader refused");
+    const bool worker_succeeded=waited==WAIT_OBJECT_0 &&
+        GetExitCodeProcess(h.process,&exit_code)!=FALSE && exit_code==0;
     // Kill ALL helper descendants and wait for empty Job before publication;
-    // WFP rules and AppContainer profile still remain in force.
-    must(TerminateJobObject(h.job,0),"SCM cannot terminate descendants");
+    // WFP and AppContainer protections remain in force. Even failure/timeout
+    // must drain the SAME original Job before releasing Lu's GPU lease.
+    must(TerminateJobObject(h.job,worker_succeeded?0:13),
+         "SCM cannot terminate original protected LTX Job descendants");
     bool drained=false;
     for(int i=0;i<100;++i) {
         if(zero_active_processes(h.job)){drained=true;break;}
         Sleep(100);
     }
     must(drained,"SCM Job still has child processes after 10s drain");
+    // Release the GPU independently of the film result, only AFTER original
+    // Job is kernel-empty. A failed film never receives a positive picture.
+    if(!a.gpu_ref.empty()) {
+        const nvp_int_lu_gpu_stop::Original original{
+            a.gpu_ref,a.gpu_device,"nvp.film",a.gpu_workspace,a.gpu_conversation,
+            a.gpu_turn,a.gpu_task,a.gpu_epoch,a.gpu_session,a.gpu_job};
+        // This is executed by the original running installed SCM service
+        // while it still HOLDS its original Job and worker process handles.
+        // Missing pin/key/immutable file/ACTIVE_ZERO fails before any film
+        // success is reported. Lu independently verifies receipt + VRAM.
+        nvp_int_lu_gpu_stop::issue_after_original_job_empty(
+            h.job,h.process,original,a.job);
+    }
+    must(worker_succeeded,"Native LTX broker failed, timed out or was cancelled");
     const fs::path picture=regular(stage/L"picture.mp4");
     const fs::path result=regular(stage/L"result.json");
     encrypted(picture);encrypted(result);

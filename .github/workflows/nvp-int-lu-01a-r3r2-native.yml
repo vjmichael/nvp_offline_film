@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vjmichael/Lu-AI-GUI
-          ref: 9f43d078aa5e979de0ff72ca4c19e8c5829572af
+          ref: 60afe6908a6abe3408bb952869d85b43781313ca
           path: _lu_ipc_source
           persist-credentials: false
       - name: Pin actual native compiler identities

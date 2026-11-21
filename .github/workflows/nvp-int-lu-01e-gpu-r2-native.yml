@@ -1,0 +1,117 @@
+name: NVP INT-LU-01E GPU R2 Native Job, P256 Stop, Exact Lu Rust-Prost
+on:
+  workflow_dispatch:
+  push:
+    branches: [nvp/mainline-convergence-20261113]
+    paths:
+      - '.github/workflows/nvp-int-lu-01e-gpu-r2-native.yml'
+      - 'native/nvp_lu_ipc_client/**'
+      - 'scripts/nvp_lu_native_exact_source.*'
+      - 'scripts/nvp_lu_01e_gpu_r1_source_qualification.py'
+      - 'backend/nvp_lu_gpu*.py'
+      - 'backend/nvp_lu_ltx_preallocation.py'
+      - 'backend/nvp_post01f_ltx_native_handoff.py'
+      - 'tools/nvp_int_lu_gpu_stop_issuer.hpp'
+      - 'tools/nvp_int_lu_gpu_stop_negative.cpp'
+      - 'tools/nvp_post01f_windows_scm_ltx_broker.cpp'
+      - 'tests/test_nvp_int_lu_gpu_r2.py'
+permissions:
+  contents: read
+concurrency:
+  group: nvp-int-lu-01e-gpu-r2-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native-source-gpu:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: vjmichael/Lu-AI-GUI
+          ref: 60afe6908a6abe3408bb952869d85b43781313ca
+          path: _lu_gpu_source
+          persist-credentials: false
+      - name: Exact immutable SHA evidence
+        shell: bash
+        run: |
+          git rev-parse HEAD
+          test "$(git -C _lu_gpu_source rev-parse HEAD)" = 60afe6908a6abe3408bb952869d85b43781313ca
+          test "$(git -C _lu_gpu_source rev-parse HEAD:src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto)" = 747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1
+          rustc --version
+          cargo --version
+      - name: Native locked crates, no source modification
+        shell: bash
+        working-directory: native/nvp_lu_ipc_client
+        run: cargo fetch --locked
+      - name: Native Rust/prost exact Lu GPU request/outcome/release
+        shell: bash
+        env:
+          LU_WORKSPACE_PROTO: ${{ github.workspace }}/_lu_gpu_source/src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto
+        working-directory: native/nvp_lu_ipc_client
+        run: cargo test --locked --offline --all-targets -- --nocapture
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install native protoc (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler
+      - name: Install native protoc (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install protoc -y --no-progress
+      - name: Genuine Lu Protobuf descriptor and bounded R2 source tests
+        shell: bash
+        run: |
+          python -m pip install 'protobuf>=5,<7' 'cryptography>=43,<49'
+          python scripts/nvp_lu_01e_gpu_r1_source_qualification.py --lu-root _lu_gpu_source
+          python -m unittest discover -s tests -p 'test_nvp_int_lu_gpu_r2.py' -v
+          python -m unittest discover -s tests -p 'test_nvp_int_lu_01e_gpu*.py' -v
+      - name: Compile actual Windows native CNG-P256 issuer and deny direct admission
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'MSVC unavailable: cannot claim Windows native CNG compilation' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $src='tools\nvp_int_lu_gpu_stop_negative.cpp'
+          $command='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_gpu_stop_negative.exe "'+$src+'" /link advapi32.lib ncrypt.lib bcrypt.lib'
+          cmd.exe /d /s /c $command
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native issuer source failed to compile' }
+          & .\nvp_gpu_stop_negative.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Windows native unsigned/foreign Job refusal failed' }
+          $global:LASTEXITCODE=0
+      - name: Compile original SCM service with exact integrated GPU receipt issuer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $vswhere=Join-Path (Get-Item 'Env:ProgramFiles(x86)').Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs=(& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'MSVC unavailable' }
+          $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          $src='tools\nvp_post01f_windows_scm_ltx_broker.cpp'
+          $command='call "'+$vcvars+'" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_scm_ltx_gpu.exe "'+$src+'" /link userenv.lib fwpuclnt.lib advapi32.lib ws2_32.lib ole32.lib crypt32.lib ncrypt.lib bcrypt.lib user32.lib'
+          cmd.exe /d /s /c $command
+          if ($LASTEXITCODE -ne 0) { throw 'Original SCM + Lu GPU stop issuer failed to compile' }
+          & .\nvp_scm_ltx_gpu.exe
+          if ($LASTEXITCODE -ne 96) { throw 'Non-SCM native GPU signing entry did not refuse' }
+          $global:LASTEXITCODE=0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-lu-gpu-r2-locked-${{ matrix.os }}-${{ github.sha }}
+          path: native/nvp_lu_ipc_client/Cargo.lock
+          retention-days: 7
+# This qualifies source-only Windows CNG compilation/negative cases and
+# genuine NVP Rust-prost against exact Lu Git checkout. No installed key,
+# signed SCM receipt, real Lu GRANTED/RESTORED or physical Radeon inference.

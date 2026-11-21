@@ -225,7 +225,9 @@ class ProtectedLtxHandoff:
 
     def run(self, *, intent: dict, layout: bytes, look: bytes,
             conditioning: bytes, max_memory_mb: int = 24576,
-            timeout_s: int = 3600) -> dict:
+            timeout_s: int = 3600,
+            preallocated_job_id: str | None = None,
+            verify_installed_reservation=None) -> dict:
         # Only a provisioned physical Windows host may perform protected LTX.
         if os.name != "nt":
             raise PermissionError("Native LTX requires the installed Windows AppContainer/EFS host")
@@ -253,7 +255,15 @@ class ProtectedLtxHandoff:
                         "camera_id":plan["camera_id"]}
         if self.take_verify(dict(source_scope)) is not True:
             raise PermissionError("Authoritative immutable Take did not verify before generation")
-        job_id = "ltx_" + secrets.token_hex(12)
+        # In Lu-connected GPU-lease mode the installed original NVP SCM
+        # supervisor MUST reserve this exact original job BEFORE Lu unload.
+        # A new random ID at LTX launch would defeat Core's signed worker-stop
+        # binding. Standalone mode keeps its independent random job IDs.
+        from backend.nvp_lu_ltx_preallocation import select_original_ltx_job
+        job_id = select_original_ltx_job(preallocated_job_id=preallocated_job_id,
+            verify_installed_reservation=verify_installed_reservation,
+            project_id=plan["project_id"], take_sha256=plan["take_sha256"],
+            camera_id=plan["camera_id"])
         plan = {"format": WIRE, **plan, "job_id": job_id}
         packed = _canonical(plan)
         if len(packed) > MAX_PLAN:
