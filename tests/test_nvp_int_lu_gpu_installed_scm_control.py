@@ -205,7 +205,8 @@ class InstalledScmOwnerNegativeSource(unittest.TestCase):
         api=types.SimpleNamespace(SERVICE_QUERY_STATUS=4,SERVICE_STOP=16,
                                   SERVICE_RUNNING=4,SERVICE_CONTROL_STOP=1)
         calls=[]
-        api.QueryServiceStatusEx=lambda h: {"CurrentState":4,"ProcessId":1234}
+        api.QueryServiceStatusEx=lambda h: {
+            "CurrentState":4,"Win32ExitCode":0,"ProcessId":1234}
         api.ControlService=lambda h,mode:calls.append((h,mode))
         api.CloseServiceHandle=lambda h:None
         controller=object.__new__(InstalledScmLtxServiceControl)
