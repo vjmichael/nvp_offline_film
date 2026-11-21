@@ -74,6 +74,10 @@ jobs:
           if ($LASTEXITCODE -ne 91) { throw 'Creator signoff without protected HKLM source was not denied' }
           Get-FileHash $exe -Algorithm SHA256
           Write-Host 'NVP_POST01F_NATIVE_CREATOR_WITHOUT_TRUST_DENIED'
+          # Both native invocations intentionally returned 91 and were asserted above.
+          # GitHub's pwsh wrapper propagates LASTEXITCODE after the script; clear
+          # only here, after every refusal and artifact-hash assertion succeeds.
+          $global:LASTEXITCODE = 0
 
       - name: Prove direct CLI and unapproved SCM start refuse without creating model output
         shell: pwsh

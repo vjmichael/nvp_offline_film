@@ -1,6 +1,19 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
 
+## 2026-11-20 — POST-01F R5-R2-R3-R3 genuine Windows creator negative-step exit-code repair (PREPARED; native requalification OPEN)
+
+**Exact original PR #161 source:** `1e29005a2dd895d3ef107b0d0849b62fa4f37811`. Original W1-G/INT-02C Windows+Linux source contracts and real OpenUSD/Blender passed; full original W1-G including Windows Job Cycles `#44875134944` passed. The Windows SCM/CNG creator negative workflow [run #44875140958](https://github.com/vjmichael/nvp_offline_film/actions/runs/44875140958) **FAILED** but native logs prove the old SCM service **compiled and linked**, the new LTX creator signoff **compiled and linked**, and both new negative cases **correctly exited 91**, printing `NVP_POST01F_NATIVE_CREATOR_WITHOUT_TRUST_DENIED`. The final PowerShell step nevertheless returned exit code 1 because its last native process exit code remained the expected refusal 91. The downstream original unapproved SCM service step was **SKIPPED**, not accepted at this SHA. Do not misclassify the positive SCM key or encrypted filmmaker installed evidence as accepted.
+
+**Narrow prepared correction:** preserve both `if ($LASTEXITCODE -ne 91) throw` negative assertions and the compiled EXE hash. After both refusals and the hash/marker, set `$global:LASTEXITCODE = 0` so the GitHub PowerShell wrapper does not turn a proven negative test into a failing step. Add one exact workflow order/source regression test; leave all original SCM source, CMS signing, W1-G and installed authorization logic untouched. This is a **workflow harness bug**, not permission to ignore a native refusal or weaken a security check.
+
+**Next gate:** await terminal disposition of **all** workflows at original PR #161 exact SHA, verify zero queued/in-progress convergence runs and unchanged old head, fast-forward **once non-forced** to the prepared reviewed single-child successor, and independently inspect the original unchanged-SHA Windows native compiler/creator denial **and downstream actual SCM direct/no-grant denial** plus W1-G. No stacked CI, no forced PR update, no new branch/PR or main merge.
+
+**Still open:** trusted installed positive creator CMS/signature, SCM-owned AppContainer/Job/WFP/EFS and P-256 receipt, authenticated encrypted filmmaker preview/approve/reject/reopen/recovery, exact historic R1/R2 reconciliation, and physical Radeon AI Pro R9700 LTX generation.
+
+---
+
+
 ## 2026-11-20 — POST-01F R5-R2-R3 native one-use LTX creator approval (SOURCE PREPARED; INSTALLED POSITIVE OPEN)
 
 **Current PR #161 exact source:** `c0541502fcf47a741f5b3714ad25c5d1bd23a443`, 40 of 45 original workflows passed at investigation; 5 still in progress, 0 failed. Exact-head W1-G/INT-02C, Gate 1, and actual Windows SCM/CNG compiled plus unapproved LocalSystem SCM denied **PASS**. No second CI batch or branch mutation during active original runs.

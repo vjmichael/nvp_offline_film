@@ -41,6 +41,20 @@ class NativeLtxConsent(unittest.TestCase):
                        'expiry<=now+900'):
             self.assertIn(marker,self.source)
         self.assertNotIn('subprocess',self.source)
+    def test_windows_runner_resets_expected_refusal_exit_only_after_checks(self):
+        workflow=(ROOT/'.github/workflows/nvp-post01f-r5r1-scm-cng-negative.yml').read_text(encoding='utf8')
+        begin=workflow.index('      - name: Compile native LTX creator CMS signoff')
+        end=workflow.index('      - name: Prove direct CLI and unapproved SCM start',begin)
+        step=workflow[begin:end]
+        unattended=step.index("if ($LASTEXITCODE -ne 91) { throw 'Unattended native creator signoff was not denied' }")
+        unapproved=step.index("if ($LASTEXITCODE -ne 91) { throw 'Creator signoff without protected HKLM source was not denied' }")
+        marker=step.index("Write-Host 'NVP_POST01F_NATIVE_CREATOR_WITHOUT_TRUST_DENIED'")
+        reset=step.index('$global:LASTEXITCODE = 0')
+        self.assertTrue(unattended < unapproved < marker < reset)
+        self.assertEqual(step.count('$global:LASTEXITCODE = 0'),1)
+        self.assertIn('Get-FileHash $exe -Algorithm SHA256',step)
+        self.assertIn('NVP_POST01F_REAL_WINDOWS_SCM_MISSING_GRANT_DENIED',workflow)
+
     def test_creator_does_not_approve_film_or_change_audio(self):
         self.assertIn('Original Takes and sound remain unchanged',self.source)
         self.assertIn('requires your separate review',self.source)
