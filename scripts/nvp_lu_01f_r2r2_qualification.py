@@ -28,6 +28,36 @@ def _blob(data):
     return hashlib.sha1(b'blob '+str(len(data)).encode('ascii')+b'\0'+data).hexdigest()
 
 
+def require_exact_domain_source(root: Path) -> None:
+    """Verify the pinned Git blob and byte-equivalent LF/CRLF worktree.
+
+    Git on Windows may check out text with CRLF, while the reviewed immutable
+    Git blob is LF. A mismatched commit, modified text, lone-CR, alternate
+    normalization or added unknown fields is NOT accepted. Never allow the
+    current worktree to redefine the reviewed digest.
+    """
+    source = root / NVP_PROTO_PATH
+    if not source.is_file():
+        raise RuntimeError('NVP_SOURCE_DENIED: reviewed domain Protobuf is missing')
+    data = source.read_bytes()
+    if b'\r' in data.replace(b'\r\n', b''):
+        raise RuntimeError('NVP_SOURCE_DENIED: noncanonical carriage return')
+    canonical = data.replace(b'\r\n', b'\n')
+    if _blob(canonical) != NVP_PROTO_BLOB:
+        raise RuntimeError('NVP_SOURCE_DENIED: exact reviewed nvp_film_v1.proto blob mismatch')
+    if (root / '.git').exists():
+        require_command('git')
+        source_blob = subprocess.check_output(
+            ['git', '-C', str(root), 'rev-parse', 'HEAD:' + NVP_PROTO_PATH],
+            text=True).strip()
+        if source_blob != NVP_PROTO_BLOB:
+            raise RuntimeError('NVP_SOURCE_DENIED: source Git object was repinned')
+        original = subprocess.check_output(
+            ['git', '-C', str(root), 'show', 'HEAD:' + NVP_PROTO_PATH])
+        if original != canonical:
+            raise RuntimeError('NVP_SOURCE_DENIED: worktree differs from immutable Git blob')
+
+
 def require_command(name):
     result=shutil.which(name)
     if not result:raise RuntimeError('NATIVE_BLOCKED: '+name+' executable unavailable')
@@ -46,9 +76,7 @@ def main():
     parser.add_argument('--protoc',default=None)
     args=parser.parse_args()
     root=args.nvp_root.resolve()
-    source=root/NVP_PROTO_PATH
-    if not source.is_file() or _blob(source.read_bytes())!=NVP_PROTO_BLOB:
-        raise RuntimeError('NVP_SOURCE_DENIED: exact reviewed nvp_film_v1.proto blob mismatch')
+    require_exact_domain_source(root)
     protoc=args.protoc or shutil.which('protoc')
     if not protoc:
         raise RuntimeError('PROTOC_BLOCKED: native Protobuf compiler unavailable')
