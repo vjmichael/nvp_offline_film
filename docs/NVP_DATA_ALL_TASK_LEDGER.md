@@ -1,6 +1,17 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
 
+## 2026-11-20 — POST-01F R5-R2-R2 Windows SCM/CNG MSVC repair (SOURCE CORRECTION PREPARED; INSTALLED GATES OPEN)
+
+**Source under qualification:** existing PR #161 `149f6ddd3627a5c4643e82ff02672731191d36fd`. Same-SHA W1-G/INT-02C #44864936603 and Gate 1 #44864936684 **PASS**; dedicated Windows SCM/CNG #44864941951 **FAIL**: 75 Python/source tests pass then actual MSVC C2039 at `STARTUPINFOEXW start` member assignment; native executable and unapproved-service denial skipped. Original CONV-12 90×8 Cycles acceptance was still running when repair was prepared. Do not stack CI.
+
+**Narrow correction:** assign `attrs` to `STARTUPINFOEXW::lpAttributeList` (not `STARTUPINFOW::lpAttributeList`); preserve extended suspended lowbox launch, WFP, Job, exact source, SCM signer and one-use ticket. Add exact static regression checks and installed positive-custody / encrypted filmmaker-review acceptance plan in `docs/NVP_POST01F_R5R2R2_INSTALLED_ACCEPTANCE.md`. No source qualification is inferred until the original Windows MSVC native workflow runs on the next unchanged SHA.
+
+**Release/open obligations:** finish the 45-run predecessor, safe single non-forced PR #161 fast-forward, unchanged-SHA Windows native compile/direct CLI and absent-authority SCM denial, independent installed positive machine key/SCM/WFP/AppContainer/EFS signature custody, G03 encrypted filmmaker UI approve/reject/restart, historical R1/R2 reconciliation and genuine R9700 model generation. Do not merge or call R5-R2-R2 native complete yet.
+
+---
+
+
 ## 2026-11-20 — POST-01F R5-R2-R1 source-locked CI regression reconciliation (REPAIR PREPARED; native gates OPEN)
 
 **Original exact PR #161 commit:** `fba82b38aed7d0068c8db84d8261fde1d9b3357e`; all 45 original workflows require terminal unchanged-SHA disposition. No automatic retry/CI stacking, new branch, new PR or mainline merge. Three observed failed runs: INT-02C/W1-G #44860163965 and Gate 1 #44860164917 rejected three unauthorized media launches in the newly added LTX adapter/independent verifier; dedicated Windows SCM/CNG #44860170995 had 69 passed/one failed test (Windows 8.3 temp path alias) and skipped C++ compilation. Legacy native SCM/Blender passes do **not** prove new LTX SCM signer.

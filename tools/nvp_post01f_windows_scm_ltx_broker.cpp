@@ -339,7 +339,7 @@ int run_once() {
     nvp_p1f_private_desktop::PrivateDesktop private_desktop(
           std::wstring(a.ticket.begin(),a.ticket.end()));
     STARTUPINFOEXW start{};start.StartupInfo.cb=sizeof(start);
-    start.StartupInfo.lpAttributeList=attrs;
+    start.lpAttributeList=attrs;
     start.StartupInfo.lpDesktop=const_cast<LPWSTR>(private_desktop.qualified.c_str());
     // Exact installed executable, exact plan. No user-provided executable,
     // prompt, shell, extra args or arbitrary Python module.
