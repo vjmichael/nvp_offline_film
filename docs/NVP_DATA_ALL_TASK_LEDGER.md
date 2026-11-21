@@ -1,5 +1,54 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
+## 2026-11-21 — NVP-INT-LU-01A-R3-R2 — NVP-only native qualification (FIRST-PASS; INSTALLED OPEN)
+
+**Scope and qualification:** NVP-owned client, schema, Windows observer/fixture, native Rust/prost acceptance workflow and no Lu Core changes. Existing PR #161 original `efb6ed67e5511879a9138315577842dce65f9151` CI cohort **45/45 PASS**, zero failed before single successor publication. Prior roadmapping/contract integration is part of this single reviewed descendant. Full [native qualification, scope, blockers and tests](NVP_INT_LU_01A_R3R2_NATIVE_QUALIFICATION.md).
+
+**Locally observed Debian 13:** Python focused suite **82 run, 81 PASS, one Windows-native test SKIPPED**. A real separate-process Unix-domain socket and Linux `SO_PEERCRED` passed mutual-HMAC fixture Health and wrong-key, forged-host-MAC, wrong-session, wrong-PID denials; fixture is NOT Lu Core. Native C++ `protoc` compiled 16 NVP film messages/one enum/no services; Python compileall passed. Rust/cargo unavailable locally: Rust/prost native = **NOT RUN**, not a qualified installed session. Corrected fixture-only credential-representation leakage and added native Windows process exit/session pre-return rejection.
+
+**One next acceptance batch:** `.github/workflows/nvp-int-lu-01a-r3r2-native.yml` is scoped to Windows 2022 + Ubuntu Linux native Rust/prost and source/OS fixture tests against Lu exact pinned immutable source `9f43d078aa5e979de0ff72ca4c19e8c5829572af` / proto blob `4e01d921197fb1c58c99958479b1cede36e13c9a`. First-pass runner-generated Cargo.lock is an artifact for **review**, not already approved release lock. Ubuntu is NOT Debian; separately obtain Debian native Rust evidence. Do not claim Windows/native PASS until original run receipts have been independently inspected.
+
+**Lu dependencies remain Core-owned:** [#245](https://github.com/vjmichael/Lu-AI-GUI/issues/245) real Health dispatcher, [#246](https://github.com/vjmichael/Lu-AI-GUI/issues/246) NVP ObjectRef/effect grants, [#247](https://github.com/vjmichael/Lu-AI-GUI/issues/247) signed NVP installer/credential enrollment. Existing Core installed broker still IDE-specific. NVP Windows production Health entry remains deny-by-default. No test key or signed-surrogate self-enrollment, no arbitrary model/tool effects, no physical Radeon LTX claims.
+
+**Next:** reconcile and repair the actual Windows/Linux native R3-R2 runner observations on exact SHA, pin/review Cargo.lock, obtain Debian Rust and true Windows OS named-pipe test positive, then consume accepted Lu Core NVP broker contract without changing Core code. Full NVP-STAB-01 follows completed integration; Security/installed release gates stay downstream.
+
+---
+
+## 2026-11-21 — NVP-INT-LU-01A — INITIAL CONTRACT ALIGNMENT (SOURCE-ONLY; OPEN)
+
+**Linked successor:** [Lu IPC 01A source pin, compatibility and capability matrix](NVP_INT_LU_01A_CONTRACT_ALIGNMENT_20261121.md), with proposed independent NVP-owned [film TypedValue Protobuf](../contracts/nvp/film/v1/nvp_film_v1.proto). Verified draft Lu source [PR #244](https://github.com/vjmichael/Lu-AI-GUI/pull/244) `ab3b207bcafda9b6517ca6d928dfd6be3565bcf7`: `lu.workspace.v0` wire 1.0, Windows named pipes / Linux UDS, 256-KiB frame, 64-KiB typed value, max 16 object refs, original user-turn `OriginRefs`, host-owned signed/enrolled OS peer and exact operation journal. **No NVP runtime endpoint or signed installed positive connection exists yet.**
+
+**Source-only deliverables:** mapped 8 proposed `nvp.film.*` capabilities (project/scene read, unapproved story proposal, reviewed project commit, protected picture-only render, encrypted pending review read/explicit creator decision, native film export) onto 16 proposed bounded request/response message shapes with exact Lu type URLs and effect classes. New schema is **not protoc/prost-compiled, generated, registered, or independently runtime-tested**. Explicitly refuse treating historical NVP custom JSON status socket/old `lu.v1` alpha source as this new Lu Protobuf channel. No duplicate model registry, automatic approval or original PCM modification. Lu actual installed credential/signing package acceptance remains an upstream block.
+
+**Next 01A gate:** use genuine pinned Lu checkout + real protoc/prost generation and registered NVP TypeURLs; hard-fail incompatible wire, unknown types, unapproved effect class, invalid object scope and spoofed `Hello`. Then implement NVP-INT-LU-01B native transport after a separate reviewed source gate. Remain within existing PR #161, no stacked CI, no main merge.
+
+---
+
+## 2026-11-21 — OWNER REORDER: Lu IPC interface + mandatory whole-NVP stabilization [C; OPEN]
+
+**Approved order:** Integration → **NVP-STAB-01 whole-codebase Stabilization** → **NVP-SEC-Q-01 Security qualification** → **NVP-INST-AC-01 installed Windows acceptance** → **NVP-PKG-WIN-01 NVP Windows alpha installer closeout**. Add **NVP-INT-LU-01** to Integration. [Task descriptions + exit criteria](NVP_INT_LU_IPC_AND_STABILIZATION_20261121.md); [master design amendment](NVP_MASTER_DESIGN.md). Older source/native negative receipts are retained and must not be represented as final stabilized/installed acceptance. NVP can run standalone without Lu; optional Lu mode only after independent Lu peer enrollment.
+
+**NVP-INT-LU-01 [NEW/OPEN]**, grounded in Lu Core draft [PR #244](https://github.com/vjmichael/Lu-AI-GUI/pull/244), `ab3b207bcafda9b6517ca6d928dfd6be3565bcf7`:
+- **01A** exact `lu.workspace.v0.WorkspaceFrame`/type URLs/version/features/namespace contract; **01B** Windows named-pipe + Linux UDS framing/bounds/backpressure (NVP Linux native qualification owner-deferred); **01C** OS peer image/PID/SID/signer and installer-owned credential/host-only HMAC/epoch enrollment, no Hello-based grants.
+- **01D** `nvp.film.*` typed film/production/Take/PCM/LTX-picture/review capabilities using scope-checked hash object refs and per-creator/domain effects; **01E** Lu model-sharing inference/leases/cooperative VRAM/RAM scheduling without extra GGUF runtime.
+- **01F** exact durable operation refs, cancel vs terminal `UNCERTAIN`, idempotent recovery/replay refusal; **01G** installed Windows real NVP↔Lu positive/refusal, offline standalone/connected UX and user approval; **01H** migration, rollback, package/version pins, independent receipts. Lu installed positive is still an upstream dependency and this NVP entry does not modify Lu source.
+
+**NVP-STAB-01 [NEW; MANDATORY PRE-SECURITY STOP]:**
+- **01A** entire repository/dependency/feature↔source↔test inventory; implementation-vs-fixture status and defect list.
+- **01B** real five-phase film journey and source→low-poly→LTX visual-only review→original sound→native cinema export, all modules and optional Lu IPC integrated.
+- **01C** bug fixes and creator UX/navigation/accessibility/progress/retry/recovery/long-film responsiveness polish.
+- **01D** simplify dead/duplicated code, redundant model/tool registries and conversions only after traced references and regression/migration proof.
+- **01E** broad deterministic/native Windows regression: EFS/CNG negative, owner authorization, original Take/PCM, encryption, source index, crash/cancel/replay, audio time, offline startup, RAM/VRAM bounded and large-project performance.
+- **01F** one exact reviewed source freeze, integrated evidence and defect/coverage/known-limitations register with no critical release-blocking bugs. **No SECURITY/INSTALL acceptance claim until this exit gate.**
+
+**NVP-SEC-Q-01 [NEXT AFTER STAB]:** repeat full security qualification on frozen source: Lu host peer/session/effect boundaries, Windows SCM/Job/AppContainer/WFP, one-use creator CMS, nonexportable CNG signing + pinned keys + durable receipt nonce, EFS/DPAPI/AES-GCM encrypted picture, approve/reject/reopen, revocation/tamper/replay/cancel/kill/restart. Existing POST-01F source/negative tests alone do not suffice.
+
+**NVP-INST-AC-01 [AFTER SEC]:** actually installed supported Windows NVP native authorizations, film editing/review/export and recovery, authentic physical Radeon AI Pro R9700 LTX output if installed/licensed; label fixtures honestly. **NVP-PKG-WIN-01:** one first-party NVP alpha installer, safe provision/install/upgrade/uninstall/rollback, project preservation; no second LTX installer, no signed-release claim from source only.
+
+**Source discipline:** existing PR #161 / `nvp/mainline-convergence-20261113` only. Head at review `efb6ed67e5511879a9138315577842dce65f9151` with original exact-head CI still active. Prepare documentation without branch changes until all runs terminal; then review single non-forced successor, no new branches/PR, CI stacking, main merge, scope freeze, FFmpeg or Docker.
+
+---
+
 
 ## 2026-11-20 — POST-01F R5-R2-R3-R3 genuine Windows creator negative-step exit-code repair (PREPARED; native requalification OPEN)
 

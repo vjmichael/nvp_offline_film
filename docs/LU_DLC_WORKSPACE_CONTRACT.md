@@ -1,5 +1,11 @@
 # NVP / Lu Film Workspace DLC — canonical integration plan
 
+## New owner priority — 2026-11-21: Windows NVP app and Lu Core Protobuf IPC
+
+This supersedes the historical "NVP is ONLY a Lu DLC" and "no standalone NVP installer" statements below for the alpha. One independently installable Windows NVP filmmaking application, plus an **optional** Lu Core Workspace/provider IPC interface; no second LTX installer. Integration group **NVP-INT-LU-01**, mandatory full **NVP-STAB-01** before final security, then installed Windows acceptance and packaging: [new task groups](NVP_INT_LU_IPC_AND_STABILIZATION_20261121.md); [design](NVP_MASTER_DESIGN.md).
+
+The Lu source of truth now inspected is **vjmichael/Lu-AI-GUI draft PR #244** `ab3b207bcafda9b6517ca6d928dfd6be3565bcf7`, not the old jan_alt implementation. Draft `src-tauri/lu-core/proto/lu/workspace/v0/workspace.proto` (`lu.workspace.v0`), `workspace_ipc_transport.rs`, `ipc_pipe_peer.rs`: versioned bounded Protobuf over **Windows named pipes** and **Linux AF_UNIX**. Lu Core owns OS process/package enrollment, selected model and inference, per-user-turn grants, native registry, journal and resource leases; NVP owns canonical scenes, original Takes/PCM, domain decisions, editor and post. No IPC Hello/tool discovery can grant consent, no arbitrary media bytes or paths over the wire, no automatic extra GGUF model. Real signed installed positive Lu peer admission remains unqualified; NVP cannot claim that from mock/surrogate tests.
+
 **Date:** 2026-11-02
 **Status:** Architecture reconciliation; proposed NVP adapter, NOT yet installed,
 registered, integrated or released.

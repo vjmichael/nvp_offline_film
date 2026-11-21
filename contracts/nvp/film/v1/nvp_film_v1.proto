@@ -1,0 +1,98 @@
+syntax = "proto3";
+package nvp.film.v1;
+
+// NVP-INT-LU-01A source-only domain payloads for Lu's lu.workspace.v0.
+// No services, credentials, paths, binary media, or authority in this file.
+message ProjectReadRequest {
+  string project_ref = 1;
+  uint64 minimum_revision = 2;
+}
+message ProjectReadResult {
+  string project_ref = 1;
+  uint64 observed_revision = 2;
+  bytes source_sha256 = 3;
+  repeated string scene_refs = 4;
+}
+message SceneReadRequest {
+  string project_ref = 1;
+  string scene_ref = 2;
+  uint64 expected_revision = 3;
+}
+message SceneReadResult {
+  string scene_ref = 1;
+  uint64 revision = 2;
+  bytes scene_sha256 = 3;
+  repeated string take_refs = 4;
+  string production_bible_ref = 5;
+}
+message StoryProposalRequest {
+  string project_ref = 1;
+  uint64 expected_project_revision = 2;
+  string proposal_ref = 3;
+  bytes approved_source_sha256 = 4;
+  string stage_code = 5;
+}
+message StoryProposalResult {
+  string proposal_ref = 1;
+  uint64 resulting_revision = 2;
+  string state_code = 3;
+}
+message ProjectCommitRequest {
+  string project_ref = 1;
+  uint64 expected_revision = 2;
+  string reviewed_proposal_ref = 3;
+  bytes expected_source_sha256 = 4;
+}
+message ProjectCommitResult {
+  uint64 resulting_revision = 1;
+  bytes canonical_source_sha256 = 2;
+}
+message RenderShotRequest {
+  string project_ref = 1;
+  string take_ref = 2;
+  uint64 frozen_take_revision = 3;
+  bytes plan_sha256 = 4;
+  string installed_render_profile_ref = 5;
+}
+message RenderShotResult {
+  string derived_job_ref = 1;
+  bytes plan_sha256 = 2;
+  string status_code = 3;
+}
+message PictureReviewReadRequest {
+  string project_ref = 1;
+  string derived_job_ref = 2;
+}
+message PictureReviewReadResult {
+  string derived_job_ref = 1;
+  bytes pending_picture_sha256 = 2;
+  string review_state_code = 3;
+  string host_resolved_preview_ref = 4;
+}
+enum PictureDecision {
+  PICTURE_DECISION_UNSPECIFIED = 0;
+  PICTURE_DECISION_APPROVE = 1;
+  PICTURE_DECISION_REJECT = 2;
+}
+message PictureReviewDecisionRequest {
+  string project_ref = 1;
+  string derived_job_ref = 2;
+  bytes exact_pending_picture_sha256 = 3;
+  PictureDecision decision = 4;
+}
+message PictureReviewDecisionResult {
+  string derived_job_ref = 1;
+  string review_state_code = 2;
+  uint64 review_revision = 3;
+}
+message FilmExportRequest {
+  string project_ref = 1;
+  uint64 exact_edit_revision = 2;
+  bytes edit_manifest_sha256 = 3;
+  string installed_export_profile_ref = 4;
+}
+message FilmExportResult {
+  string export_ref = 1;
+  bytes verified_package_sha256 = 2;
+  string status_code = 3;
+}

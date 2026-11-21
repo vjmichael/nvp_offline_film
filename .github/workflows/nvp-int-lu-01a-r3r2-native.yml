@@ -1,0 +1,98 @@
+name: NVP INT-LU-01A R3-R2 NVP-owned Rust/prost native qualification
+
+# Only one scoped batch after predecessor CI is terminal. No auto rerun for
+# every unrelated film feature; no Lu Core source mutation or installer grant.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - nvp/mainline-convergence-20261113
+    paths:
+      - '.github/workflows/nvp-int-lu-01a-r3r2-native.yml'
+      - 'native/nvp_lu_ipc_client/**'
+      - 'contracts/nvp/film/v1/**'
+      - 'backend/nvp_lu_*.py'
+      - 'tests/test_nvp_int_lu_01a_*.py'
+      - 'tools/nvp_*proto*.py'
+      - 'scripts/nvp_lu_native_exact_source.*'
+
+permissions:
+  contents: read
+concurrency:
+  group: nvp-int-lu-01a-r3r2-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-locked-rust-prost:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout NVP exact event source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout Lu exact immutable reference (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: vjmichael/Lu-AI-GUI
+          ref: 9f43d078aa5e979de0ff72ca4c19e8c5829572af
+          path: _lu_ipc_source
+          persist-credentials: false
+      - name: Pin actual native compiler identities
+        shell: bash
+        run: |
+          git rev-parse HEAD
+          git -C _lu_ipc_source rev-parse HEAD
+          rustc --version
+          cargo --version
+      - name: Generate FIRST-PASS dependency lock for independent review
+        shell: bash
+        working-directory: native/nvp_lu_ipc_client
+        run: |
+          cargo generate-lockfile
+          cargo fetch --locked
+      - name: Qualify NVP Rust/prost against pinned Lu immutable schema
+        shell: bash
+        env:
+          LU_REPO: ${{ github.workspace }}/_lu_ipc_source
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            pwsh -NoProfile -File scripts/nvp_lu_native_exact_source.ps1 -LuRepo "$LU_REPO"
+          else
+            bash scripts/nvp_lu_native_exact_source.sh
+          fi
+      - name: Install Python runtime for portable and OS-native negative checks
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install native Protobuf compiler (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo apt-get update -qq && sudo apt-get install -y protobuf-compiler
+      - name: Install native Protobuf compiler (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install protoc -y --no-progress
+      - name: NVP client Python + OS-native fixture qualification
+        shell: bash
+        run: |
+          python -m pip install 'protobuf>=5,<7'
+          python -m unittest discover -s tests -p 'test_nvp_int_lu_01a_r*.py' -v
+      - name: Preserve first-pass Cargo.lock for independent review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-int-lu-r3r2-lock-${{ matrix.os }}-${{ github.sha }}
+          path: native/nvp_lu_ipc_client/Cargo.lock
+          if-no-files-found: warn
+          retention-days: 7
+
+# This workflow may qualify real native Rust and Windows fixture transport.
+# It never enrolls a signed NVP package, provides a Lu credential broker,
+# proves installed Lu Core Health or restarts the owner-suspended Linux NVP
+# production track. Ubuntu runner is NOT Debian; actual Debian Rust remains
+# a separately required native host if not available as a self-hosted runner.
