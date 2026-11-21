@@ -151,6 +151,7 @@ class WindowsPeerHandleLeaseFixture(unittest.TestCase):
 class CoreInterfaceGates(unittest.TestCase):
     def test_lu_current_wire_pin_does_not_claim_package_enrollment(self):
         self.assertEqual(lu.LU_WORKSPACE_PROTO_BLOB_SHA,PIN)
+        self.assertEqual(lu.LU_IPC_SOURCE_SHA,'60afe6908a6abe3408bb952869d85b43781313ca')
         self.assertEqual((lu.WIRE_MAJOR,lu.WIRE_MINOR),(1,0))
         self.assertEqual(lu.MAX_FRAME_BYTES,256*1024)
         self.assertEqual(lu.MAX_TYPED_BYTES,64*1024)

@@ -29,8 +29,8 @@ MAX_OBJECT_REFS = 16
 MAX_STREAM_CREDIT = 64
 IO_DEADLINE_SECONDS = 3.0
 # Provenance: vjmichael/Lu-AI-GUI draft PR #244 (not installed).
-LU_IPC_SOURCE_SHA = "6932ace156ddaae728a2967660fc37aa986471ae"
-LU_WORKSPACE_PROTO_BLOB_SHA = "4e01d921197fb1c58c99958479b1cede36e13c9a"
+LU_IPC_SOURCE_SHA = "60afe6908a6abe3408bb952869d85b43781313ca"
+LU_WORKSPACE_PROTO_BLOB_SHA = "747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1"
 SAFE_REF = re.compile(r"[A-Za-z0-9_.:/-]{1,128}\Z")
 PIPE_NAME = re.compile(r"\\\\\.\\pipe\\lu-ipc-[a-f0-9]{32}\Z")
 
