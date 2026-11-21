@@ -29,6 +29,7 @@ class NativeReceiptHandoffR2R2(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name)/'private'
         root.mkdir(mode=0o700)
+        root=root.resolve(strict=True)
         self.now=1_800_000_000_000
         self.journal=IPCOperationJournal(root,storage_guard=lambda p:p==root,
                                          clock_ms=lambda:self.now)

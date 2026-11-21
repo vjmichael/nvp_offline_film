@@ -26,6 +26,7 @@ class NativeProductionBindingR2R1(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / 'private'
         self.root.mkdir(mode=0o700)
+        self.root = self.root.resolve(strict=True)
         self.now = 1_800_000_000_000
         self.db = self.new_db()
         self.spec = OperationSpec(
@@ -186,6 +187,7 @@ class BoundDuplexFixtureR2R1(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root=Path(self.tmp.name)/'private';root.mkdir(mode=0o700)
+        root=root.resolve(strict=True)
         self.journal=IPCOperationJournal(root,
             storage_guard=lambda path:path==root,
             clock_ms=lambda:1_800_000_000_000)
@@ -256,6 +258,7 @@ class ProviderToProductionIntegrationFixture(unittest.TestCase):
         inputs={cap:domain[name] for cap,(name,_) in CAPABILITIES.items()}
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)/'private'; root.mkdir(mode=0o700)
+            root=root.resolve(strict=True)
             db=IPCOperationJournal(root,storage_guard=lambda path:path==root,
                                   clock_ms=lambda:1_800_000_000_000)
             peer=AdmittedLuPeer('session','epoch','workspace')

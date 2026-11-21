@@ -107,6 +107,7 @@ class ProviderR2(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / 'protected'
         self.root.mkdir(mode=0o700)
+        self.root = self.root.resolve(strict=True)
         self.now = 1_800_000_000_000
         self.journal = self.fresh_journal()
         self.peer = AdmittedLuPeer('host-session-1','core-epoch-1','workspace-1')

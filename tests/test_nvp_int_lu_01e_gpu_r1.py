@@ -86,6 +86,9 @@ class GpuLeaseV1Wire(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name)/'protected';self.root.mkdir(mode=0o700)
+        # Windows TEMP may contain 8.3 path aliases; retain strict journal
+        # containment while giving it the OS-resolved canonical directory.
+        self.root=self.root.resolve(strict=True)
         self.now=1_800_000_000_000
         self.intent=YieldIntent(
             origin=OriginRefs('workspace-1','conversation-1','turn-1','task-1','op-1'),

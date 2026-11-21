@@ -12,7 +12,10 @@ spec = importlib.util.spec_from_file_location('r2r2r1_qualifier',
     ROOT / 'scripts' / 'nvp_lu_01f_r2r2_qualification.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-ORIGINAL = (ROOT / module.NVP_PROTO_PATH).read_bytes()
+SOURCE_WORKTREE = (ROOT / module.NVP_PROTO_PATH).read_bytes()
+if b'\r' in SOURCE_WORKTREE.replace(b'\r\n', b''):
+    raise RuntimeError('Noncanonical source worktree for CRLF regression fixture')
+ORIGINAL = SOURCE_WORKTREE.replace(b'\r\n', b'\n')
 
 
 class ExactSourceCRLFQualification(unittest.TestCase):

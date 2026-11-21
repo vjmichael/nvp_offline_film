@@ -12,7 +12,7 @@ int wmain() {
     try {
         auto canonical_body=canonical(original,42,123,57,890);
         if(canonical_body.size()<90 || canonical_body.front()!='L' ||
-           canonical_body[sizeof(DOMAIN)-1]!=0) return 14;
+           canonical_body[sizeof(GPU_STOP_DOMAIN)-1]!=0) return 14;
         try {
             issue_after_original_job_empty(nullptr,nullptr,original,
                                            original.original_nvp_job_ref);

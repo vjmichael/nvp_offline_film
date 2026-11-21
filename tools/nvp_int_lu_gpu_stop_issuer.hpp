@@ -24,7 +24,7 @@
 
 namespace nvp_int_lu_gpu_stop {
 namespace fs=std::filesystem;
-static constexpr char DOMAIN[]="LU_NVP_GPU_JOB_EMPTY_V1"; // use sizeof = trailing NUL
+static constexpr char GPU_STOP_DOMAIN[]="LU_NVP_GPU_JOB_EMPTY_V1"; // use sizeof = trailing NUL
 static constexpr char METHOD[]="WINDOWS_JOB_ACTIVE_ZERO_V1";
 static constexpr wchar_t KEY_NAME[]=L"NVP-INT-LU-GPU-JOB-EMPTY-P256-v1";
 
@@ -88,8 +88,8 @@ inline std::vector<BYTE> canonical(const Original& o,DWORD spid,
         require((ch>='0'&&ch<='9')||(ch>='a'&&ch<='z')||
                 (ch>='A'&&ch<='Z')||ch=='-',
                 "Lu installer rejects unsafe GPU receipt lease filename");
-    std::vector<BYTE> out(reinterpret_cast<const BYTE*>(DOMAIN),
-           reinterpret_cast<const BYTE*>(DOMAIN)+sizeof(DOMAIN));
+    std::vector<BYTE> out(reinterpret_cast<const BYTE*>(GPU_STOP_DOMAIN),
+           reinterpret_cast<const BYTE*>(GPU_STOP_DOMAIN)+sizeof(GPU_STOP_DOMAIN));
     for(const std::string* item:{&o.lease_ref,&o.device_ref,&o.module_id,
            &o.workspace_ref,&o.conversation_ref,&o.user_turn_ref,&o.task_ref,
            &o.core_epoch_ref,&o.nvp_session_ref})bound(out,*item);

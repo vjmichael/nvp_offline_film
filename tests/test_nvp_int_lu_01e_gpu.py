@@ -82,6 +82,9 @@ class GpuYieldLifecycle(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name)/'private';self.root.mkdir(mode=0o700)
+        # Windows TEMP may contain 8.3 path aliases; retain strict journal
+        # containment while giving it the OS-resolved canonical directory.
+        self.root=self.root.resolve(strict=True)
         self.now=1_800_000_000_000
         self.intent=YieldIntent(
             origin=OriginRefs('nvp-workspace','conversation','original-user-turn','task-1','gpu-op-1'),

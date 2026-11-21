@@ -37,6 +37,7 @@ class OperationLifecycleR1(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / "protected"
         self.root.mkdir(mode=0o700)
+        self.root = self.root.resolve(strict=True)
         self.now = 1_800_000_000_000
         self.new = lambda: IPCOperationJournal(
             self.root, storage_guard=lambda path: path == self.root,

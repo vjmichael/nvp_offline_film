@@ -19,7 +19,7 @@ from backend import nvp_lu_ipc_v0 as lu
 from tools.nvp_native_protoc_path import require_test_protoc
 
 NATIVE=ROOT/'native/nvp_lu_ipc_client'
-PIN='4e01d921197fb1c58c99958479b1cede36e13c9a'
+PIN='747b7472ab7e4bdfd7d646dd629b2c45a9c63dd1'
 
 
 class NativeProtobufBuildContracts(unittest.TestCase):
