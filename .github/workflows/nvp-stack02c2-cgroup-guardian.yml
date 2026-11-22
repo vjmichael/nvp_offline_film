@@ -1,0 +1,217 @@
+name: NVP STACK-02C2 delegated Linux cgroup v2 tree cleanup
+
+on:
+  push:
+    branches:
+      - nvp/stack02c2-linux-cgroup-guardian-20261103
+  pull_request:
+    branches:
+      - nvp/stack02c-host-lease-windows-native-blender-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-api-and-regressions:
+    name: Linux strict cgroup refusal, existing worker and OS contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing source test prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx trimesh
+      - name: Verify strict refusals and baseline kernel worker safety
+        run: |
+          python -m compileall -q backend tools tests
+          python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v
+          python -m unittest discover -s tests -p test_worker_containment.py -v
+          python -m unittest discover -s tests -p test_worker_host_lease.py -v
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+      - name: Save exact source and Cgroup v2 delegation diagnostics
+        if: always()
+        shell: bash
+        run: |
+          cat /proc/self/cgroup > linux_cgroup_membership.txt
+          (mount | grep 'cgroup2' || :) > linux_cgroup_mount.txt
+          ls -ld /sys/fs/cgroup >> linux_cgroup_mount.txt || true
+          zip -qr stack02c2_source.zip backend tools tests requirements-foundation.txt
+          sha256sum stack02c2_source.zip > stack02c2_source.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-stack02c2-source-and-kernel-diagnostics
+          path: |
+            stack02c2_source.zip
+            stack02c2_source.sha256
+            linux_cgroup_membership.txt
+            linux_cgroup_mount.txt
+          retention-days: 7
+
+  windows-regressions:
+    name: Windows Job Objects and durable host compatibility unchanged
+    runs-on: windows-2025
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Windows native APIs and previous prerequisites
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          if ($LASTEXITCODE -ne 0) { throw 'Foundation failure' }
+          python -m pip install 'pywin32==311'
+          if ($LASTEXITCODE -ne 0) { throw 'Win32 bindings failure' }
+      - name: Existing actual Windows Job Object and host journal regressions
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH='.'
+          python -m compileall -q backend tools tests
+          if ($LASTEXITCODE -ne 0) { throw 'Python compilation failure' }
+          python -m unittest discover -s tests -p test_worker_containment.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows containment regressed' }
+          python -m unittest discover -s tests -p test_worker_host_lease.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows host lease regressed' }
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows durable worker regressed' }
+
+  linux-real-delegated-tree:
+    name: Real Linux delegated cgroup process tree with hard parent crash
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Attempt real systemd user delegated scope and run strict tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD"
+          echo "Kernel cgroup membership:"
+          cat /proc/self/cgroup
+          echo "Kernel cgroup mount:"
+          mount | grep 'cgroup2' || :
+          echo "Trying standard systemd --user --scope Delegate=yes, not unauthorized sysfs modification."
+          timeout 100s systemd-run --user --scope --property=Delegate=yes \
+            --property=DelegateSubgroup=nvp.host --collect --quiet \
+            env PYTHONPATH="$PYTHONPATH" NVP_REQUIRE_REAL_CGROUP=1 \
+            python -m unittest discover -s tests -p test_linux_cgroup_tree.py -v
+      - name: Explain unavailable delegated controls without fabricating acceptance
+        if: failure()
+        shell: bash
+        run: |
+          echo "REAL FULL-TREE CGROUP ACCEPTANCE BLOCKED: this hosted session did not prove its delegated cgroup v2 controls. A delegated self-hosted Linux runner is required before closing STACK-02C2." >> "$GITHUB_STEP_SUMMARY"
+          echo "The unit/fail-closed lanes are not a substitute for real delegated kernel cgroup.kill proof." >> "$GITHUB_STEP_SUMMARY"
+
+  native-linux-blender-real-crash:
+    name: Real Ubuntu Blender kills detached child after hard NVP supervisor crash
+    runs-on: ubuntu-24.04
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real signed-distro Blender through standard Ubuntu apt
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+          echo "Ubuntu Blender package version:"
+          dpkg-query -W -f='${Version}\n' blender | tee apt_blender_version.txt
+          blender -b --version | head -n 2
+      - name: Real Blender detached child, hard host exit and independent cgroup.kill witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 150s systemd-run --user --scope --property=Delegate=yes \
+            --property=DelegateSubgroup=nvp.host --collect --quiet \
+            env PATH="$PATH" PYTHONPATH="$PWD" NVP_REQUIRE_REAL_CGROUP=1 \
+            xvfb-run -a python -m tools.nvp_stack02c2_blender_crash_fixture \
+              --out acceptance_artifacts/stack02c2_real_blender_crash --blender "$(command -v blender)"
+      - name: Preserve real native Blender cgroup hard-crash and journal proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c2-real-blender-hardcrash-evidence
+          path: |
+            acceptance_artifacts/stack02c2_real_blender_crash/
+            apt_blender_version.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  native-linux-blender-baseline:
+    name: Original pinned Blender 5.2.3 renderer and geometry audit preserved
+    runs-on: ubuntu-24.04
+    timeout-minutes: 39
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing Blender native prerequisites
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: SHA-verify official Blender Linux binary (CDN dependent)
+        id: official_blender_download
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p /tmp/nvp-blender
+          tar -xJf "$archive" -C /tmp/nvp-blender --strip-components=1
+          echo "/tmp/nvp-blender" >> "$GITHUB_PATH"
+      - name: Native Blender worker and source-authenticated ProductionScene regression
+        if: steps.official_blender_download.outcome == 'success'
+        run: xvfb-run -a python -m tools.nvp_stack02a_worker_fixture --out acceptance_artifacts/stack02c2
+      - name: Real Blender operations inside delegated kernel cgroup v2 + independent guardian
+        if: steps.official_blender_download.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 240s systemd-run --user --scope --property=Delegate=yes \
+            --property=DelegateSubgroup=nvp.host --collect --quiet \
+            env PATH="$PATH" PYTHONPATH="$PWD" NVP_REQUIRE_REAL_CGROUP=1 \
+            xvfb-run -a python -m tools.nvp_stack02a_worker_fixture \
+            --out acceptance_artifacts/stack02c2_strict
+      - name: Actual native Blender plus detached process under hard NVP host crash
+        if: steps.official_blender_download.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 180s systemd-run --user --scope --property=Delegate=yes \
+            --property=DelegateSubgroup=nvp.host --collect --quiet \
+            env PATH="$PATH" PYTHONPATH="$PWD" NVP_REQUIRE_REAL_CGROUP=1 \
+            xvfb-run -a python -m tools.nvp_stack02c2_blender_crash_fixture \
+            --out acceptance_artifacts/stack02c2_blender_hardcrash
+      - name: Disclose official Blender CDN blockage without fabricating native acceptance
+        if: steps.official_blender_download.outcome != 'success'
+        run: echo "Official Blender 5.2.3 download was blocked by upstream CDN; pinned native run skipped. Earlier 5.2.3 strict acceptance is in 41769499518. The independent Ubuntu packaged real Blender hard-crash lane is required separately." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-stack02c2-native-baseline-real-blender
+          path: |
+            acceptance_artifacts/stack02c2/
+            acceptance_artifacts/stack02c2_strict/
+            acceptance_artifacts/stack02c2_blender_hardcrash/
+          retention-days: 7
+          if-no-files-found: warn

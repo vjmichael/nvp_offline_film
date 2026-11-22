@@ -1,0 +1,260 @@
+name: NVP WO3 Native DCP Structural Integrity (NO FFMPEG)
+# Original WO3 matrix restored on the sole convergence line.
+# Linux native lanes suspended by owner; no weaker public-process fallback.
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_wo3_*.py'
+      - 'backend/nvp_dci_codestream.py'
+      - 'backend/nvp_dci_packets.py'
+      - 'tools/nvp_dci_patch_openjpeg.py'
+      - 'tools/nvp_dci_stage_jasper.py'
+      - 'tools/nvp_dci_jasper_decode.c'
+      - 'backend/nvp_dci_dual_decode.py'
+      - 'backend/nvp_dci_surround*.py'
+      - 'backend/nvp_dci_package*.py'
+      - 'tools/nvp_dci_schema_ci.py'
+      - 'backend/nvp_wo4_file_dcp.py'
+      - 'backend/nvp_wo4_multireel.py'
+      - 'tests/test_nvp_dci_surround.py'
+      - 'tests/nvp_dci_surround_ci.py'
+      - 'tests/nvp_wo4_sustained_ci.py'
+      - 'tests/nvp_wo4_unique_frame_pilot_ci.py'
+      - 'tests/test_nvp_wo3_*.py'
+      - 'tests/nvp_wo3_fixture_authority.py'
+      - 'backend/nvp_g03_windows_appcontainer.py'
+      - 'backend/nvp_worker_containment.py'
+      - 'backend/nvp_w1g_encrypted_source.py'
+      - '.github/workflows/nvp-wo3-dcp-native.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/nvp_wo3_*.py'
+      - 'backend/nvp_dci_codestream.py'
+      - 'backend/nvp_dci_packets.py'
+      - 'tools/nvp_dci_patch_openjpeg.py'
+      - 'tools/nvp_dci_stage_jasper.py'
+      - 'tools/nvp_dci_jasper_decode.c'
+      - 'backend/nvp_dci_dual_decode.py'
+      - 'backend/nvp_dci_surround*.py'
+      - 'backend/nvp_dci_package*.py'
+      - 'tools/nvp_dci_schema_ci.py'
+      - 'backend/nvp_wo4_file_dcp.py'
+      - 'backend/nvp_wo4_multireel.py'
+      - 'tests/test_nvp_dci_surround.py'
+      - 'tests/nvp_dci_surround_ci.py'
+      - 'tests/nvp_wo4_sustained_ci.py'
+      - 'tests/nvp_wo4_unique_frame_pilot_ci.py'
+      - 'tests/test_nvp_wo3_*.py'
+      - 'tests/nvp_wo3_fixture_authority.py'
+      - '.github/workflows/nvp-wo3-dcp-native.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nvp-wo3-original-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  wo3-independent-dcp-structure:
+    name: Original WO3 native metadata, source and denial / Windows / Python ${{ matrix.py }}
+    runs-on: windows-2025
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        py: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Exact original branch source
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Wrong source SHA' }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Native foundation
+        run: python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32 'lxml==6.1.1'
+      - name: Original metadata and source tests, no fake essence acceptance
+        shell: pwsh
+        run: |
+          python -m compileall -q backend tests
+          if ($LASTEXITCODE -ne 0) { throw 'Source syntax failure' }
+          foreach ($f in @('dcp_structure','dci_package','native_delivery','codec_bundle_provenance','atomic_publish','crash_publish_process','export_recovery','j2k_header_contract','protected_contract','dci_codestream','dci_packets','dci_rate_control')) {
+            python -m unittest discover -s tests -p ("test_nvp_wo3_"+$f+".py") -v
+            if ($LASTEXITCODE -ne 0) { throw "WO3 original source suite failed: $f" }
+          }
+          python -m unittest discover -s tests -p test_nvp_dci_surround.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Independent surround source tests failed' }
+          python tools/nvp_no_ffmpeg_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+      - uses: actions/checkout@v4
+        if: matrix.py == '3.13'
+        with:
+          repository: cth103/libdcp
+          ref: 277f5ff221b073a88111013612d6441928924cbc
+          path: deps/dci-schema-reference
+          persist-credentials: false
+          sparse-checkout: xsd
+      - name: Independent XSD check against exact reviewed schema mirrors
+        if: matrix.py == '3.13'
+        shell: pwsh
+        run: |
+          if ((git -C deps/dci-schema-reference rev-parse HEAD).Trim() -ne '277f5ff221b073a88111013612d6441928924cbc') { throw 'Schema source drift' }
+          $schemas=Join-Path $env:RUNNER_TEMP "nvp-reviewed-schema-$env:GITHUB_RUN_ATTEMPT"
+          python -m tools.nvp_dci_schema_ci $schemas --reviewed-checkout deps/dci-schema-reference
+          if ($LASTEXITCODE -ne 0) { throw 'Independent XSD mirror validation failed' }
+  wo3-real-protected-native-cinema:
+    name: Real protected Windows OpenJPEG 2K/4K, variable quality and SMPTE MXF PCM roundtrip
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/checkout@v4
+        with:
+          repository: uclouvain/openjpeg
+          ref: 6c4a29b00211eb0430fa0e5e890f1ce5c80f409f
+          path: deps/openjpeg
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cinecert/asdcplib
+          ref: 905d6047f67c8211c2d22f29fb0e2e44c142b59b
+          path: deps/asdcplib
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: jasper-software/jasper
+          ref: 63e106c80eb72af9fd4fa28772499ab0138b9994
+          path: deps/jasper
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: cth103/libdcp
+          ref: 277f5ff221b073a88111013612d6441928924cbc
+          path: deps/dci-schema-reference
+          persist-credentials: false
+          sparse-checkout: xsd
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Require exact head and original reviewed dependency sources
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Wrong source SHA' }
+          if ((git -C deps/openjpeg rev-parse HEAD).Trim() -ne '6c4a29b00211eb0430fa0e5e890f1ce5c80f409f') { throw 'OpenJPEG drift' }
+          if ((git -C deps/asdcplib rev-parse HEAD).Trim() -ne '905d6047f67c8211c2d22f29fb0e2e44c142b59b') { throw 'CineCert drift' }
+          if (-not (Test-Path deps/openjpeg/LICENSE) -or -not (Test-Path deps/asdcplib/COPYING)) { throw 'License notices missing' }
+      - name: Build original reviewed native static codecs on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python tools/nvp_dci_patch_openjpeg.py deps/openjpeg
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned OpenJPEG cinema rate-control patch failed' }
+          cmake -S deps/openjpeg -B deps/openjpeg/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_CODEC=ON -DBUILD_TESTING=OFF -DBUILD_JPIP=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG configure' }
+          cmake --build deps/openjpeg/build --config Release --parallel 2 --target opj_compress opj_decompress
+          if ($LASTEXITCODE -ne 0) { throw 'OpenJPEG compile' }
+          cmake -S deps/asdcplib -B deps/asdcplib/build -DCMAKE_BUILD_TYPE=Release -DWITHOUT_SSL=ON -DWITHOUT_XML=ON -DBUILD_SHARED_LIBS=OFF "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+          if ($LASTEXITCODE -ne 0) { throw 'CineCert configure' }
+          cmake --build deps/asdcplib/build --config Release --parallel 2 --target asdcp-wrap asdcp-info asdcp-unwrap
+          if ($LASTEXITCODE -ne 0) { throw 'CineCert compile' }
+          $out=Join-Path $env:RUNNER_TEMP 'wo3-exact-native-tools'
+          New-Item -ItemType Directory -Path $out | Out-Null
+          foreach ($name in @('opj_compress','opj_decompress','asdcp-wrap','asdcp-info','asdcp-unwrap')) {
+            $build=if ($name.StartsWith('opj_')) {'deps/openjpeg/build'} else {'deps/asdcplib/build'}
+            $matches=@(Get-ChildItem $build -Recurse -File -Filter ($name+'.exe') | Where-Object {$_.FullName -match 'Release'})
+            if ($matches.Count -ne 1) { throw "Expected one actual Windows binary: $name" }
+            Copy-Item -LiteralPath $matches[0].FullName -Destination (Join-Path $out ($name+'.exe'))
+          }
+          python tools/nvp_dci_stage_jasper.py deps/jasper tools/nvp_dci_jasper_decode.c
+          if ($LASTEXITCODE -ne 0) { throw 'JasPer reviewed source preparation' }
+          $jasperBuild=Join-Path $env:RUNNER_TEMP "nvp-jasper-qualification-build"
+          if (Test-Path -LiteralPath $jasperBuild) { throw "Expected fresh out-of-source JasPer build" }
+          cmake -S deps/jasper -B $jasperBuild -DCMAKE_BUILD_TYPE=Release -DJAS_ENABLE_SHARED=OFF -DJAS_ENABLE_LIBJPEG=OFF -DJAS_ENABLE_LIBHEIF=OFF -DJAS_ENABLE_OPENGL=OFF -DJAS_ENABLE_DOC=OFF -DJAS_ENABLE_PROGRAMS=OFF -DJAS_ENABLE_MULTITHREADING_SUPPORT=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'Independent decoder configure' }
+          cmake --build $jasperBuild --config Release --parallel 2 --target nvp_jasper_decode
+          if ($LASTEXITCODE -ne 0) { throw 'Independent decoder compile' }
+          # Pinned JasPer's root target sets the executable into the binary root,
+          # confirmed by Windows MSBuild's exact 5f75906a output. Fresh build
+          # directory plus a unique regular file; no recursive fallback.
+          $decoder=Join-Path $jasperBuild 'nvp_jasper_decode.exe'
+          $matches=@(Get-ChildItem -LiteralPath $jasperBuild -Recurse -File -Filter nvp_jasper_decode.exe)
+          if ($matches.Count -ne 1 -or $matches[0].FullName -ne $decoder -or ($matches[0].Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Expected one actual independent decoder at exact binary root' }
+          Copy-Item -LiteralPath $decoder -Destination (Join-Path $out 'nvp_jasper_decode.exe')
+          "NVP_WO3_BUILD_TOOLS=$out" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install foundation and provision reviewed CI-only codec manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32 'lxml==6.1.1'
+          if ($LASTEXITCODE -ne 0) { throw 'Native foundation missing' }
+          $program=(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion').ProgramFilesDir
+          $env:NVP_WO3_FIXTURE_BUNDLE=Join-Path $program 'NVP-WO3-Generated-CI-Codecs'
+          $env:NVP_WO3_FIXTURE_ROOT=Join-Path $env:RUNNER_TEMP 'wo3-protected-stage'
+          New-Item -ItemType Directory -Path $env:NVP_WO3_FIXTURE_ROOT | Out-Null
+          $env:PYTHONPATH=(Get-Location).Path
+          $env:NVP_WO3_DUAL_QUALIFICATION="1"
+          $pin=(python tests/nvp_wo3_fixture_authority.py)
+          if ($LASTEXITCODE -ne 0 -or $pin -notmatch '^[a-f0-9]{64}$') { throw 'Pinned native manifest failed' }
+          "NVP_WO3_FIXTURE_BUNDLE=$env:NVP_WO3_FIXTURE_BUNDLE" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_WO3_FIXTURE_ROOT=$env:NVP_WO3_FIXTURE_ROOT" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_WO3_FIXTURE_MANIFEST_PIN=$pin" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_OPENJPEG=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'opj_compress.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_OPENJPEG_DECODE=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'opj_decompress.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_ASDCP_WRAP=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'asdcp-wrap.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_ASDCP_INFO=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'asdcp-info.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_ASDCP_UNWRAP=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'asdcp-unwrap.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_JASPER_DECODE=$(Join-Path $env:NVP_WO3_FIXTURE_BUNDLE 'nvp_jasper_decode.exe')" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "NVP_NATIVE_OPENJPEG_4K=1" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: All four original real native codec tests, no skips
+        id: original_essence
+        shell: pwsh
+        run: |
+          @'
+          import unittest
+          from backend.nvp_w1g_release_gate import inspect_original_process_journals
+          suite=unittest.TestSuite()
+          for f in ("test_nvp_wo3_real_openjpeg.py","test_nvp_wo3_real_variable_quality.py","test_nvp_wo3_real_mxf.py"):
+              original=unittest.TestLoader().discover("tests",pattern=f)
+              if not original.countTestCases():
+                  raise RuntimeError("Missing original native codec test "+f)
+              suite.addTests(original)
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful() or result.skipped or result.testsRun!=4:
+              raise SystemExit("Original genuine native WO3 acceptance incomplete")
+          custody=inspect_original_process_journals()
+          if custody["unresolved_original_native_launches"] or custody["original_windows_launch_journals_verified"]<1:
+              raise SystemExit("Native job custody missing")
+          print("WO3_ORIGINAL_REAL_PROTECTED_CODEC_ROUNDTRIP_PASS",flush=True)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Original WO3 native acceptance failed' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+      - name: Independent protected 5.1 and 7.1DS native sound reel and descriptor readback
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          python tests/nvp_dci_surround_ci.py
+          if ($LASTEXITCODE -ne 0) { throw 'Independent native surround qualification failed' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+      - name: Independent dual-decoder full essence coverage on two complete reels per profile
+        if: ${{ !cancelled() && steps.original_essence.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH=(Get-Location).Path
+          if ((git -C deps/dci-schema-reference rev-parse HEAD).Trim() -ne '277f5ff221b073a88111013612d6441928924cbc') { throw 'Schema source drift' }
+          $schemas=Join-Path $env:RUNNER_TEMP "nvp-reviewed-schema-$env:GITHUB_RUN_ATTEMPT"
+          python -m tools.nvp_dci_schema_ci $schemas --reviewed-checkout deps/dci-schema-reference
+          if ($LASTEXITCODE -ne 0) { throw 'Independent XSD mirror validation failed' }
+          $env:NVP_DCI_SCHEMA_REFERENCE=(Resolve-Path $schemas).Path
+          foreach ($profile in @('2K_FLAT_24','4K_SCOPE_24')) {
+            $root=Join-Path $env:NVP_WO3_FIXTURE_ROOT ("dual-"+$profile)
+            python tests/nvp_wo4_sustained_ci.py --root $root --profile $profile --frames 48 --reel-frames 24 --dual-qualification
+            if ($LASTEXITCODE -ne 0) { throw "Independent native essence failed: $profile" }
+          }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }

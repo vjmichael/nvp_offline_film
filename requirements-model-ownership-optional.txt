@@ -1,0 +1,4 @@
+# Optional, trusted-host-only LM Studio Python SDK for the B2 native model owner.
+# Not installed by the main NVP app or exposed to creative model tools.
+# Commercial redistributability/installer approval remains a separate gate.
+lmstudio==1.5.0

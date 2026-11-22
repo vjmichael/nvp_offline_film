@@ -1,0 +1,29 @@
+/* G08: one filmmaker-facing finish/export workflow. */
+.director-export{min-width:0}
+.director-export .film-card-head{display:flex;gap:18px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:17px}
+.director-export .film-card-head p{max-width:675px;line-height:1.65}
+.director-export-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:19px 0}
+.director-export-summary>div{display:flex;flex-direction:column;gap:8px;border:1px solid #545260;border-radius:11px;background:#2a2e38;padding:15px}
+.director-export-summary span{font-size:12px;color:#c7c4c7}
+.director-export-summary strong{font-size:16px;color:#f0e1d4}
+.director-export-needs,.director-export-go,.director-export-progress,.director-export-results{border:1px solid #635968;border-radius:13px;padding:19px;background:#2b2e39;margin:18px 0}
+.director-export-go{border-color:#967457;background:linear-gradient(120deg,#3c3635,#282e3b)}
+.director-export-go h3,.director-export-needs h3,.director-export-progress h3,.director-export-results h3{font-size:20px;margin:0 0 8px}
+.director-export-go p,.director-export-needs p,.director-export-progress p{line-height:1.6;max-width:730px}
+.director-export-go .film-primary{margin:12px 0}
+.director-export-progress progress{width:100%;height:20px;accent-color:#e7b990}
+.director-export-progress-meta{display:flex;justify-content:space-between;gap:14px;color:#decfc2;font-size:12px;margin:9px 0}
+.director-export-results article{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;border-top:1px solid #534f5c;padding:13px 0}
+.director-export-results article p{font-size:12px;color:#cfc8c4;margin:8px 0}
+.director-export-results a.film-primary{text-decoration:none;text-align:center;display:inline-block}
+.director-export-error,.director-export-warning,.director-export-notice{border-radius:10px;padding:14px;margin:13px 0;line-height:1.6;font-size:13px}
+.director-export-error{background:#4b3039;border:1px solid #b3727b}
+.director-export-warning{background:#453b30;border:1px solid #b3986b}
+.director-export-notice{background:#2b4135;border:1px solid #648c70}
+.director-export-history{border:1px solid #504f58;border-radius:10px;background:#282c36;padding:14px;margin:17px 0}
+.director-export-history summary{font-size:13px;cursor:pointer;color:#ebc39a;font-weight:700}
+.director-export-history>div{padding:9px 0;border-top:1px solid #514c58;display:flex;gap:10px;flex-wrap:wrap;font-size:12px}
+.director-export-footnote{padding:10px 0 3px}
+.director-export button:focus-visible,.director-export a:focus-visible,.director-export summary:focus-visible{outline:3px solid #f2c491;outline-offset:2px}
+@media(max-width:700px){.director-export-summary{grid-template-columns:1fr}.director-export-go,.director-export-needs,.director-export-progress{padding:12px}}
+@media(prefers-reduced-motion:reduce){.director-export *{animation:none!important;transition:none!important}}

@@ -1,0 +1,2 @@
+# W1-G build/CI Ed25519 verification only. Production lock is externally reviewed.
+cryptography==50.0.2

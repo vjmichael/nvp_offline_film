@@ -1,0 +1,21 @@
+/* Source-video + original-audio monitor, accessible without engineering UI. */
+.director-av-monitor{margin:18px 0;padding:19px;border:1px solid #625d6e;background:#242a35;border-radius:12px}
+.director-av-header{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.director-av-header h3{font-size:20px;margin:0 0 9px;color:#f1deca}
+.director-av-header p{max-width:640px;line-height:1.55;margin:0 0 13px}
+.director-av-status{font-size:12px;color:#efd9c4;padding:8px 12px;border:1px solid #816b57;border-radius:18px}
+.director-av-picture{width:100%;aspect-ratio:16/9;max-height:520px;background:#121926;border-radius:10px;overflow:hidden;display:grid;place-items:center;border:1px solid #585668}
+.director-av-picture img{width:100%;height:100%;object-fit:contain;display:block}
+.director-av-placeholder{display:grid;place-items:center;text-align:center;min-height:220px;padding:20px;color:#d6c9c4}
+.director-av-transport{margin-top:13px}
+.director-av-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.director-av-actions span{font-variant-numeric:tabular-nums;color:#ebd4bf;font-size:13px}
+.director-av-mute{display:flex!important;align-items:center;gap:8px;font-size:13px!important;margin:0 6px!important}
+.director-av-scrubber{display:flex;flex-direction:column;gap:8px;margin:12px 0;font-size:12px;color:#ded1c4}
+.director-av-scrubber input{width:100%;accent-color:#eac099}
+.director-av-transport .film-hint{margin:9px 0 0;line-height:1.6}
+.director-av-error,.director-av-notice{font-size:13px;border:1px solid #b47c7c;border-radius:8px;background:#49343a;padding:12px;margin:12px 0;line-height:1.6}
+.director-av-notice{border-color:#7c9c86;background:#294035}
+.director-av-monitor :is(button,input):focus-visible{outline:3px solid #f3c492;outline-offset:2px}
+@media(max-width:600px){.director-av-monitor{padding:10px}.director-av-actions{gap:7px}.director-av-status{width:max-content}}
+@media(prefers-reduced-motion:reduce){.director-av-monitor *{transition:none!important;animation:none!important}}

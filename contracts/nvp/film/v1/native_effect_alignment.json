@@ -1,0 +1,25 @@
+{
+  "status": "DRAFT_UNREGISTERED_NOT_EFFECT_AUTHORIZED",
+  "lu_source_snapshot": "6932ace156ddaae728a2967660fc37aa986471ae",
+  "lu_core_gate_blob_sha": "d2c45ed1a19834f4a3284bd65dd22a670c0acc2d",
+  "lu_contract": "lu.workspace.v0 wire 1.0",
+  "constraints": {
+    "max_tool_effects_per_native_descriptor": 1,
+    "max_capability_version_in_current_host_gate": 1,
+    "max_parallel_core_dlc_calls": 4,
+    "maximum_deadline_ms_from_call": 300000,
+    "input_refs_supported_by_current_core_host_gate": false,
+    "trusted_exact_typed_input_verifier_required": true,
+    "source_only_not_installed": true
+  },
+  "mappings": [
+    {"id":"nvp.film.project.read", "core_tool_effect":"ReadWorkspace", "domain_guards":["revision_pinned_source_read"], "core_registration_status":"PENDING"},
+    {"id":"nvp.film.scene.read", "core_tool_effect":"ReadWorkspace", "domain_guards":["revision_pinned_scene_read"], "core_registration_status":"PENDING"},
+    {"id":"nvp.film.story.propose", "core_tool_effect":"WriteWorkspace", "domain_guards":["proposal_only_no_approval"], "core_registration_status":"PENDING"},
+    {"id":"nvp.film.project.commit", "core_tool_effect":"WriteWorkspace", "domain_guards":["original_turn_grant","native_creator_approval"], "core_registration_status":"PENDING"},
+    {"id":"nvp.film.render.shot", "core_tool_effect":"ExecuteCode", "domain_guards":["NVP_write_grant","NVP_protected_worker","original_take_immutable"], "core_registration_status":"BLOCKED_EFFECT_BRIDGE_APPROVAL"},
+    {"id":"nvp.film.picture.review.read", "core_tool_effect":"ReadWorkspace", "domain_guards":["encrypted_preview_host_only"], "core_registration_status":"PENDING"},
+    {"id":"nvp.film.picture.review.decide", "core_tool_effect":"WriteWorkspace", "domain_guards":["authenticated_native_creator_event","original_pcm_immutable"], "core_registration_status":"PENDING"},
+    {"id":"nvp.film.edit.export", "core_tool_effect":"ExecuteCode", "domain_guards":["NVP_write_grant","native_export_custody","source_locked_pcm"], "core_registration_status":"BLOCKED_EFFECT_BRIDGE_APPROVAL"}
+  ]
+}

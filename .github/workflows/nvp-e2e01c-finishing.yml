@@ -1,0 +1,45 @@
+name: NVP E2E-01C Creative Finishing Integration
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+    paths:
+      - 'backend/nvp_e2e01c_finishing.py'
+      - 'tests/test_nvp_e2e01c_finishing.py'
+      - '.github/workflows/nvp-e2e01c-finishing.yml'
+      - 'requirements-foundation.txt'
+  pull_request:
+    paths:
+      - 'backend/nvp_e2e01c_finishing.py'
+      - 'tests/test_nvp_e2e01c_finishing.py'
+      - '.github/workflows/nvp-e2e01c-finishing.yml'
+      - 'requirements-foundation.txt'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-approval-handoff:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python-version: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install foundation and real OTIO schema dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install 'opentimelineio>=0.18.1,<0.19'
+      - name: Require syntax and actual SQLite-native finishing contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_e2e01c_finishing.py tests/test_nvp_e2e01c_finishing.py
+          python -m unittest discover -s tests -p test_nvp_e2e01c_finishing.py -v

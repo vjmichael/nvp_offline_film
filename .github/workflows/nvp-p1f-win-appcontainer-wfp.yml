@@ -1,0 +1,57 @@
+name: NVP P1-F Windows Real AppContainer WFP Job Kernel Admission
+
+on:
+  pull_request:
+    paths:
+      - 'tools/nvp_p1f_windows_private_kernel_probe.cpp'
+      - 'backend/nvp_worker_containment.py'
+      - 'backend/nvp_worker_private_sandbox.py'
+      - 'tests/test_nvp_p1f_private_sandbox_native.py'
+      - '.github/workflows/nvp-p1f-win-appcontainer-wfp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-p1f-windows-private-kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actual-native-appcontainer-wfp-job:
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build exact source native AppContainer WFP Job probe with installed Windows SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path (Get-Item "Env:ProgramFiles(x86)").Value 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path $vswhere)) { throw 'Native Visual Studio build tools unavailable' }
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vs) { throw 'Native MSVC is required; no synthetic AppContainer receipts' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw 'MSVC x64 environment unavailable' }
+          $source = 'tools\nvp_p1f_windows_private_kernel_probe.cpp'
+          $build = 'call "' + $vcvars + '" && cl /nologo /std:c++17 /EHsc /W4 /DUNICODE /D_UNICODE /Fe:nvp_p1f_windows_private_kernel_probe.exe "' + $source + '" /link userenv.lib fwpuclnt.lib advapi32.lib ws2_32.lib ole32.lib'
+          cmd.exe /d /s /c $build
+          if ($LASTEXITCODE -ne 0) { throw 'Actual Windows AppContainer/WFP executable compiler failed' }
+      - name: Real Win32 AppContainer token + matching package SID + 4 WFP filters + kill-on-close Job
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\nvp_p1f_windows_private_kernel_probe.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows native private worker kernel proof FAILED; production not admitted' }
+      - name: Preserve existing fail-closed private source policy
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install pywin32
+          python -m unittest discover -s tests -p test_nvp_p1f_private_sandbox_native.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows private-source refusal contract regressed' }
+          python -m unittest discover -s tests -p test_worker_containment.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Original Windows Job Object native regressions failed' }

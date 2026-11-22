@@ -1,0 +1,38 @@
+/* NVP-GRADE-UI-01 — a functional novice grade surface, not a calibrated monitor */
+.grade-workspace{display:flex;flex-direction:column;gap:18px;}
+.grade-workspace .card{margin:0}
+.grade-title{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:10px 0 18px;border-bottom:1px solid #45434f;background:transparent;height:auto;text-transform:none;letter-spacing:normal;}
+.grade-title h2{font-size:28px;margin-top:5px}
+.grade-title p{max-width:630px}
+.grade-topbar{display:grid;grid-template-columns:minmax(220px,1fr) minmax(180px,1fr) auto;gap:18px;align-items:end}
+.grade-topbar label{margin:0}
+.grade-topbar .fineprint{margin:0;max-width:180px}
+.grade-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(290px,0.9fr);gap:18px;align-items:start}
+.grade-monitor-section{min-width:0}
+.grade-monitor{border-radius:10px;overflow:hidden;position:relative;background:#090b11;min-height:160px;display:flex;align-items:center;justify-content:center;color:#999}
+.grade-monitor img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0}
+.grade-after{position:absolute;inset:0}
+.grade-wipe-line{position:absolute;top:0;bottom:0;width:2px;transform:translateX(-1px);background:#f5d19d;box-shadow:0 0 0 1px #25212b}
+.grade-wipe-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;margin:16px 0;font-size:13px}
+.grade-wipe-row input{margin:0}
+.grade-controls h3{margin-top:0}
+.grade-presets{display:flex;flex-wrap:wrap;gap:7px;margin:13px 0 21px}
+.grade-presets .secondary{font-size:12px;padding:9px 11px}
+.grade-field{padding:12px 0;border-top:1px solid #3e3d49}
+.grade-field-label{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.grade-field-label label{margin:0;font-weight:750}
+.grade-field-label span{font-size:11px;color:#a5a5b3;line-height:1.4}
+.grade-field-inputs{display:grid;grid-template-columns:minmax(0,1fr) 78px;gap:10px;align-items:center}
+.grade-field-inputs input[type=range]{padding:0;accent-color:#eeb77d;min-width:0}
+.grade-field-inputs input[type=number]{padding:8px 7px;text-align:right;font-variant-numeric:tabular-nums}
+.grade-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.grade-actions .secondary{font-size:12px;padding:9px 12px}
+.grade-save-panel label{max-width:560px}
+.grade-check{flex-direction:row;align-items:start;gap:12px;line-height:1.5}
+.grade-check input[type=checkbox]{width:18px;height:18px;flex:none;accent-color:#eeb77d;margin:2px 0 0}
+.grade-save-panel button.primary{margin-bottom:12px}
+.grade-alert{margin:0;max-width:none}
+.grade-history{margin:5px 8px 5px 0;padding:8px 12px}
+.grade-workspace button:focus-visible,.grade-workspace input:focus-visible,.grade-workspace select:focus-visible{outline:2px solid #f3c892;outline-offset:3px}
+@media(max-width:1060px){.grade-layout{grid-template-columns:1fr}.grade-topbar{grid-template-columns:1fr 1fr}.grade-topbar .fineprint{grid-column:1 / -1;max-width:none}}
+@media(max-width:640px){.grade-title{flex-direction:column;align-items:stretch}.grade-topbar{grid-template-columns:1fr}.grade-topbar .fineprint{grid-column:auto}.grade-field-inputs{grid-template-columns:minmax(0,1fr) 74px}}

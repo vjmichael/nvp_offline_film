@@ -1,0 +1,169 @@
+name: NVP STACK-02C host lease and real Windows Blender worker
+
+on:
+  push:
+    branches:
+      - nvp/stack02c-host-lease-windows-native-blender-20261103
+  pull_request:
+    branches:
+      - nvp/stack02b-os-contained-blender-workers-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-host-lease:
+    name: Linux real cross-process worker-host lock and durable journal regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing test prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx trimesh
+      - name: Host crash, mutual exclusion and existing kernel/worker tests
+        run: |
+          python -m compileall -q backend tools tests
+          python -m unittest discover -s tests -p test_worker_host_lease.py -v
+          python -m unittest discover -s tests -p test_worker_containment.py -v
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+      - name: Preserve exact source snapshot
+        if: always()
+        run: |
+          zip -qr stack02c_exact_source.zip backend tests tools requirements-foundation.txt
+          sha256sum stack02c_exact_source.zip > stack02c_source_sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-stack02c-exact-source
+          path: |
+            stack02c_exact_source.zip
+            stack02c_source_sha256.txt
+          retention-days: 7
+
+  windows-host-lease:
+    name: Windows kernel host lock, hard crash, Job Objects and durable journal
+    runs-on: windows-2025
+    timeout-minutes: 19
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual Windows Job Object bindings
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          if ($LASTEXITCODE -ne 0) { throw 'Foundation dependencies failed' }
+          python -m pip install 'pywin32==311'
+          if ($LASTEXITCODE -ne 0) { throw 'pywin32 failed' }
+      - name: Cross-process exclusivity and existing worker OS contracts
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH='.'
+          python -m compileall -q backend tools tests
+          if ($LASTEXITCODE -ne 0) { throw 'Compile failed' }
+          python -m unittest discover -s tests -p test_worker_host_lease.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows host lease failed' }
+          python -m unittest discover -s tests -p test_worker_containment.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows containment failed' }
+          python -m unittest discover -s tests -p test_blender_worker.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows durable worker regressions failed' }
+
+  native-windows-blender:
+    name: Real Windows Blender 5.2.3 Job Object scene and independent approval audit
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install actual worker dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          if ($LASTEXITCODE -ne 0) { throw 'Foundation dependencies failed' }
+          python -m pip install 'pywin32==311'
+          if ($LASTEXITCODE -ne 0) { throw 'pywin32 failed' }
+      - name: Download genuine Blender Windows portable build and verify official SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base='https://download.blender.org/release/Blender5.2'
+          $archive='blender-5.2.3-windows-x64.zip'
+          & curl.exe --fail --location --retry 4 --retry-delay 5 --output $archive "$base/$archive"
+          if ($LASTEXITCODE -ne 0) { throw 'Official Blender Windows archive download failed' }
+          & curl.exe --fail --location --retry 4 --retry-delay 5 --output blender.sha256 "$base/blender-5.2.3.sha256"
+          if ($LASTEXITCODE -ne 0) { throw 'Official Blender checksum download failed' }
+          $hashList=Get-Content blender.sha256
+          $escaped=[regex]::Escape($archive)
+          $line=$hashList | Where-Object { $_ -match "(?i)^[0-9a-f]{64}\s+\*?$escaped\s*$" } | Select-Object -First 1
+          if (-not $line) { throw 'Official SHA manifest does not identify exact portable Windows Blender package' }
+          $expected=($line -split '\s+')[0].ToLowerInvariant()
+          $actual=(Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Windows Blender archive checksum mismatch: $actual" }
+          New-Item -ItemType Directory -Path _nvp_blender -Force | Out-Null
+          Expand-Archive -LiteralPath $archive -DestinationPath _nvp_blender -Force
+          $exe=Get-ChildItem -Path _nvp_blender -Filter blender.exe -Recurse -File | Select-Object -First 1
+          if (-not $exe) { throw 'Verified portable archive did not contain blender.exe' }
+          $exe.FullName | Set-Content -LiteralPath blender_executable.txt -Encoding ascii
+          Write-Host "Verified Blender portable archive SHA256: $actual"
+      - name: Actual native Blender under Windows Job Object and approved NVP source lineage
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH='.'
+          $blender=(Get-Content blender_executable.txt -Raw).Trim()
+          python -m tools.nvp_stack02a_worker_fixture --out acceptance_artifacts/stack02c_windows --blender "$blender"
+          if ($LASTEXITCODE -ne 0) { throw 'Real Windows Blender Job Object and original NVP scene acceptance failed' }
+      - name: Preserve actual native Blender files, geometry audit and process journal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c-real-windows-blender-evidence
+          path: |
+            acceptance_artifacts/stack02c_windows/
+            blender.sha256
+            blender_executable.txt
+          retention-days: 7
+
+  native-linux-blender:
+    name: Existing real Linux Blender native production and independent audit under host lease
+    runs-on: ubuntu-24.04
+    timeout-minutes: 39
+    env:
+      BLENDER_VERSION: '5.2.3'
+      BLENDER_BASE: 'https://download.blender.org/release/Blender5.2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing native Blender scene prerequisites
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx trimesh
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libegl1 libx11-6 libxi6 libxrender1 libxxf86vm1 libxkbcommon0
+      - name: Download and SHA-check Blender Linux build
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="blender-$BLENDER_VERSION-linux-x64.tar.xz"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/$archive" -o "$archive"
+          curl --fail --location --retry 4 --retry-delay 5 "$BLENDER_BASE/blender-$BLENDER_VERSION.sha256" -o blender.sha256
+          grep "  $archive$" blender.sha256 | sha256sum --check --status
+          mkdir -p /tmp/nvp-blender
+          tar -xJf "$archive" -C /tmp/nvp-blender --strip-components=1
+          echo "/tmp/nvp-blender" >> "$GITHUB_PATH"
+      - name: Native Linux scene/build/audit under kernel-containment and exclusive lease
+        run: xvfb-run -a python -m tools.nvp_stack02a_worker_fixture --out acceptance_artifacts/stack02c_linux
+      - name: Preserve real Linux Blender worker evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c-real-linux-blender-evidence
+          path: acceptance_artifacts/stack02c_linux/
+          retention-days: 7

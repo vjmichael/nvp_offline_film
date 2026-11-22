@@ -1,0 +1,68 @@
+name: NVP AUDIO-01G crash injection - every persistence boundary
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-native-crash-matrix:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real media and native Windows dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-foundation.txt
+          python -m pip install "pywin32>=306"
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          "$env:ChocolateyInstall\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Require real FFmpeg availability
+        shell: pwsh
+        run: |
+          ffmpeg -version
+          if ($LASTEXITCODE -ne 0) { throw 'Native FFmpeg executable unavailable' }
+          ffprobe -version
+          if ($LASTEXITCODE -ne 0) { throw 'Native FFprobe executable unavailable' }
+      - name: Run 21 abrupt process-exit boundaries and recovery checks
+        shell: pwsh
+        run: |
+          python -m compileall -q backend/nvp_audio01g_fault_matrix.py backend/nvp_audio01f_picture_sound.py backend/nvp_audio01f_native_host.py tests/test_audio01g_fs_crash_matrix.py tests/test_audio01g_sqlite_crash_matrix.py tests/test_audio01g_recovery_commit_matrix.py tests/test_audio01g_native_late_crash_matrix.py tests/fixtures/nvp_audio01g_native_real_mux_worker.py
+          if ($LASTEXITCODE -ne 0) { throw 'Crash matrix compile failed' }
+          python -m unittest discover -s tests -p test_audio01g_fs_crash_matrix.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows filesystem crash matrix failed' }
+          python -m unittest discover -s tests -p test_audio01g_sqlite_crash_matrix.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows SQLite crash matrix failed' }
+          python -m unittest discover -s tests -p test_audio01g_recovery_commit_matrix.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G Windows recovery invariants failed' }
+          python -m unittest discover -s tests -p test_audio01g_native_late_crash_matrix.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'AUDIO-01G real native worker late-stage crash failed' }
+  linux-native-crash-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install real FFmpeg and foundation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r requirements-foundation.txt
+      - name: Run 21 abrupt-exit file and SQLite persistence boundaries
+        run: |
+          set -e
+          ffmpeg -version
+          python -m compileall -q backend/nvp_audio01g_fault_matrix.py backend/nvp_audio01f_picture_sound.py backend/nvp_audio01f_native_host.py tests/test_audio01g_fs_crash_matrix.py tests/test_audio01g_sqlite_crash_matrix.py tests/test_audio01g_recovery_commit_matrix.py tests/test_audio01g_native_late_crash_matrix.py tests/fixtures/nvp_audio01g_native_real_mux_worker.py
+          python -m unittest discover -s tests -p test_audio01g_fs_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01g_sqlite_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01g_recovery_commit_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01g_native_late_crash_matrix.py -v

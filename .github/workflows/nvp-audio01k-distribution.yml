@@ -1,0 +1,52 @@
+name: NVP AUDIO-01K distribution custody and readiness
+on:
+  push:
+    branches:
+      - nvp/stack02c3b14-picture-conform-20261104
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-distribution:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python-version: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install NVP foundation requirements
+        run: python -m pip install -r requirements-foundation.txt
+      - name: Provision real Linux FFmpeg
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Provision Windows FFmpeg and native Job Object bindings
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install "pywin32>=306"
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          "$env:ChocolateyInstall\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Verify native binaries exist
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffprobe -version
+      - name: Test custody and real approved AV distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q backend/nvp_audio01k_distribution.py backend/nvp_audio01k_native_host.py backend/nvp_audio01k_dcp_preflight.py backend/nvp_audio01k_fault_matrix.py tests/test_audio01k_distribution.py tests/test_audio01k_native_e2e.py tests/test_audio01k_distribution_crash_matrix.py tests/test_audio01k_fault_coverage.py
+          python -m unittest discover -s tests -p test_audio01k_distribution.py -v
+          python -m unittest discover -s tests -p test_audio01k_native_e2e.py -v
+          python -m unittest discover -s tests -p test_audio01k_distribution_crash_matrix.py -v
+          python -m unittest discover -s tests -p test_audio01k_fault_coverage.py -v

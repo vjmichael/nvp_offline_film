@@ -1,0 +1,205 @@
+name: CONV-06 original Film03 and CAM-FX native source matrix
+# Manual GROUP acceptance on the sole mainline candidate.
+# This is NOT physical Blender/SCM/Windows WFP, root-owned Linux or licensed
+# character/actor confirmation. A skipped real-Cycles test is not acceptance.
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_rig_motion.py'
+      - 'backend/nvp_usd_film02m_d_openings.py'
+      - 'backend/nvp_usd_film02m_d_cells.py'
+      - 'backend/nvp_usd_film01c_texture.py'
+      - 'backend/nvp_native_usd_texture.py'
+      - 'backend/nvp_openusd_assets.py'
+      - 'backend/nvp_g05_scene_authoring.py'
+      - 'backend/nvp_g07_edit.py'
+      - 'frontend/src/DirectorWorldStage.jsx'
+      - 'tests/test_nvp_conv04_camera_lifecycle.py'
+      - 'tests/test_nvp_conv06_native_texture_import.py'
+      - 'tests/nvp_conv06_native_texture_test_support.py'
+      - 'frontend/src/DirectorCameraActorContinuity.test.jsx'
+      - 'backend/nvp_cam_fx02_usd_camera_layer.py'
+      - 'backend/nvp_data_av_visual.py'
+      - 'backend/nvp_temporal_ledger.py'
+      - 'backend/nvp_data_av_scene.py'
+      - 'backend/nvp_data_av_usd.py'
+      - 'tools/nvp_no_ffmpeg_contract.py'
+      - 'tests/test_nvp_data_av_native.py'
+      - 'tests/test_nvp_no_ffmpeg_contract.py'
+      - 'backend/nvp_data_av_skinning.py'
+      - 'tests/test_nvp_conv06_original_dynamic_skin.py'
+      - 'tests/test_nvp_conv06_visual_mesh_contract.py'
+      - 'tests/test_nvp_cam_fx01_02_native_rails.py'
+      - 'backend/nvp_cam_fx05_verified_shot_source.py'
+      - 'tests/test_nvp_cam_fx05_staged_rail_source.py'
+      - 'backend/nvp_wo2_openpbr.py'
+      - 'backend/nvp_wo2_material_slots.py'
+      - 'backend/nvp_wo2_pbr_channels.py'
+      - 'tests/test_nvp_conv06_wo2_readback_contract.py'
+      - 'backend/nvp_data_av_desktop.py'
+      - 'tests/test_nvp_wo2_texture_tiles.py'
+      - 'tests/test_nvp_usd_film01e_world_take.py'
+      - 'tests/test_nvp_usd_film01f_world_render.py'
+      - 'tests/test_nvp_usd_film02mh_real_shot_render.py'
+      - 'backend/nvp_conv06_trusted_director_desktop.py'
+      - 'frontend/src/DirectorCameraActorContinuity.jsx'
+      - 'tools/nvp_usd_film02m_d_blender_aperture_smoke.py'
+      - 'tests/test_nvp_usd_film02m_modular_buildings.py'
+      - 'tests/test_nvp_usd_film01c_lazy_resolver.py'
+      - 'tests/test_nvp_conv06_trusted_director_desktop.py'
+      - 'tests/test_nvp_conv03_shared_security_convergence.py'
+      - 'tests/test_nvp_webview_ipc_surface.py'
+      - 'tools/nvp_desktop_alpha.py'
+      - 'tests/test_nvp_conv06_wo2_readback_contract.py'
+      - 'tests/test_nvp_conv06_original_architecture_cells.py'
+      - 'tools/nvp_prod06c_fixture.py'
+      - 'backend/nvp_blender_worker.py'
+      - 'tests/test_nvp_blender_windows_private_contract.py'
+      - 'backend/nvp_usd_film01i_ninecam_take.py'
+      - 'backend/nvp_usd_film01o_original_camera_roll_source.py'
+      - 'backend/nvp_usd_film01p_source_multicam_edl.py'
+      - 'backend/nvp_usd_film01q_selected_view_edit.py'
+      - 'backend/nvp_usd_film01q_selected_view_host.py'
+      - 'backend/nvp_usd_film01q_protected_source.py'
+      - 'tools/nvp_usd_film01q_blender_selected_views.py'
+      - 'tools/nvp_usd_film01m_camera_ray_mask.py'
+      - 'tests/test_nvp_usd_film01q_protected_native_host.py'
+      - 'backend/nvp_usd_film01r_quality.py'
+      - 'tests/test_nvp_usd_film01op_contract.py'
+      - 'tests/test_nvp_usd_film01q_selected_contract.py'
+      - 'tests/test_nvp_usd_film01oq_native_source.py'
+      - 'backend/nvp_usd_film01k_blender_animation_build.py'
+      - 'tests/test_nvp_usd_film01i_ninecam_take.py'
+      - 'backend/nvp_p1f_sustained_delivery.py'
+      - 'backend/nvp_int02_cycles_renderer.py'
+      - 'backend/nvp_usd_film01f_blender_host.py'
+      - 'backend/nvp_slate08b_native_camera_ipc.py'
+      - 'tests/test_nvp_conv11_worker_receipt_reopen_native.py'
+      - 'backend/nvp_p2_longform_source_plan.py'
+      - 'backend/nvp_openusd_shot_overrides.py'
+      - 'tests/test_nvp_convergence_camera_reel_native.py'
+      - 'backend/nvp_wo3_*.py'
+      - 'tests/test_nvp_wo3_*.py'
+      - '.github/workflows/nvp-conv06-film03-camfx-original-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nvp-conv06-source-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native-original-source:
+    name: Original Film03/CAM-FX source / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # Owner suspended Linux NVP development and acceptance (2026-11-16).
+        # Preserve Linux source/tests; restore host validation only by owner order.
+        os: [windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verify original exact branch-head checkout (not PR merge ref)
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          echo "CONV06_EXPECTED_SOURCE_HEAD=$expected"
+          echo "CONV06_ACTUAL_CHECKOUT_HEAD=$actual"
+          test "$actual" = "$expected"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Genuine foundation and pinned native USD wheel
+        shell: bash
+        run: |
+          python -m pip install -r requirements-foundation.txt httpx pytest
+          python -m pip install --only-binary=:all: 'usd-core==26.11'
+      - name: Source syntax, native imports, original behavior and no-legacy admission
+        shell: bash
+        run: |
+          python -m compileall -q backend tools
+          files=(
+            test_nvp_film03_dialogue_manager.py
+            test_nvp_film03_actor_identity_core.py
+            test_nvp_film03_actor_native_workers.py
+            test_nvp_film03_expressive_voice_direction.py
+            test_nvp_film03_voice_performance_lab.py
+            test_nvp_film03_voice_conversion_intent.py
+            test_nvp_film03_independent_facial_direction.py
+            test_nvp_film03_phoneme_alignment.py
+            test_nvp_film03_facial_rig_compositor.py
+            test_nvp_usd_film01_world.py
+            test_nvp_usd_film01d_shot_working_set.py
+            test_nvp_conv04_camera_lifecycle.py
+            test_nvp_usd_film01e_world_take.py
+            test_nvp_usd_film01f_world_render.py
+            test_nvp_usd_film02mh_real_shot_render.py
+            test_nvp_cam_fx01_02_native_rails.py
+            test_nvp_cam_fx03_04_native_director.py
+            test_nvp_cam_fx05_staged_rail_source.py
+            test_nvp_conv06_private_cycles_source_contract.py
+            test_nvp_conv06_no_legacy_blender_fallback.py
+            test_nvp_conv03_shared_security_convergence.py
+            test_nvp_webview_ipc_surface.py
+            test_nvp_conv06_trusted_director_desktop.py
+            test_nvp_conv06_wo2_readback_contract.py
+            test_nvp_conv06_film03_worker_source_contract.py
+            test_nvp_conv06_original_adaptive_batch.py
+            test_nvp_conv06_original_architecture_cells.py
+            test_nvp_usd_film02m_modular_buildings.py
+            test_nvp_usd_film01c_lazy_resolver.py
+            test_nvp_wo2_texture_tiles.py
+            test_nvp_conv06_native_texture_import.py
+            test_nvp_conv06_wo2_readback_contract.py
+            test_nvp_conv06_visual_mesh_contract.py
+            test_nvp_conv06_original_dynamic_skin.py
+            test_nvp_data_av_native.py
+            test_nvp_no_ffmpeg_contract.py
+            test_nvp_convergence_camera_reel_native.py
+            test_nvp_usd_film01i_ninecam_take.py
+            # Historical original 01O/P and 01Q typed refusals, plus real
+            # 720-frame OpenUSD/FilmIndex source evidence. No fake Cycles pass.
+            test_nvp_usd_film01op_contract.py
+            test_nvp_usd_film01q_selected_contract.py
+            test_nvp_usd_film01oq_native_source.py
+            # Protected 90x8 worker authority, source pinning, cancellation,
+            # interruption and retry refusals; not a fake Cycles acceptance.
+            test_nvp_usd_film01q_protected_native_host.py
+            # Windows-only AppContainer bridge source policy and no-fallback.
+            test_nvp_blender_windows_private_contract.py
+            test_nvp_conv11_worker_receipt_reopen_native.py
+            test_nvp_openusd_shot_overrides_native.py
+            test_nvp_p1f_multishot_recovery.py
+            test_nvp_p1def_p2_native.py
+            test_rig_motion.py
+            # Historical WO3 source restoration; not native codec acceptance.
+            test_nvp_wo3_dcp_structure.py
+            test_nvp_wo3_codec_bundle_provenance.py
+            test_nvp_wo3_atomic_publish.py
+            test_nvp_wo3_export_recovery.py
+            test_nvp_wo3_crash_publish_process.py
+            test_nvp_wo3_j2k_header_contract.py
+          )
+          for f in "${files[@]}"; do
+            test -f "tests/$f" || { echo "::error::Missing original CONV-06 source test: $f"; exit 1; }
+            python -c "import sys,unittest; n=unittest.TestLoader().discover('tests',pattern=sys.argv[1]).countTestCases(); print('CONV06 original test cases:',n,sys.argv[1]); sys.exit(0 if n else 2)" "$f"
+            python -m unittest discover -s tests -p "$f" -v
+          done
+      - name: Original no-FFmpeg active application dependency audit
+        shell: bash
+        run: python tools/nvp_no_ffmpeg_contract.py
+      - name: Preserve source head identity for later Windows/Linux reconciliation
+        shell: bash
+        run: |
+          actual="$(git rev-parse HEAD)"
+          expected="${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$actual" = "$expected"
+          echo "CONV06_ACCEPTANCE_HEAD=$actual"
+          echo "CONV06_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
+          echo "CONV06_GITHUB_EVENT_SHA=${GITHUB_SHA}"
+          echo "Native OS/real Blender/installed picture-and-sound gates remain separate."

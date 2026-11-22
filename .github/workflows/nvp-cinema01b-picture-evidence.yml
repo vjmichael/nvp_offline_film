@@ -1,0 +1,33 @@
+name: NVP CINEMA-01B independent DCP picture evidence unit regression
+
+on:
+  push:
+    branches:
+      - nvp/cinema01b-jpeg2000-mxf-evidence-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-cinema-evidence:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python-version: ['3.11', '3.13']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile DCP evidence and tests
+        run: python -m compileall -q backend/nvp_cinema_dcp.py backend/nvp_cinema_essence.py tests/test_cinema_essence.py tests/test_cinema_dcp.py tools/nvp_pro02_dcp_fixture.py
+      - name: Independent picture evidence rejection regressions (external codecs mocked)
+        run: python -m unittest discover -s tests -p test_cinema_essence.py -v
+      - name: Show real FFmpeg decoder availability, without pretending to have produced a DCP
+        shell: bash
+        run: |
+          if command -v ffprobe >/dev/null 2>&1; then ffprobe -version | head -n 1; else echo "No ffprobe on unit runner (real DCP worker is a separate gate)"; fi

@@ -1,0 +1,101 @@
+name: NVP B9 genuine 32-bit scene-linear OpenEXR complete frozen take
+
+on:
+  push:
+    branches:
+      - nvp/stack02c3b9-native-exr-sequence-20261104
+  pull_request:
+    branches:
+      - nvp/stack02c3b8-frozen-take-native-replay-20261104
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-exr-native-contract:
+    name: Windows RGBA FLOAT32 EXR parser, native permission and resource denial
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP offline test prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx
+      - name: Compile independent EXR and native batch code
+        run: python -m compileall -q backend/nvp_exr_fidelity.py backend/nvp_exr_scripts.py backend/nvp_exr_sequence.py backend/nvp_exr_publish.py tests/test_exr_fidelity.py tests/test_exr_sequence_contract.py tools/nvp_stack02c3b9_real_exr.py
+      - name: Prove native Windows original-take EXR admission and source contracts
+        run: |
+          python -m unittest discover -s tests -p test_exr_fidelity.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B9 OpenEXR header safety tests failed' }
+          python -m unittest discover -s tests -p test_exr_sequence_contract.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B9 native EXR consent/denial tests failed' }
+          python -m unittest discover -s tests -p test_frozen_take_native.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'B8 source regression' }
+          python -m unittest discover -s tests -p test_film_index.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'FilmIndex lineage regression' }
+
+  linux-exr-native-contract:
+    name: Linux RGBA FLOAT32 EXR parser, native permission and resource denial
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NVP offline test prerequisites
+        run: python -m pip install -r requirements-foundation.txt httpx
+      - name: Compile independent EXR and native batch code
+        run: python -m compileall -q backend/nvp_exr_fidelity.py backend/nvp_exr_scripts.py backend/nvp_exr_sequence.py backend/nvp_exr_publish.py tests/test_exr_fidelity.py tests/test_exr_sequence_contract.py tools/nvp_stack02c3b9_real_exr.py
+      - name: Prove native Linux original-take EXR admission and source contracts
+        run: |
+          python -m unittest discover -s tests -p test_exr_fidelity.py -v
+          python -m unittest discover -s tests -p test_exr_sequence_contract.py -v
+          python -m unittest discover -s tests -p test_frozen_take_native.py -v
+          python -m unittest discover -s tests -p test_film_index.py -v
+
+  real-blender-full-exr-timeline:
+    name: Real Blender full 120-frame FLOAT32 EXR with independent decoded pixel audits
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install genuine native Blender, OpenEXR and virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender xvfb xauth
+      - name: Execute all 120 original 24fps frames, re-read real float pixels and index every frame
+        run: |
+          xvfb-run -a python -m tools.nvp_stack02c3b9_real_exr \
+            --out acceptance_artifacts/stack02c3b9_full_exr \
+            --width 160 --height 90
+      - name: Retain real native EXR frame set, worker readback and FilmIndex manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-stack02c3b9-real-full-120-frame-float-exr
+          path: acceptance_artifacts/stack02c3b9_full_exr/
+          retention-days: 7
+          if-no-files-found: warn
+
+  react-ui-regression:
+    name: NVP film authoring UI B9 source and nonprivileged preview regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build existing independent Film authoring UI
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm run test:ui

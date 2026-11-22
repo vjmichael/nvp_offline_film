@@ -1,0 +1,30 @@
+# Data-first replacement: legacy FFmpeg/FFprobe source-window pipeline is quarantined.
+# No media decoder or external import is implicitly enabled by this workflow.
+name: NVP SCALE-01 Compact Editorial Catalog (NO FFMPEG)
+on:
+  pull_request:
+    paths:
+      - "backend/nvp_editorial_catalog.py"
+      - "tests/test_nvp_editorial_catalog.py"
+      - ".github/workflows/nvp-scale01-02.yml"
+  workflow_dispatch:
+
+jobs:
+  scale-catalog:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile compact editorial catalog
+        run: python -m compileall -q backend/nvp_editorial_catalog.py tests/test_nvp_editorial_catalog.py
+      - name: Run immutable compact editorial tests
+        run: python -m unittest discover -s tests -p "test_nvp_editorial_catalog.py" -v
+      # Legacy source-window tests remain unavailable until rewritten around
+      # approved standalone non-FFmpeg adapters; never install or invoke FFmpeg.

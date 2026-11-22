@@ -1,0 +1,58 @@
+name: NVP SCALE-03C Owned Frame Index and Fast Preview
+
+# DATA-AV-01 migration: legacy imported-video/benchmark workflow is
+# manual-only; it must not gate or relaunch native Digital Take A/V.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: nvp-owned-index-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-owned-frame-index:
+    name: Indexed preview ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install actual native FFmpeg/FFprobe Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Install actual native FFmpeg/FFprobe and Windows worker jobs
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          python -m pip install pywin32
+
+      - name: Verify real native media tools
+        shell: bash
+        run: |
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Compile NVP owned frame-access modules
+        shell: bash
+        run: |
+          python -m compileall -q backend/nvp_native_frame_index.py backend/nvp_indexed_preview.py backend/nvp_native_indexed_window.py backend/nvp_source_window_preflight.py backend/nvp_source_window_decode.py backend/nvp_source_window_native_host.py tools/nvp_source_window_worker.py tests/test_nvp_owned_frame_index.py
+
+      - name: Test real B-frame PTS accurate seeking and original read policy
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_owned_frame_index.py" -v
+
+      - name: Confirm legacy full verification preflight remains available
+        shell: bash
+        run: python -m unittest discover -s tests -p "test_nvp_source_window_preflight.py" -v

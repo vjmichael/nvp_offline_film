@@ -1,0 +1,19 @@
+[Unit]
+Description=NVP SEC-06 generated-fixture custody qualification (%i)
+[Service]
+Type=exec
+User=%i
+StateDirectory=nvp-sec06-%i
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/nvp-sec06-%i
+ExecStartPre=+/usr/bin/python3 -I -B /opt/nvp-sec06-qualification/source/tools/nvp_systemd_recovery_hook.py start %n
+ExecStart=/usr/bin/python3 -I -B /opt/nvp-sec06-qualification/source/tools/nvp_sec06_installed_fixture.py
+ExecStopPost=+/usr/bin/python3 -I -B /opt/nvp-sec06-qualification/source/tools/nvp_systemd_recovery_hook.py stop %n
+Delegate=yes
+DelegateSubgroup=nvp.host
+KillMode=control-group
+SendSIGKILL=yes
+TimeoutStopSec=5s
+Restart=no
+UMask=0077
+NoNewPrivileges=yes

@@ -1,0 +1,66 @@
+name: NVP STAB-01A Exact Checkout AST (Source Only)
+
+on:
+  push:
+    branches: [nvp/mainline-convergence-20261113]
+    paths:
+      - '.github/workflows/nvp-stab-01a-ast.yml'
+      - 'scripts/nvp_stab_01a_ast_inventory.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nvp-stab-01a-source-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  exact-sha-ast:
+    name: Source-only full tree Python AST, frontend, native, tests and locks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify exact SHA and no implementation change in audit commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --name-only HEAD^ HEAD -- backend frontend native packaging tests tools > "$RUNNER_TEMP/stab01a-code-diff.txt"
+          test ! -s "$RUNNER_TEMP/stab01a-code-diff.txt" || { cat "$RUNNER_TEMP/stab01a-code-diff.txt"; exit 1; }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: AST and package inventory from real checkout (no runtime invocation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/nvp_stab_01a_ast_inventory.py --repo . --sha "$GITHUB_SHA" --out "$RUNNER_TEMP/nvp-stab01a-ast"
+      - name: Source census and evidence truthfulness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ['RUNNER_TEMP'])/'nvp-stab01a-ast'/'summary.json'
+          d=json.loads(p.read_text('utf8'))
+          assert d['sha']==os.environ['GITHUB_SHA'] and d['backend_python']==485
+          assert d['tracked_files']>=1500 and d['test_python']>=430 and d['frontend_js']>=108
+          assert d['ast_import_edges']>=500 and d['test_definitions']>=100
+          assert d['runtime_execution_verified'] is False
+          assert d['physical_install_verified'] is False and d['signer_authority_verified'] is False
+          print("NVP_STAB01A_FULL_CHECKOUT_AST_CENSUS_PASS_NOT_NATIVE",d['ast_import_edges'])
+          PY
+      - name: Upload exact-commit source graph and unresolved candidates
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nvp-stab01a-ast-${{ github.sha }}
+          path: ${{ runner.temp }}/nvp-stab01a-ast/
+          if-no-files-found: error
+          retention-days: 14

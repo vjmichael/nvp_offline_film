@@ -1,0 +1,388 @@
+name: NVP WO4 Native PCM Mastering (NO FFMPEG)
+# Original WO4 Group A native mastering tests; Linux lanes suspended, not waived.
+# Group A plus restored Group B bridge, MXF, resource and structural publisher suites.
+on:
+  pull_request:
+    paths:
+      - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_g07_section*.py'
+      - 'tests/test_nvp_efs_sidecar_race.py'
+      - 'backend/nvp_w1g_encrypted_source.py'
+      - 'tests/test_nvp_perf03g_sections.py'
+      - 'tests/test_nvp_perf03g_r1_storage.py'
+      - 'tests/test_nvp_perf03g_r2_paged_active.py'
+      - 'tests/test_nvp_perf03g_r3_media.py'
+      - 'tests/test_nvp_perf03g_r4_protected_output.py'
+      - 'tests/test_nvp_perf03g_r5_storage.py'
+      - 'tests/test_nvp_perf03g_r5_finishing.py'
+      - 'tests/test_nvp_perf03g_r6_feature_reels.py'
+      - 'backend/nvp_g07_feature_reels.py'
+      - 'backend/nvp_g07_feature_native.py'
+      - 'tools/nvp_g07_feature_reel_worker.py'
+      - 'tests/test_nvp_perf03g_r7_feature_worker.py'
+      - 'tests/test_nvp_perf03g_r8_working_movie.py'
+      - 'tests/test_nvp_perf03g_r9_playback.py'
+      - 'tests/test_nvp_perf03g_r11_playback.py'
+      - 'tests/test_nvp_perf03g_r12_projection.py'
+      - 'backend/nvp_g07_playback_projection.py'
+      - 'backend/nvp_g03_windows_vault.py'
+      - 'backend/nvp_g03_live_store.py'
+      - 'backend/nvp_g07_feature_playback.py'
+      - 'backend/nvp_g07_recovery_dialog.py'
+      - 'backend/nvp_g03_payloads.py'
+      - 'backend/nvp_g07_feature_finish.py'
+      - 'backend/nvp_g09d_finishing.py'
+      - 'backend/nvp_g07_review_reels.py'
+      - 'backend/nvp_g03_live_backup.py'
+      - 'backend/nvp_g03_pcm_pages.py'
+      - 'backend/nvp_g06_filming.py'
+      - 'backend/nvp_g09_actor.py'
+      - 'backend/nvp_g07_paged_media.py'
+      - 'backend/nvp_g07_preview.py'
+      - 'backend/nvp_g07_storage_migration.py'
+      - 'backend/nvp_g07_recovery_dialog.py'
+      - 'backend/nvp_g07_paged_active.py'
+      - 'backend/nvp_g07_routes.py'
+      - 'backend/nvp_g07_edit.py'
+      - 'backend/nvp_g03_live_store.py'
+      - 'backend/nvp_g03_windows_vault.py'
+      - 'backend/nvp_slate_hierarchy.py'
+      - 'tests/test_nvp_slate_hierarchy.py'
+      - 'backend/nvp_production_*.py'
+      - 'tests/test_nvp_production_*.py'
+      - 'backend/nvp_paged_production_manifest.py'
+      - 'tests/test_nvp_paged_production_manifest.py'
+      - 'tests/test_nvp_wo4_*.py'
+      - 'backend/nvp_wo5_*.py'
+      - 'backend/nvp_wo6_*.py'
+      - 'tests/test_nvp_wo6_*.py'
+      - 'tools/nvp_wo6_take_worker.py'
+      - 'tests/test_nvp_wo5_*.py'
+      - 'backend/nvp_wo3_native_codecs.py'
+      - 'tests/test_nvp_wo3_protected_contract.py'
+      - 'backend/nvp_film_index.py'
+      - 'backend/nvp_openusd_take.py'
+      - 'backend/nvp_w1g_encrypted_source.py'
+      - 'frontend/**'
+      - 'packaging/**'
+      - 'tools/nvp_desktop_alpha.py'
+      - 'tools/nvp_wo5_release_codecs.py'
+      - '.github/workflows/nvp-wo4-native-mastering.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/nvp_wo4_*.py'
+      - 'backend/nvp_g07_section*.py'
+      - 'tests/test_nvp_efs_sidecar_race.py'
+      - 'backend/nvp_w1g_encrypted_source.py'
+      - 'tests/test_nvp_perf03g_sections.py'
+      - 'tests/test_nvp_perf03g_r1_storage.py'
+      - 'tests/test_nvp_perf03g_r2_paged_active.py'
+      - 'tests/test_nvp_perf03g_r3_media.py'
+      - 'tests/test_nvp_perf03g_r4_protected_output.py'
+      - 'tests/test_nvp_perf03g_r5_storage.py'
+      - 'tests/test_nvp_perf03g_r5_finishing.py'
+      - 'tests/test_nvp_perf03g_r6_feature_reels.py'
+      - 'backend/nvp_g07_feature_reels.py'
+      - 'backend/nvp_g07_feature_native.py'
+      - 'tools/nvp_g07_feature_reel_worker.py'
+      - 'tests/test_nvp_perf03g_r7_feature_worker.py'
+      - 'tests/test_nvp_perf03g_r8_working_movie.py'
+      - 'tests/test_nvp_perf03g_r9_playback.py'
+      - 'tests/test_nvp_perf03g_r11_playback.py'
+      - 'tests/test_nvp_perf03g_r12_projection.py'
+      - 'backend/nvp_g07_playback_projection.py'
+      - 'backend/nvp_g03_windows_vault.py'
+      - 'backend/nvp_g03_live_store.py'
+      - 'backend/nvp_g07_feature_playback.py'
+      - 'backend/nvp_g07_recovery_dialog.py'
+      - 'backend/nvp_g03_payloads.py'
+      - 'backend/nvp_g07_feature_finish.py'
+      - 'backend/nvp_g09d_finishing.py'
+      - 'backend/nvp_g07_review_reels.py'
+      - 'backend/nvp_g03_live_backup.py'
+      - 'backend/nvp_g03_pcm_pages.py'
+      - 'backend/nvp_g06_filming.py'
+      - 'backend/nvp_g09_actor.py'
+      - 'backend/nvp_g07_paged_media.py'
+      - 'backend/nvp_g07_preview.py'
+      - 'backend/nvp_g07_storage_migration.py'
+      - 'backend/nvp_g07_recovery_dialog.py'
+      - 'backend/nvp_g07_paged_active.py'
+      - 'backend/nvp_g07_routes.py'
+      - 'backend/nvp_g07_edit.py'
+      - 'backend/nvp_g03_live_store.py'
+      - 'backend/nvp_g03_windows_vault.py'
+      - 'backend/nvp_slate_hierarchy.py'
+      - 'tests/test_nvp_slate_hierarchy.py'
+      - 'backend/nvp_production_*.py'
+      - 'tests/test_nvp_production_*.py'
+      - 'backend/nvp_paged_production_manifest.py'
+      - 'tests/test_nvp_paged_production_manifest.py'
+      - 'tests/test_nvp_wo4_*.py'
+      - 'backend/nvp_wo5_*.py'
+      - 'backend/nvp_wo6_*.py'
+      - 'tests/test_nvp_wo6_*.py'
+      - 'tools/nvp_wo6_take_worker.py'
+      - 'tests/test_nvp_wo5_*.py'
+      - 'backend/nvp_wo3_native_codecs.py'
+      - 'tests/test_nvp_wo3_protected_contract.py'
+      - 'frontend/**'
+      - 'packaging/**'
+      - 'tools/nvp_desktop_alpha.py'
+      - 'tools/nvp_wo5_release_codecs.py'
+      - '.github/workflows/nvp-wo4-native-mastering.yml'
+permissions:
+  contents: read
+concurrency:
+  group: nvp-wo4-original-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  pcm24-candidate:
+    name: WO4 original mastering Windows / Python ${{ matrix.py }}
+    runs-on: windows-2025
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        py: ['3.11','3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Exact source
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Wrong source SHA' }
+      - name: Native foundation
+        run: python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32 httpx 'cryptography>=43,<49'
+      - name: Verify actual PCM, XYZ12, QC, FilmIndex and encrypted streaming
+        shell: pwsh
+        run: |
+          python -m compileall -q backend tests
+          if ($LASTEXITCODE -ne 0) { throw 'Source syntax failure' }
+          foreach ($f in @('pcm_master','xyz12_master','dci_color_reference','master_qc','mastering_decision','loudness','pcm_stream','loudness_stream','longfilm_audio','mxf_stream','file_dcp','multireel','feature_pages','feature_journal')) {
+            python -m unittest discover -s tests -p ("test_nvp_wo4_"+$f+".py") -v
+            if ($LASTEXITCODE -ne 0) { throw "WO4 original source suite failed: $f" }
+          }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_efs_sidecar_race.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==7 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected SQLite sidecar race regression failed' }
+          foreach ($f in @('journal','monitor','supervisor_process','cinema','delivery','host')) {
+            python -m unittest discover -s tests -p ("test_nvp_production_"+$f+".py") -v
+            if ($LASTEXITCODE -ne 0) { throw "WO4 durable production suite failed: $f" }
+          }
+          python -m unittest discover -s tests -p test_nvp_paged_production_manifest.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Paged immutable production manifest or native EFS lease test failed' }
+          python -m unittest discover -s tests -p test_nvp_wo4_native_bundle.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO4 native bundle inventory failed' }
+          foreach ($f in @('original_short','original_feature','codec_binding','finished_playback','director_review','desktop_review','release_codecs','codec_provision','review_storage','install_contract')) {
+            python -m unittest discover -s tests -p ("test_nvp_wo5_"+$f+".py") -v
+            if ($LASTEXITCODE -ne 0) { throw "WO5 source custody suite failed: $f" }
+          }
+          python -m unittest discover -s tests -p test_nvp_wo3_protected_contract.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Protected playback command denial failed' }
+          python -m unittest discover -s tests -p test_nvp_wo6_exact_dispatch.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 exact task ownership regression' }
+          python -m unittest discover -s tests -p 'test_nvp_wo6_*retake*.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 native source or task authorization regression' }
+          python -m unittest discover -s tests -p test_nvp_wo6_creator_plan.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 creator planning scope or source custody regression' }
+          python -m unittest discover -s tests -p test_nvp_wo6_take_pipe_protocol.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 pathless worker refusal regression' }
+          python -m tools.nvp_perf_acceptance take
+          if ($LASTEXITCODE -ne 0) { throw 'WO6 genuine protected native Take regression' }
+          python -m unittest discover -s tests -p test_owned_native_operations.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native owned task admission regression' }
+          python -m unittest discover -s tests -p test_resource_scheduler.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native scheduler regression' }
+          python -m unittest discover -s tests -p test_nvp_webview_ipc_surface.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native WebView IPC regression' }
+          python -m unittest discover -s tests -p test_nvp_e2e01e_package_guard.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Installer source guard regression' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_sections.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==12 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected creator section acceptance failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r1_storage.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==7 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected storage and grouped cut regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r2_paged_active.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==11 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected chapter timeline and backup recovery failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r3_media.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==10 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected source preview, continuity and recovery regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r4_protected_output.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==7 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected review reel, recording migration and full backup recovery failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r5_storage.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==9 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected EDL and Original OpenUSD storage/recovery failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r5_finishing.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==2 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected whole-film sound analysis failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r6_feature_reels.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==6 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Resumable protected working-film reel regression failed' }
+          python -c "import sys,unittest; sys.path.insert(0,'tests'); import test_nvp_perf03g_r7_feature_worker as r; suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromTestCase(r.R7Protocol),unittest.defaultTestLoader.loadTestsFromTestCase(r.R7Longer)]); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==6 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Feature worker protocol and sustained working-reel regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r8_working_movie.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==4 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Working movie controlled production and extended reel regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r9_playback.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==1 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected continuous playback regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r11_playback.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==2 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Protected paired playback and inventory scale regression failed' }
+          python -c "import unittest,sys; suite=unittest.TestLoader().discover('tests',pattern='test_nvp_perf03g_r12_projection.py'); result=unittest.TextTestRunner(verbosity=2).run(suite); sys.exit(0 if result.wasSuccessful() and not result.skipped and result.testsRun==4 else 1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Authenticated incremental playback and sustained retrieval failed' }
+          python -m unittest discover -s tests -p test_nvp_g03_live_store.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Original encrypted live store regression failed' }
+          python -m unittest discover -s tests -p test_nvp_g03_windows_vault.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Original encrypted vault regression failed' }
+          python -m unittest discover -s tests -p test_nvp_slate_hierarchy.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'PERF-03G native section authority regression failed' }
+          python tools/nvp_no_ffmpeg_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Forbidden media dependency' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+  creator-review-ui:
+    name: WO5 exact React creator review and full UI regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Compile and execute exact React candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          cd frontend
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run test:ui
+          cd ..
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+          git diff --exit-code -- frontend/package.json frontend/package-lock.json
+          node --test tools/test_nvp_native_audition_selection.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Consolidated hierarchy and recovery regressions (portable, not native acceptance)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements-foundation.txt 'usd-core==26.11'
+          python - <<'PYTEST'
+          import unittest
+          suite=unittest.TestSuite()
+          for pattern in ("test_feature_receipt_tree.py", "test_production_catalog_pages.py", "test_r4_native_adapters.py", "test_r5.py", "test_perf03f_r6_finite_export.py"):
+              part=unittest.TestLoader().discover("tests",pattern=pattern)
+              if not part.countTestCases():
+                  raise RuntimeError("Missing consolidated suite: "+pattern)
+              suite.addTests(part)
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful() or result.skipped or result.testsRun < 61:
+              raise SystemExit("Incomplete consolidated portable acceptance")
+          PYTEST
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha || github.sha }}'
+
+  wo6-native-host-death:
+    name: WO6 genuine hard host death / Python ${{ matrix.py }}
+    runs-on: windows-2025
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        py: ['3.11','3.13']
+    env:
+      NVP_WO6_DISPOSABLE_CRASH_VM: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+      - name: Exact native foundation
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Wrong source SHA' }
+          python -m pip install -r requirements-foundation.txt 'usd-core==26.11' pywin32
+          if ($LASTEXITCODE -ne 0) { throw 'Native dependency failure' }
+      - name: Verify real host death on this disposable runner
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_nvp_wo6_native_host_death.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native host death failed' }
+          if ((git rev-parse HEAD).Trim() -ne '${{ github.event.pull_request.head.sha || github.sha }}') { throw 'Source drift' }
+
+  perf03f-r6-source-recovery:
+    name: PERF-03F-R6-R2 exact source and offline NVP dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NVP_RECOVERY_BASE: '07d8411cf94735bbec8c4504d33354004614a712'
+      NVP_RECOVERY_TREE: '0f378a0e202b04bf5e2bf24a2c5e0dd2aea291d8'
+      NVP_RUN_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Recover exact candidate parent and verify Git bundle round trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$NVP_RUN_HEAD"
+          test "$(git rev-parse "$NVP_RECOVERY_BASE^{tree}")" = "$NVP_RECOVERY_TREE"
+          git merge-base --is-ancestor "$NVP_RECOVERY_BASE" HEAD
+          test -z "$(git status --porcelain --untracked-files=all)"
+          out="$RUNNER_TEMP/nvp-source-recovery"
+          mkdir -p "$out"
+          git bundle create "$out/nvp-exact-source.bundle" HEAD
+          git bundle verify "$out/nvp-exact-source.bundle" > "$out/bundle-verification.txt" 2>&1
+          git clone --quiet "$out/nvp-exact-source.bundle" "$RUNNER_TEMP/nvp-recovered-base"
+          git -C "$RUNNER_TEMP/nvp-recovered-base" checkout --quiet --detach "$NVP_RECOVERY_BASE"
+          test "$(git -C "$RUNNER_TEMP/nvp-recovered-base" rev-parse HEAD)" = "$NVP_RECOVERY_BASE"
+          test "$(git -C "$RUNNER_TEMP/nvp-recovered-base" rev-parse 'HEAD^{tree}')" = "$NVP_RECOVERY_TREE"
+          test -z "$(git -C "$RUNNER_TEMP/nvp-recovered-base" status --porcelain --untracked-files=all)"
+          git ls-tree -r "$NVP_RECOVERY_BASE" > "$out/base-tree.txt"
+          printf 'base=%s\nbase_tree=%s\nrunner_head=%s\n' "$NVP_RECOVERY_BASE" "$NVP_RECOVERY_TREE" "$NVP_RUN_HEAD" > "$out/source-identity.txt"
+          (cd "$out" && sha256sum nvp-exact-source.bundle base-tree.txt source-identity.txt bundle-verification.txt > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvp-r6-r2-exact-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/nvp-source-recovery/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Restore NVP's committed lock and prove offline dependency restoration
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/nvp-npm-recovery"
+          work="$RUNNER_TEMP/nvp-npm-project"
+          cache="$RUNNER_TEMP/nvp-npm-cache"
+          mkdir -p "$out" "$work" "$cache"
+          # Recover the current committed lock, never resolve floating versions.
+          git show "$NVP_RUN_HEAD:frontend/package.json" > "$work/package.json"
+          git show "$NVP_RUN_HEAD:frontend/package-lock.json" > "$work/package-lock.json"
+          cd "$work"
+          npm ci --no-audit --no-fund --cache "$cache"
+          npm ci --offline --no-audit --no-fund --cache "$cache"
+          npm cache verify --cache "$cache"
+          npm ls --all --json > "$out/npm-inventory.json"
+          cp package.json package-lock.json "$out/"
+          node -p 'JSON.stringify({node:process.version,platform:process.platform,arch:process.arch})' > "$out/runtime.json"
+          npm --version > "$out/npm-version.txt"
+          printf 'source_base=%s\nsource_tree=%s\nlocked_dependency_head=%s\n' "$NVP_RECOVERY_BASE" "$NVP_RECOVERY_TREE" "$NVP_RUN_HEAD" > "$out/source-identity.txt"
+          # Persist content-addressed package objects only, not logs, configs,
+          # checkout credentials or node_modules.
+          tar -C "$cache" -czf "$out/npm-cache.tar.gz" _cacache
+          (cd "$out" && sha256sum package.json package-lock.json npm-inventory.json runtime.json npm-version.txt source-identity.txt npm-cache.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvp-r6-r2-offline-npm-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/nvp-npm-recovery/
+          if-no-files-found: error
+          retention-days: 30
