@@ -1,5 +1,19 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
+
+## 2026-11-22 — NVP-GPG-01 — owner ECC GPG candidate signing (SOURCE GATED; ACTUAL RELEASE OPEN)
+
+**Scope:** Existing draft PR #161, no new branch/PR/merge or application/worker behavior changed. Add a manual GPG signing workflow, a first-party release-provenance and manifest verifier, negative tests, and [signing setup and verification policy](NVP_RELEASE_GPG_SIGNING.md). Detached GPG candidate signing is NOT Windows Authenticode, production release acceptance, independent W1-G Ed25519 redistribution license review, or physical Radeon/LTX acceptance.
+
+**Admission:** Manual workflow dispatch only; signer gated by trusted main, the exact signing/build source commit, explicitly successful same-repository main DATA-AV-01 Windows NSIS installed build (workflow ID 409862454), unique unexpired immutable installer artifact from that run, independent exact SHA256 and Windows PE checks, full 40-hex expected owner ECC GPG primary fingerprint, explicit approval phrase, owner-enabled Actions repo variable NVP_GPG_RELEASE_SIGNING_ENABLED=true (OFF until owner configures it), and protected release-signing GitHub Environment. Owner's existing secrets NVP_GPG_PRIVATE_KEY and NVP_GPG_PASSPHRASE are not exposed in this chat. Prefer move to environment secrets after environment protection. Ephemeral private GPG home, two detached signatures checked against separate public-only home, candidate artifact only. No GitHub release auto-publication. Neither an old PR build nor a mismatched source SHA can pass.
+
+**Tests:** 11 local positive/negative manifest/provenance tests PASS; workflow YAML and embedded Bash syntax PASS. Separate disposable local Ed25519 test key signed and independently verified both detached files. Owner ECC private key NOT accessed, real NVP installer NOT signed, protected environment NOT run, and hosted signature is NOT accepted. Source publishing is deliberately [skip ci] to avoid redundant 46-run global PR trigger fan-out; no new CI or hosted release admission inferred.
+
+**Task order:** NVP-STAB-01A closed; NVP-STAB-01B through 01F, independent security and installed production acceptance remain mandatory before the owner's explicitly approved first signed release.
+
+---
+
+
 ## 2026-11-22 — NVP-STAB-01A full-checkout AST, dependencies and original per-case truth (AUDIT EVIDENCE PASS; PHYSICAL/RELEASE GATES OPEN)
 
 **Preserved source identity:** original PR #161 implementation at \`581ce161dcaecb4c6a8935e8c0e470a6022d48a4\`. Audit-only child \`b6ce50d508072227cb9b340e31e7aef4ba0e306f\` changed only a Python read-only audit script and a narrow GitHub source audit workflow. No backend, frontend, test, worker, installer or model implementation files changed. [Exact-checkout AST run #44968522557](https://github.com/vjmichael/nvp_offline_film/actions/runs/44968522557) **PASS**: 1,563 tracked files; 1,325 relevant text sources; 485 backend Python, 431 Python test and 108 frontend JS/JSX/MJS sources; 4,930 AST/import edges; 694 dynamic/process/API callsites; 2,920 static test definitions, 385 dependency entries, 97 workflows. The 265 review candidates split into 257 reflection/dynamic and eight missing relative JS imports, mostly candidate legacy UI. Ordinary \`getattr\` is not arbitrary module loading. Four primary entrypoint static closures touch 359 files; native separately installed SCM/CLI/Lu/LTX bindings require their own proof.

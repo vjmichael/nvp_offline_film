@@ -1,0 +1,178 @@
+name: NVP approved Windows installer - ECC GPG detached signatures
+
+# No automatic PR/push build, key import, release publication or source mutation.
+# Release-signing controls are separate from installed Windows acceptance.
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'Completed trusted main-branch NVP DATA-AV Windows installed build run ID'
+        required: true
+        type: string
+      source_sha:
+        description: 'Exactly reviewed 40-hex Git commit SHA (must be this workflow SHA)'
+        required: true
+        type: string
+      installer_sha256:
+        description: 'Independently reviewed SHA-256 of NVP-Alpha-Setup.exe'
+        required: true
+        type: string
+      release_version:
+        description: 'Reviewed numeric candidate version X.Y.Z'
+        required: true
+        type: string
+      signer_fingerprint:
+        description: '40-hex full PRIMARY fingerprint of owner ECC GPG signing key'
+        required: true
+        type: string
+      release_approval:
+        description: 'Exact phrase SIGN_NVP_REVIEWED_INSTALLER (does not publish release)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: nvp-gpg-release-signing
+  cancel-in-progress: false
+
+jobs:
+  sign-reviewed-installer:
+    # Both independent setup flag AND default-branch restriction are mandatory.
+    # Owner must configure a protected GitHub environment before setting flag.
+    if: >-
+      github.ref == 'refs/heads/main' && vars.NVP_GPG_RELEASE_SIGNING_ENABLED == 'true' && inputs.release_approval == 'SIGN_NVP_REVIEWED_INSTALLER'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: release-signing
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout exact, trusted signing source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Guard trusted main source, explicit owner request and committed tests
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          INSTALLER_SHA256: ${{ inputs.installer_sha256 }}
+          SIGNER_FPR: ${{ inputs.signer_fingerprint }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$SOURCE_SHA" =~ ^[a-fA-F0-9]{40}$ ]] && test "${SOURCE_SHA,,}" = "$GITHUB_SHA"
+          [[ "$INSTALLER_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]
+          [[ "$SIGNER_FPR" =~ ^[a-fA-F0-9]{40}$ ]]
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]{5,15}$ ]]
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          python3 -m unittest discover -s tests -p test_nvp_release_gpg.py -v
+
+      - name: Verify real original first-party build run and exact artifact provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > "$RUNNER_TEMP/nvp-source-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID/artifacts?per_page=100" > "$RUNNER_TEMP/nvp-source-artifacts.json"
+          python3 tools/nvp_release_gpg.py check-run \
+            --run-json "$RUNNER_TEMP/nvp-source-run.json" \
+            --artifacts-json "$RUNNER_TEMP/nvp-source-artifacts.json" \
+            --run-id "$BUILD_RUN_ID" --sha "$SOURCE_SHA" \
+            --repo "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/nvp-verified-run.json"
+
+      - name: Download only exact approved NVP Windows NSIS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nvp-data-av01-native-windows-installer
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: signing-input
+
+      - name: Verify independent SHA, NSIS PE, source, build and signer identities
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          INSTALLER_SHA256: ${{ inputs.installer_sha256 }}
+          SIGNER_FPR: ${{ inputs.signer_fingerprint }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p signing-output
+          python3 tools/nvp_release_gpg.py manifest \
+            --verified-run "$RUNNER_TEMP/nvp-verified-run.json" \
+            --installer signing-input/NVP-Alpha-Setup.exe \
+            --installer-sha256 "$INSTALLER_SHA256" \
+            --signer-fingerprint "$SIGNER_FPR" \
+            --source-sha "$SOURCE_SHA" --version "$RELEASE_VERSION" \
+            --output signing-output/NVP-Release-Manifest.json
+
+      - name: Use owner ECC private key only inside ephemeral signing keyring
+        env:
+          NVP_GPG_PRIVATE_KEY: ${{ secrets.NVP_GPG_PRIVATE_KEY }}
+          NVP_GPG_PASSPHRASE: ${{ secrets.NVP_GPG_PASSPHRASE }}
+          SIGNER_FPR: ${{ inputs.signer_fingerprint }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "${NVP_GPG_PRIVATE_KEY:-}" && test -n "${NVP_GPG_PASSPHRASE:-}"
+          private_home="$(mktemp -d "$RUNNER_TEMP/nvp-gpg-private-XXXXXX")"
+          public_home="$(mktemp -d "$RUNNER_TEMP/nvp-gpg-public-XXXXXX")"
+          trap 'rm -rf -- "$private_home" "$public_home"' EXIT
+          chmod 700 "$private_home" "$public_home"
+          printf '%s\n' "$NVP_GPG_PRIVATE_KEY" | gpg --homedir "$private_home" --batch --quiet --no-tty --import
+          unset NVP_GPG_PRIVATE_KEY
+          mapfile -t primary < <(gpg --homedir "$private_home" --with-colons --list-secret-keys --fingerprint | awk -F: '/^sec:/ {take=1;next} /^fpr:/ && take {print $10;take=0}')
+          test "${#primary[@]}" -eq 1
+          expected="${SIGNER_FPR^^}"
+          test "${primary[0]^^}" = "$expected" || { echo 'Owner ECC GPG private key does not match explicitly selected primary fingerprint' >&2; exit 1; }
+          gpg --homedir "$private_home" --batch --quiet --no-tty --armor --export "$expected" > signing-output/NVP-ECC-GPG-public.asc
+          for name in NVP-Alpha-Setup.exe NVP-Release-Manifest.json; do
+            if test "$name" = NVP-Alpha-Setup.exe; then in_file="signing-input/$name"; else in_file="signing-output/$name"; fi
+            printf '%s\n' "$NVP_GPG_PASSPHRASE" | gpg --homedir "$private_home" --batch --quiet --no-tty \
+              --pinentry-mode loopback --passphrase-fd 0 --local-user "$expected" \
+              --output "signing-output/$name.sig" --detach-sign "$in_file"
+          done
+          unset NVP_GPG_PASSPHRASE
+          gpg --homedir "$public_home" --batch --quiet --no-tty --import signing-output/NVP-ECC-GPG-public.asc
+          public_fpr="$(gpg --homedir "$public_home" --with-colons --fingerprint --list-keys | awk -F: '/^fpr:/ {print $10; exit}')"
+          test "${public_fpr^^}" = "$expected"
+          for name in NVP-Alpha-Setup.exe NVP-Release-Manifest.json; do
+            if test "$name" = NVP-Alpha-Setup.exe; then in_file="signing-input/$name"; else in_file="signing-output/$name"; fi
+            statusfile="$(mktemp "$RUNNER_TEMP/nvp-gpg-status-XXXXXX")"
+            gpg --homedir "$public_home" --batch --no-tty --status-fd 1 \
+              --verify "signing-output/$name.sig" "$in_file" > "$statusfile" 2>/dev/null
+            python3 - "$statusfile" "$expected" <<'PY'
+          import pathlib,re,sys
+          lines=pathlib.Path(sys.argv[1]).read_text().splitlines()
+          expected=sys.argv[2]
+          valid=[line.split() for line in lines if line.startswith('[GNUPG:] VALIDSIG ')]
+          assert len(valid)==1, 'Exactly one valid detached GPG signature required'
+          fields=valid[0]
+          actual_primary=(fields[-1] if re.fullmatch(r'[0-9A-Fa-f]{40}',fields[-1]) else fields[2]).upper()
+          assert actual_primary==expected, 'Signer identity does not match pinned ECC primary key'
+          PY
+            rm -f "$statusfile"
+          done
+          cp -- signing-input/NVP-Alpha-Setup.exe signing-output/NVP-Alpha-Setup.exe
+          sha256sum signing-output/NVP-Alpha-Setup.exe
+          echo 'NVP_GPG_TWO_DETACHED_SIGNATURES_VERIFIED_NO_RELEASE_PUBLISHED'
+
+      - name: Upload reviewed signed candidate without publishing GitHub release
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvp-gpg-signed-candidate-${{ github.sha }}
+          path: signing-output/
+          if-no-files-found: error
+          retention-days: 14
