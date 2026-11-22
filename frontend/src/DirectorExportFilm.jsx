@@ -29,20 +29,37 @@ export default function DirectorExportFilm({movie,onEditFilm,onFilmScenes}){
   const [busy,setBusy]=useState(false);
   const task=useRef(null);
   const alive=useRef(true);
-  const refresh=async ()=>{
+  const refreshEpoch=useRef(0);
+  // Post-Production edits happen in a separate native window. Only the current
+  // read may change export readiness; an older response must never restore a
+  // stale edit or an older export list after the director returns.
+  const refresh=async (epoch)=>{
     const [e,result]=await Promise.all([
       action(base+'/edit'),
       action(base+'/export')
     ]);
-    if(alive.current){setEdit(e);setJobs(result.exports||[])}
+    if(alive.current&&epoch===refreshEpoch.current){
+      setEdit(e);setJobs(result.exports||[]);setError('');
+    }
   };
   useEffect(()=>{
     alive.current=true;
-    refresh().catch(e=>{
-      if(!alive.current)return;
-      setError(e.message);
-    });
-    return()=>{alive.current=false};
+    const refreshCurrent=()=>{
+      const epoch=++refreshEpoch.current;
+      refresh(epoch).catch(e=>{
+        if(alive.current&&epoch===refreshEpoch.current)setError(e.message);
+      });
+    };
+    refreshCurrent();
+    const onVisible=()=>{if(!document.hidden)refreshCurrent()};
+    window.addEventListener('focus',refreshCurrent);
+    document.addEventListener('visibilitychange',onVisible);
+    return()=>{
+      alive.current=false;
+      ++refreshEpoch.current;
+      window.removeEventListener('focus',refreshCurrent);
+      document.removeEventListener('visibilitychange',onVisible);
+    };
   },[base,movie.revision]);
   const hasActive=jobs.some(job=>active.has(job.status));
   useEffect(()=>{

@@ -1,5 +1,16 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
+## 2026-11-22 — NVP-STAB-01B R1 — Cross-window Edit → Export resynchronization (SOURCE PATCH; CI/PHYSICAL OPEN)
+
+**Exact parent:** PR #161 `e2d192fedb9e3e8e205cb8e515860fdcac00ce2f` on the sole existing `nvp/mainline-convergence-20261113`. Five creator stages and G04/G05/G06/G07/G08 source paths already exist, but that does not constitute integrated LTX/production cinema acceptance.
+
+**Concrete fix:** Export Film now re-reads the authoritative saved G07 edit and G08 export list when the director refocuses its window after Post-Production work. It ignores out-of-order responses and cleanup-era responses, so an older read cannot reset the newly available export controls. This is **read-only**: no new render, approval, session, original Take, PCM, native process, codec, or signing authority. Added two frontend Vitest cases for cross-window resynchronization and stale-response refusal (`frontend/src/DirectorExportFilm.focus.test.jsx`).
+
+**Acceptance honesty:** Tests were added, not locally executed in this connected session. Same-SHA hosted UI and original regression are required; source-only UI fix cannot close STAB-01B. Remaining: actual Script Optional → Set Up Scenes → Film Scenes → Edit Film → Export Film creator journey with original scene/Take/audio proof; protected native low-poly → LTX visual-only handoff, genuine original PCM combination, explicit native picture approval/reject/reopen, long-film/native cinema export and installer-authenticated Lu IPC optional mode. POST-01F signer/key custody and physical Radeon/installed Windows positive remain independent blockers. Continue STAB-01B; STAB-01C–01F, SEC-Q, INST-AC, and GPG signer activation remain downstream. No new branch/PR/main merge or auto-signing.
+
+---
+
+
 
 ## 2026-11-22 — NVP-GPG-01 — owner ECC GPG candidate signing (SOURCE GATED; ACTUAL RELEASE OPEN)
 
