@@ -725,7 +725,7 @@ class G06Filming:
             db.execute("""INSERT INTO g06_original_pcm
                 (id,project_id,scene_id,actor_id,source_kind,pcm,pcm_sha256,
                  sample_rate,channels,sample_count,recorded_at)
-                VALUES (?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?)""",
+                VALUES (?,?,?,?,'native_microphone_pcm16le',?,?,?,?,?,?)""",
                 (cid,pid,scene_id,actor_id,stored_pcm,digest,RATE,1,len(pcm)//2,_now()))
             if capture_receipt is not None:
                 from backend.nvp_g09c_capture import G09CCaptureJournal
