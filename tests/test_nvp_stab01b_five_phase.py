@@ -58,8 +58,35 @@ class OriginalFivePhaseNativeAcceptance(unittest.TestCase):
                                 if line.startswith(prefix):
                                     worker_classes.append(
                                         action + ":" + line[len(prefix):][:64])
+                # Test-only failure reproduction: the released worker intentionally
+                # redacts exception messages. Capture only checked-in Python
+                # basename/function/line numbers, never source path or content.
+                # Do not change the renderer or production worker before a
+                # concrete failing callsite is available.
+                reproduction = "not-attempted"
+                if state["status"] == "failed" and terminal == "completed":
+                    import io
+                    import traceback
+                    from backend.nvp_g08_native_avi import render_film
+                    try:
+                        actual = G07Editor(Studio(self.db)).native_assembly(
+                            pid, state["edit_revision"])
+                        render_film(actual, io.BytesIO())
+                        reproduction = "in-process-render-passed; investigate-child-only-path"
+                    except BaseException as exc:
+                        calls = []
+                        for frame in traceback.extract_tb(exc.__traceback__):
+                            basename = Path(frame.filename).name
+                            if basename.startswith("nvp_") or basename == "test_nvp_stab01b_five_phase.py":
+                                calls.append(f"{basename}:{frame.name}:{frame.lineno}")
+                        reproduction = {
+                            "exception_class": type(exc).__name__,
+                            "source_callsites": calls[-8:],
+                        }
                 self.assertEqual(state["status"], terminal, {
-                    "job": state, "native_worker_exception_classes": worker_classes})
+                    "job": state,
+                    "native_worker_exception_classes": worker_classes,
+                    "safe_in_process_render_diagnostic": reproduction})
                 return state
             time.sleep(0.2)
         self.fail("Original native export did not reach a terminal state")
