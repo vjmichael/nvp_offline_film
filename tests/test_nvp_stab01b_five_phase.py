@@ -42,7 +42,24 @@ class OriginalFivePhaseNativeAcceptance(unittest.TestCase):
         while time.monotonic() < deadline:
             state = self.exporter.read(pid, job_id, token)
             if state["status"] in {"completed", "cancelled", "failed", "interrupted"}:
-                self.assertEqual(state["status"], terminal, state)
+                # The production host deliberately redacts worker failures.
+                # Retain ONLY the worker exception class in this CI assertion
+                # so a native failure can be diagnosed before test cleanup;
+                # never echo original source paths, screenplay or PCM.
+                worker_classes = []
+                if state["status"] != terminal:
+                    folder = self.db.parent / "nvp_g08_exports" / pid
+                    for action in ("render", "verify"):
+                        log = folder / (job_id + "." + action + ".log")
+                        if log.is_file() and not log.is_symlink():
+                            for line in log.read_text(
+                                    encoding="utf8", errors="replace").splitlines():
+                                prefix = "NVP native export did not complete: "
+                                if line.startswith(prefix):
+                                    worker_classes.append(
+                                        action + ":" + line[len(prefix):][:64])
+                self.assertEqual(state["status"], terminal, {
+                    "job": state, "native_worker_exception_classes": worker_classes})
                 return state
             time.sleep(0.2)
         self.fail("Original native export did not reach a terminal state")
