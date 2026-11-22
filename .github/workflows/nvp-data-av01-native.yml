@@ -12,6 +12,7 @@ on:
       - 'frontend/src/DirectorSceneLibrary.jsx'
       - 'frontend/src/DirectorSceneLibrary.movie.test.jsx'
       - 'tests/test_nvp_g04_movie_breakdown.py'
+      - 'tests/test_nvp_stab01b_five_phase.py'
       - 'backend/nvp_exact_time_shots.py'
       - 'frontend/src/ExactFilmTimeShotPanel.jsx'
       - 'tests/test_nvp_exact_time_shots.py'
@@ -161,6 +162,13 @@ jobs:
           test -f tests/test_nvp_g04_movie_breakdown.py
           python -c "import unittest,sys; n=unittest.TestLoader().discover('tests',pattern='test_nvp_g04_movie_breakdown.py').countTestCases(); print('PLAN-03/04 source-bound negative cases:',n); sys.exit(0 if n>=14 else 2)"
           python -m unittest discover -s tests -p 'test_nvp_g04_movie_breakdown.py' -v
+      - name: STAB-01B single persisted five-phase native movie, denial, cancel, recovery
+        if: matrix.os == 'windows-2025' && matrix.python == '3.11'
+        shell: bash
+        run: |
+          python -m compileall -q tests/test_nvp_stab01b_five_phase.py
+          python -c "import unittest,sys; s=unittest.TestLoader().discover('tests',pattern='test_nvp_stab01b_five_phase.py'); n=s.countTestCases(); print('Five-phase native test count:',n); sys.exit(0 if n==1 else 2)"
+          python -m unittest discover -s tests -p 'test_nvp_stab01b_five_phase.py' -v
       - name: PLAN-02-B original microphone, durable recovery and independent native ADC clock
         shell: bash
         run: |
