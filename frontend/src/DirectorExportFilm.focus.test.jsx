@@ -53,7 +53,7 @@ describe('STAB-01B export handoff from the separate Post-Production window',()=>
       throw new Error('Unexpected export request: '+url);
     }));
     render(<DirectorExportFilm movie={movie} onEditFilm={()=>{}} onFilmScenes={()=>{}}/>);
-    await waitFor(()=>expect(typeof initialResponse).toBe('function');
+    await waitFor(()=>expect(typeof initialResponse).toBe('function'));
     await act(async()=>{window.dispatchEvent(new Event('focus'));});
     expect(await screen.findByRole('button',{name:'Finish and Save Movie'})).toBeTruthy();
     await act(async()=>{initialResponse(edit(0));});

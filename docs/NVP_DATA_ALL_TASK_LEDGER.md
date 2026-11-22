@@ -1,5 +1,14 @@
 # NVP — MASTER TASK LEDGER & CENTRAL ENGINEERING JOURNAL
 
+## 2026-11-22 — NVP-STAB-01B R2 — React test transform correction (PREPARED; SAME-SHA CI OPEN)
+
+**R1 exact source:** `5b97e730acc05f9e5a611354afcecb9c97a5c865`, one commit after `e2d192fedb9e3e8e205cb8e515860fdcac00ce2f` on sole PR #161. Genuine WO4 workflow #44975792779 showed successful frontend production Vite build, 32 passing suites/152 existing Vitest cases, and one failing **new** `DirectorExportFilm.focus.test.jsx` suite at line 56: esbuild `Expected ")" but found ";"` (zero tests from that suite executed). Original native Windows PCM-mastering jobs passed. The source-level R1 focus/visibility read-only refresh is not thereby accepted.
+
+**R2 narrow correction:** close the missing `waitFor(...)` parenthesis in the new React test without changing `DirectorExportFilm.jsx`, worker/process/PCM/model/review/authorization logic. Publish only after R1's entire PR-triggered cohort is terminal, independently verify R1 is still the branch head, and prove R2 is exactly one non-merge child of R1 with only this test and this ledger changing. Require exact-R2 focused Vitest regression of edit-on-focus and stale async response, plus full UI build/test; do not infer success from static inspection or R1's 152 other passing tests. Do not create a new branch or PR, force-update, merge main, or activate signing.
+
+---
+
+
 ## 2026-11-22 — NVP-STAB-01B R1 — Cross-window Edit → Export resynchronization (SOURCE PATCH; CI/PHYSICAL OPEN)
 
 **Exact parent:** PR #161 `e2d192fedb9e3e8e205cb8e515860fdcac00ce2f` on the sole existing `nvp/mainline-convergence-20261113`. Five creator stages and G04/G05/G06/G07/G08 source paths already exist, but that does not constitute integrated LTX/production cinema acceptance.
